@@ -1,0 +1,26 @@
+[package]
+name = "goblin-mob-boss"
+version = "0.1.0"
+description = "A local desktop app for structured AI-assisted development workflows"
+authors = ["Goblin Mob Boss"]
+license = "MIT"
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+name = "app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.5.6" }
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+log = "0.4"
+tauri = { version = "2.10.3" }
+tauri-plugin-log = "2"
+tauri-plugin-shell = "2"
+uuid = { version = "1", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+slug = "0.1"
