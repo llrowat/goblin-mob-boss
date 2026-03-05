@@ -91,6 +91,10 @@ export function useTauri() {
     getEvents: (taskId: string) =>
       invoke<TaskEvent[]>("get_events", { taskId }),
 
+    // Phase detection
+    detectPhase: (taskId: string) =>
+      invoke<Task>("detect_phase", { taskId }),
+
     // Cleanup
     deleteTask: (taskId: string) =>
       invoke<void>("delete_task", { taskId }),

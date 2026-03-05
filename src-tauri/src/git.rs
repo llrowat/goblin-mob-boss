@@ -75,6 +75,13 @@ pub fn is_git_repo(path: &str) -> bool {
     run_git(path, &["rev-parse", "--git-dir"]).is_ok()
 }
 
+pub fn has_commits_beyond_base(worktree_path: &str, base_branch: &str) -> bool {
+    // Check if there are commits on HEAD that aren't in the base branch
+    run_git(worktree_path, &["log", &format!("{}..HEAD", base_branch), "--oneline"])
+        .map(|output| !output.is_empty())
+        .unwrap_or(false)
+}
+
 pub fn get_default_branch(repo_path: &str) -> GitResult<String> {
     // Try common default branch names
     for branch in &["main", "master"] {

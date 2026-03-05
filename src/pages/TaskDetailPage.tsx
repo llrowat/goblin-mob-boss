@@ -12,20 +12,13 @@ const PHASE_SUBTITLES: Record<string, string> = {
   ready: "shippable loot",
 };
 
-const PHASE_ACTIONS: Record<string, string> = {
-  plan: "Open Terminal & Start Planning",
-  code: "Open Terminal & Start Coding",
-  verify: "Run Verification",
-  ready: "Create PR",
-};
-
 export function TaskDetailPage() {
   const { taskId } = useParams<{ taskId: string }>();
   const navigate = useNavigate();
   const tauri = useTauri();
   const [task, setTask] = useState<Task | null>(null);
-  const [prompt, setPrompt] = useState("");
   const [command, setCommand] = useState("");
+  const [prompt, setPrompt] = useState("");
   const [events, setEvents] = useState<TaskEvent[]>([]);
   const [verifyResult, setVerifyResult] = useState<VerifyResult | null>(null);
   const [loading, setLoading] = useState(false);
@@ -37,12 +30,13 @@ export function TaskDetailPage() {
   const loadTask = async () => {
     if (!taskId) return;
     try {
-      const t = await tauri.getTask(taskId);
+      // Auto-detect phase from worktree state first
+      const t = await tauri.detectPhase(taskId);
       setTask(t);
-      const p = await tauri.getPrompt(taskId);
-      setPrompt(p);
       const cmd = await tauri.getTerminalCommand(taskId);
       setCommand(cmd);
+      const p = await tauri.getPrompt(taskId);
+      setPrompt(p);
     } catch (e) {
       setError(String(e));
     }
@@ -58,20 +52,13 @@ export function TaskDetailPage() {
     setTimeout(() => setCopied(""), 2000);
   };
 
-  const handleAdvance = async () => {
-    if (!task || !taskId) return;
+  const handleRunVerification = async () => {
+    if (!taskId) return;
     setLoading(true);
     setError("");
     try {
-      if (task.phase === "verify") {
-        const result = await tauri.runVerification(taskId);
-        setVerifyResult(result);
-      } else if (task.phase === "ready") {
-        // Would open PR command
-        handleCopy(command, "command");
-      } else {
-        await tauri.advancePhase(taskId);
-      }
+      const result = await tauri.runVerification(taskId);
+      setVerifyResult(result);
       await loadTask();
     } catch (e) {
       setError(String(e));
@@ -113,6 +100,8 @@ export function TaskDetailPage() {
     );
   }
 
+  const isWorkPhase = task.phase === "plan" || task.phase === "code";
+
   return (
     <div>
       <div className="page-header">
@@ -149,16 +138,58 @@ export function TaskDetailPage() {
           {PHASE_SUBTITLES[task.phase]}
         </div>
 
-        <div style={{ marginTop: 20 }}>
-          <button
-            className="btn btn-primary btn-lg"
-            onClick={handleAdvance}
-            disabled={loading}
-          >
-            {loading ? "Working..." : PHASE_ACTIONS[task.phase]}
-          </button>
+        <div style={{ marginTop: 20, display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
+          {/* Primary action: Launch Claude Code (for plan/code phases) */}
+          {isWorkPhase && (
+            <button
+              className="btn btn-primary btn-lg"
+              onClick={() => handleCopy(command, "launch")}
+            >
+              {copied === "launch" ? "Copied! Paste in terminal" : "Copy Launch Command"}
+            </button>
+          )}
+
+          {/* Verify phase: run validators */}
+          {task.phase === "verify" && (
+            <button
+              className="btn btn-primary btn-lg"
+              onClick={handleRunVerification}
+              disabled={loading}
+            >
+              {loading ? "Running validators..." : "Run Verification"}
+            </button>
+          )}
+
+          {/* Ready phase */}
+          {task.phase === "ready" && (
+            <button
+              className="btn btn-primary btn-lg"
+              onClick={() => handleCopy(`cd ${task.worktree_path} && gh pr create`, "pr")}
+            >
+              {copied === "pr" ? "Copied!" : "Copy PR Command"}
+            </button>
+          )}
         </div>
       </div>
+
+      {/* Launch command display — always visible for work phases */}
+      {isWorkPhase && (
+        <div className="panel" style={{ marginTop: 16 }}>
+          <div className="panel-header">
+            <div className="panel-title">Launch Command</div>
+            <span className="flavor-text">
+              paste this in your terminal — Claude Code picks up the CLAUDE.md automatically
+            </span>
+          </div>
+          <div
+            className="code-block"
+            style={{ cursor: "pointer" }}
+            onClick={() => handleCopy(command, "launch")}
+          >
+            {command}
+          </div>
+        </div>
+      )}
 
       {/* Secondary Actions */}
       <div className="actions-bar">
@@ -170,12 +201,6 @@ export function TaskDetailPage() {
         </button>
         <button
           className="btn btn-secondary"
-          onClick={() => handleCopy(command, "command")}
-        >
-          {copied === "command" ? "Copied!" : "Copy Command"}
-        </button>
-        <button
-          className="btn btn-secondary"
           onClick={() => setShowPrompt(!showPrompt)}
         >
           {showPrompt ? "Hide Prompt" : "View Prompt"}
@@ -183,18 +208,12 @@ export function TaskDetailPage() {
         <button className="btn btn-secondary" onClick={handleLoadEvents}>
           {showEvents ? "Hide Events" : "View Events"}
         </button>
-        {task.phase !== "ready" && (
-          <button
-            className="btn btn-brass"
-            onClick={async () => {
-              if (!taskId) return;
-              await tauri.advancePhase(taskId);
-              await loadTask();
-            }}
-          >
-            Skip to Next Phase
-          </button>
-        )}
+        <button
+          className="btn btn-secondary"
+          onClick={loadTask}
+        >
+          Refresh Status
+        </button>
         <button className="btn btn-danger" onClick={handleDelete}>
           Delete Task
         </button>
@@ -204,7 +223,7 @@ export function TaskDetailPage() {
       {showPrompt && (
         <div className="panel" style={{ marginTop: 16 }}>
           <div className="panel-title" style={{ marginBottom: 8 }}>
-            Current Prompt
+            Current Prompt ({task.phase})
           </div>
           <div className="code-block">{prompt}</div>
         </div>
@@ -277,17 +296,11 @@ export function TaskDetailPage() {
       )}
 
       {/* Worktree Info */}
-      <div
-        className="panel"
-        style={{ marginTop: 16 }}
-      >
+      <div className="panel" style={{ marginTop: 16 }}>
         <div className="panel-title" style={{ marginBottom: 8 }}>
           Worktree
         </div>
-        <code
-          className="code-block"
-          style={{ display: "block" }}
-        >
+        <code className="code-block" style={{ display: "block" }}>
           cd {task.worktree_path}
         </code>
       </div>

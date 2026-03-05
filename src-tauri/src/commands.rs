@@ -159,6 +159,15 @@ pub fn create_task(
     // Generate prompts
     let _ = generate_prompts(&worktree_path, &title, &description, &task.acceptance_criteria);
 
+    // Generate CLAUDE.md in worktree root for automatic Claude Code pickup
+    let _ = crate::claude_md::generate_claude_md(
+        &worktree_path,
+        &title,
+        &description,
+        &task.acceptance_criteria,
+        &repo.validators,
+    );
+
     // Store in memory
     let mut tasks = state.tasks.lock().unwrap();
     tasks.insert(task.task_id.clone(), task.clone());
@@ -376,11 +385,87 @@ pub fn get_terminal_command(task_id: String, state: State<AppState>) -> Result<S
         TaskPhase::Ready => return Ok(format!("cd {}", task.worktree_path)),
     };
 
+    // Launch claude interactively with the prompt pre-populated.
+    // CLAUDE.md in the worktree root provides background context automatically.
     let prompt_path = format!("{}/.gmb/prompts/{}", task.worktree_path, phase_file);
     Ok(format!(
-        "cd {} && claude --print \"$(cat {})\"",
+        "cd {} && claude \"$(cat {})\"",
         task.worktree_path, prompt_path
     ))
+}
+
+#[tauri::command]
+pub fn detect_phase(task_id: String, state: State<AppState>) -> Result<Task, String> {
+    let mut tasks = state.tasks.lock().unwrap();
+    let task = tasks.get_mut(&task_id).ok_or("Task not found")?;
+
+    let old_phase = task.phase.clone();
+
+    // Check worktree state to infer phase
+    let has_commits = crate::git::has_commits_beyond_base(
+        &task.worktree_path,
+        &task.base_branch,
+    );
+    let has_verify_results = std::path::Path::new(&task.worktree_path)
+        .join(".gmb/results/verify")
+        .exists();
+
+    let detected = if has_verify_results {
+        // Check latest verify result
+        let results_dir = format!("{}/.gmb/results/verify", task.worktree_path);
+        let latest_passed = std::fs::read_dir(&results_dir)
+            .ok()
+            .and_then(|entries| {
+                entries
+                    .filter_map(|e| e.ok())
+                    .filter(|e| e.path().is_dir())
+                    .max_by_key(|e| e.file_name())
+            })
+            .and_then(|dir| {
+                let summary = dir.path().join("summary.json");
+                std::fs::read_to_string(summary).ok()
+            })
+            .and_then(|content| serde_json::from_str::<serde_json::Value>(&content).ok())
+            .and_then(|v| v.get("all_passed")?.as_bool())
+            .unwrap_or(false);
+
+        if latest_passed {
+            TaskPhase::Ready
+        } else {
+            TaskPhase::Code
+        }
+    } else if has_commits {
+        TaskPhase::Code
+    } else {
+        TaskPhase::Plan
+    };
+
+    if detected != old_phase {
+        task.phase = detected;
+        task.updated_at = Utc::now();
+        let updated = task.clone();
+        drop(tasks);
+
+        save_task_file(&updated)?;
+        append_event(
+            &updated.worktree_path,
+            &TaskEvent {
+                event_type: "phase_auto_detected".to_string(),
+                timestamp: Utc::now(),
+                data: serde_json::json!({
+                    "from": old_phase,
+                    "to": updated.phase,
+                }),
+            },
+        )?;
+
+        let mut tasks = state.tasks.lock().unwrap();
+        tasks.insert(updated.task_id.clone(), updated.clone());
+        Ok(updated)
+    } else {
+        let current = task.clone();
+        Ok(current)
+    }
 }
 
 // ── Event Commands ──

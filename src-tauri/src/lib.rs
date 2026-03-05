@@ -1,3 +1,4 @@
+mod claude_md;
 mod commands;
 mod context;
 mod git;
@@ -43,6 +44,7 @@ pub fn run() {
             commands::get_terminal_command,
             commands::get_events,
             commands::delete_task,
+            commands::detect_phase,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
