@@ -158,10 +158,15 @@ export function useTauri() {
     // Preferences
     getPreferences: () => invoke<Preferences>("get_preferences"),
 
-    setPreferences: (shell: string, verificationAgentIds: string[]) =>
+    setPreferences: (
+      shell: string,
+      verificationAgentIds: string[],
+      planningAgentIds: string[],
+    ) =>
       invoke<Preferences>("set_preferences", {
         shell,
         verificationAgentIds,
+        planningAgentIds,
       }),
   };
 }

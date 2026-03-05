@@ -14,7 +14,8 @@ A desktop app for agent-based AI development workflows. Configure agents, plan f
 ## Features
 
 - **Agent-based workflow** — Configurable AI agents with roles and system prompts; 5 built-in defaults
-- **Interactive planning** — Back-and-forth conversation with Claude in plan mode during ideation
+- **Interactive planning** — Back-and-forth conversation with Claude in plan mode during ideation; configure which agents are available for task assignment during planning
+- **Planning & verification agents** — Choose which agents participate in the planning stage and which handle final verification, independently configured in Settings
 - **Multi-repo features** — A single feature can span multiple repositories with coordinated branches, tasks, verification, and PRs
 - **Feature branch flow** — Base → feature branch → task work branches → merge back → verify → PR (per repo)
 - **Parallel execution** — Multiple Claude Code agents work on separate worktrees simultaneously across repos

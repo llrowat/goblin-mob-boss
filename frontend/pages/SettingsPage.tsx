@@ -16,6 +16,7 @@ export function SettingsPage() {
   const [verificationAgentIds, setVerificationAgentIds] = useState<string[]>(
     [],
   );
+  const [planningAgentIds, setPlanningAgentIds] = useState<string[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [saved, setSaved] = useState(false);
 
@@ -23,18 +24,25 @@ export function SettingsPage() {
     tauri.getPreferences().then((prefs) => {
       setShell(prefs.shell);
       setVerificationAgentIds(prefs.verification_agent_ids);
+      setPlanningAgentIds(prefs.planning_agent_ids);
     });
     tauri.listAgents().then(setAgents);
   }, []);
 
   const handleSave = async () => {
-    await tauri.setPreferences(shell, verificationAgentIds);
+    await tauri.setPreferences(shell, verificationAgentIds, planningAgentIds);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
 
-  const toggleAgent = (id: string) => {
+  const toggleVerificationAgent = (id: string) => {
     setVerificationAgentIds((prev) =>
+      prev.includes(id) ? prev.filter((a) => a !== id) : [...prev, id],
+    );
+  };
+
+  const togglePlanningAgent = (id: string) => {
+    setPlanningAgentIds((prev) =>
       prev.includes(id) ? prev.filter((a) => a !== id) : [...prev, id],
     );
   };
@@ -73,6 +81,52 @@ export function SettingsPage() {
 
       <div className="panel" style={{ marginTop: 16 }}>
         <div className="panel-title" style={{ marginBottom: 8 }}>
+          Planning Agents
+        </div>
+        <p
+          style={{
+            fontSize: 13,
+            color: "var(--text-secondary)",
+            marginBottom: 16,
+            lineHeight: 1.5,
+          }}
+        >
+          Select which agents are available during the planning (ideation) stage.
+          Only selected agents will be shown to Claude Code for task assignment
+          during feature planning.
+        </p>
+
+        <div className="verification-agent-list">
+          {agents.map((agent) => (
+            <label key={agent.id} className="verification-agent-item">
+              <input
+                type="checkbox"
+                checked={planningAgentIds.includes(agent.id)}
+                onChange={() => togglePlanningAgent(agent.id)}
+              />
+              <div className="verification-agent-info">
+                <span className="verification-agent-name">{agent.name}</span>
+                <span className="verification-agent-role">{agent.role}</span>
+              </div>
+            </label>
+          ))}
+        </div>
+
+        {agents.length === 0 && (
+          <p
+            style={{
+              fontSize: 13,
+              color: "var(--muted)",
+              fontStyle: "italic",
+            }}
+          >
+            No agents configured. Add agents in the Agents page.
+          </p>
+        )}
+      </div>
+
+      <div className="panel" style={{ marginTop: 16 }}>
+        <div className="panel-title" style={{ marginBottom: 8 }}>
           Verification Agents
         </div>
         <p
@@ -94,7 +148,7 @@ export function SettingsPage() {
               <input
                 type="checkbox"
                 checked={verificationAgentIds.includes(agent.id)}
-                onChange={() => toggleAgent(agent.id)}
+                onChange={() => toggleVerificationAgent(agent.id)}
               />
               <div className="verification-agent-info">
                 <span className="verification-agent-name">{agent.name}</span>

@@ -206,9 +206,14 @@ pub fn start_feature(
         .collect::<Vec<_>>()
         .join("\n\n");
 
+    let prefs = state.preferences.lock().unwrap().clone();
     let agents = state.agents.lock().unwrap();
     let agent_list = agents
         .values()
+        .filter(|a| {
+            prefs.planning_agent_ids.is_empty()
+                || prefs.planning_agent_ids.contains(&a.id)
+        })
         .map(|a| format!("- **{}** ({}): {}", a.name, a.role, a.system_prompt))
         .collect::<Vec<_>>()
         .join("\n");
@@ -1021,10 +1026,12 @@ pub fn set_preferences(
     state: State<AppState>,
     shell: String,
     verification_agent_ids: Vec<String>,
+    planning_agent_ids: Vec<String>,
 ) -> Preferences {
     let mut prefs = state.preferences.lock().unwrap();
     prefs.shell = shell;
     prefs.verification_agent_ids = verification_agent_ids;
+    prefs.planning_agent_ids = planning_agent_ids;
     let updated = prefs.clone();
     drop(prefs);
     state.save_preferences();

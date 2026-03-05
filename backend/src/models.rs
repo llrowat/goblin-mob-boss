@@ -267,6 +267,20 @@ pub struct Preferences {
     pub shell: String,
     #[serde(default)]
     pub verification_agent_ids: Vec<String>,
+    #[serde(default = "Preferences::default_planning_agent_ids")]
+    pub planning_agent_ids: Vec<String>,
+}
+
+impl Preferences {
+    fn default_planning_agent_ids() -> Vec<String> {
+        vec![
+            "builtin-fullstack".to_string(),
+            "builtin-frontend".to_string(),
+            "builtin-backend".to_string(),
+            "builtin-test-writer".to_string(),
+            "builtin-reviewer".to_string(),
+        ]
+    }
 }
 
 impl Default for Preferences {
@@ -282,6 +296,7 @@ impl Default for Preferences {
                 "builtin-test-writer".to_string(),
                 "builtin-reviewer".to_string(),
             ],
+            planning_agent_ids: Self::default_planning_agent_ids(),
         }
     }
 }
@@ -419,5 +434,43 @@ mod tests {
         assert!(parsed["repos"].is_array());
         assert_eq!(parsed["repos"].as_array().unwrap().len(), 2);
         assert_eq!(parsed["repo_id"], "r1");
+    }
+
+    #[test]
+    fn preferences_default_includes_planning_agents() {
+        let prefs = Preferences::default();
+        assert!(!prefs.planning_agent_ids.is_empty());
+        assert!(prefs.planning_agent_ids.contains(&"builtin-fullstack".to_string()));
+        assert!(prefs.planning_agent_ids.contains(&"builtin-frontend".to_string()));
+        assert!(prefs.planning_agent_ids.contains(&"builtin-backend".to_string()));
+        assert!(prefs.planning_agent_ids.contains(&"builtin-test-writer".to_string()));
+        assert!(prefs.planning_agent_ids.contains(&"builtin-reviewer".to_string()));
+    }
+
+    #[test]
+    fn preferences_backwards_compat_deserialize() {
+        // Old preferences without planning_agent_ids should get defaults
+        let json = r#"{
+            "shell": "bash",
+            "verification_agent_ids": ["builtin-reviewer"]
+        }"#;
+        let prefs: Preferences = serde_json::from_str(json).unwrap();
+        assert_eq!(prefs.shell, "bash");
+        assert_eq!(prefs.verification_agent_ids, vec!["builtin-reviewer"]);
+        // planning_agent_ids should fall back to defaults
+        assert!(!prefs.planning_agent_ids.is_empty());
+        assert!(prefs.planning_agent_ids.contains(&"builtin-fullstack".to_string()));
+    }
+
+    #[test]
+    fn preferences_serializes_planning_agents() {
+        let prefs = Preferences {
+            shell: "zsh".to_string(),
+            verification_agent_ids: vec!["builtin-reviewer".to_string()],
+            planning_agent_ids: vec!["builtin-frontend".to_string()],
+        };
+        let json = serde_json::to_string(&prefs).unwrap();
+        let parsed: Preferences = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.planning_agent_ids, vec!["builtin-frontend"]);
     }
 }
