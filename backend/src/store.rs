@@ -314,6 +314,7 @@ mod tests {
             model: None,
             system_prompt: "You are a frontend dev.".to_string(),
             is_global: false,
+            color: "#5b8abd".to_string(),
         };
 
         save_repo_agent(&repo_path, &agent).unwrap();
@@ -338,6 +339,7 @@ mod tests {
             model: None,
             system_prompt: "test".to_string(),
             is_global: false,
+            color: "#5a8a5c".to_string(),
         };
 
         save_repo_agent(&repo_path, &agent).unwrap();
