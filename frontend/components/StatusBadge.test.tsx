@@ -3,22 +3,28 @@ import { StatusBadge } from "./StatusBadge";
 
 describe("StatusBadge", () => {
   it("renders the status text", () => {
-    render(<StatusBadge status="pending" />);
-    expect(screen.getByText("pending")).toBeInTheDocument();
+    render(<StatusBadge status="ideation" />);
+    expect(screen.getByText("ideation")).toBeInTheDocument();
   });
 
   it("applies the correct CSS class for the status", () => {
-    const { container } = render(<StatusBadge status="running" />);
+    const { container } = render(<StatusBadge status="executing" />);
     const badge = container.querySelector(".status-badge");
     expect(badge).toHaveClass("running");
   });
 
   it("renders a status dot element", () => {
-    const { container } = render(<StatusBadge status="completed" />);
+    const { container } = render(<StatusBadge status="ready" />);
     expect(container.querySelector(".status-dot")).toBeInTheDocument();
   });
 
-  it.each(["pending", "running", "completed", "merged", "failed"] as const)(
+  it.each([
+    "ideation",
+    "configuring",
+    "executing",
+    "ready",
+    "failed",
+  ] as const)(
     "renders correctly for status: %s",
     (status) => {
       render(<StatusBadge status={status} />);

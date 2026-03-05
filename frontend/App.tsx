@@ -1,7 +1,8 @@
 import { BrowserRouter, Routes, Route, NavLink } from "react-router-dom";
 import { HomePage } from "./pages/HomePage";
 import { IdeationPage } from "./pages/IdeationPage";
-import { TaskBoardPage } from "./pages/TaskBoardPage";
+import { LaunchConfigPage } from "./pages/LaunchConfigPage";
+import { FeatureStatusPage } from "./pages/FeatureStatusPage";
 import { AgentsPage } from "./pages/AgentsPage";
 import { ReposPage } from "./pages/ReposPage";
 import { SettingsPage } from "./pages/SettingsPage";
@@ -66,8 +67,12 @@ function App() {
               element={<IdeationPage />}
             />
             <Route
-              path="/feature/:featureId/tasks"
-              element={<TaskBoardPage />}
+              path="/feature/:featureId/launch"
+              element={<LaunchConfigPage />}
+            />
+            <Route
+              path="/feature/:featureId/status"
+              element={<FeatureStatusPage />}
             />
             <Route path="/agents" element={<AgentsPage />} />
             <Route path="/repos" element={<ReposPage />} />

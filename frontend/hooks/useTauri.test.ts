@@ -17,20 +17,19 @@ describe("useTauri", () => {
     expect(typeof tauri.removeRepository).toBe("function");
     expect(typeof tauri.detectRepoInfo).toBe("function");
     expect(typeof tauri.listAgents).toBe("function");
-    expect(typeof tauri.addAgent).toBe("function");
-    expect(typeof tauri.updateAgent).toBe("function");
-    expect(typeof tauri.removeAgent).toBe("function");
+    expect(typeof tauri.saveAgent).toBe("function");
+    expect(typeof tauri.deleteAgent).toBe("function");
     expect(typeof tauri.startFeature).toBe("function");
     expect(typeof tauri.listFeatures).toBe("function");
     expect(typeof tauri.listAllFeatures).toBe("function");
     expect(typeof tauri.getFeature).toBe("function");
-    expect(typeof tauri.importTasks).toBe("function");
-    expect(typeof tauri.listTasks).toBe("function");
-    expect(typeof tauri.getTask).toBe("function");
-    expect(typeof tauri.startTask).toBe("function");
-    expect(typeof tauri.completeTask).toBe("function");
-    expect(typeof tauri.mergeTask).toBe("function");
-    expect(typeof tauri.deleteTask).toBe("function");
+    expect(typeof tauri.pollIdeationResult).toBe("function");
+    expect(typeof tauri.configureLaunch).toBe("function");
+    expect(typeof tauri.getLaunchCommand).toBe("function");
+    expect(typeof tauri.markFeatureExecuting).toBe("function");
+    expect(typeof tauri.markFeatureReady).toBe("function");
+    expect(typeof tauri.runFeatureValidators).toBe("function");
+    expect(typeof tauri.getFeatureDiff).toBe("function");
     expect(typeof tauri.getPreferences).toBe("function");
     expect(typeof tauri.setPreferences).toBe("function");
   });
@@ -61,19 +60,22 @@ describe("useTauri", () => {
     });
   });
 
-  it("removeAgent passes id", async () => {
+  it("deleteAgent passes repoPath and filename", async () => {
     vi.mocked(invoke).mockResolvedValueOnce(undefined);
     const { result } = renderHook(() => useTauri());
-    await result.current.removeAgent("agent-1");
-    expect(invoke).toHaveBeenCalledWith("remove_agent", { id: "agent-1" });
+    await result.current.deleteAgent("/repo", "agent.md");
+    expect(invoke).toHaveBeenCalledWith("delete_agent", {
+      repoPath: "/repo",
+      filename: "agent.md",
+    });
   });
 
-  it("startFeature passes repoIds, name, description", async () => {
+  it("startFeature passes repoId, name, description", async () => {
     vi.mocked(invoke).mockResolvedValueOnce({});
     const { result } = renderHook(() => useTauri());
-    await result.current.startFeature(["r1", "r2"], "Auth", "Add auth");
+    await result.current.startFeature("r1", "Auth", "Add auth");
     expect(invoke).toHaveBeenCalledWith("start_feature", {
-      repoIds: ["r1", "r2"],
+      repoId: "r1",
       name: "Auth",
       description: "Add auth",
     });
@@ -83,7 +85,9 @@ describe("useTauri", () => {
     vi.mocked(invoke).mockResolvedValueOnce([]);
     const { result } = renderHook(() => useTauri());
     await result.current.listFeatures("repo-1");
-    expect(invoke).toHaveBeenCalledWith("list_features", { repoId: "repo-1" });
+    expect(invoke).toHaveBeenCalledWith("list_features", {
+      repoId: "repo-1",
+    });
   });
 
   it("listAllFeatures passes null repoId", async () => {
@@ -93,22 +97,29 @@ describe("useTauri", () => {
     expect(invoke).toHaveBeenCalledWith("list_features", { repoId: null });
   });
 
-  it("setPreferences passes shell and agent IDs", async () => {
+  it("setPreferences passes shell", async () => {
     vi.mocked(invoke).mockResolvedValueOnce({});
     const { result } = renderHook(() => useTauri());
-    await result.current.setPreferences("zsh", ["agent-1"], ["agent-2"]);
+    await result.current.setPreferences("zsh");
     expect(invoke).toHaveBeenCalledWith("set_preferences", {
       shell: "zsh",
-      verificationAgentIds: ["agent-1"],
-      planningAgentIds: ["agent-2"],
     });
   });
 
-  it("pollTaskStatuses calls invoke correctly", async () => {
-    vi.mocked(invoke).mockResolvedValueOnce([]);
+  it("pollIdeationResult calls invoke correctly", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce({ tasks: [], execution_mode: null });
     const { result } = renderHook(() => useTauri());
-    await result.current.pollTaskStatuses("feature-1");
-    expect(invoke).toHaveBeenCalledWith("poll_task_statuses", {
+    await result.current.pollIdeationResult("feature-1");
+    expect(invoke).toHaveBeenCalledWith("poll_ideation_result", {
+      featureId: "feature-1",
+    });
+  });
+
+  it("markFeatureExecuting calls invoke correctly", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce({});
+    const { result } = renderHook(() => useTauri());
+    await result.current.markFeatureExecuting("feature-1");
+    expect(invoke).toHaveBeenCalledWith("mark_feature_executing", {
       featureId: "feature-1",
     });
   });

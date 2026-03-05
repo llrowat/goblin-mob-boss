@@ -1,11 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   Repository,
-  Agent,
+  AgentFile,
   Feature,
-  Task,
   TaskSpec,
-  TaskStatus,
+  ExecutionMode,
+  IdeationResult,
+  VerifyResult,
   DiffSummary,
   Preferences,
 } from "../types";
@@ -36,7 +37,6 @@ export function useTauri() {
       baseBranch: string;
       validators: string[];
       prCommand: string | null;
-      maxParallelAgents?: number;
     }) =>
       invoke<Repository>("update_repository", {
         id: args.id,
@@ -44,7 +44,6 @@ export function useTauri() {
         baseBranch: args.baseBranch,
         validators: args.validators,
         prCommand: args.prCommand,
-        maxParallelAgents: args.maxParallelAgents,
       }),
 
     removeRepository: (id: string) =>
@@ -55,24 +54,19 @@ export function useTauri() {
         path,
       }),
 
-    // Agents
-    listAgents: () => invoke<Agent[]>("list_agents"),
+    // Agents (file-based)
+    listAgents: (repoPath: string) =>
+      invoke<AgentFile[]>("list_agents", { repoPath }),
 
-    addAgent: (name: string, role: string, systemPrompt: string) =>
-      invoke<Agent>("add_agent", { name, role, systemPrompt }),
+    saveAgent: (repoPath: string, agent: AgentFile) =>
+      invoke<void>("save_agent", { repoPath, agent }),
 
-    updateAgent: (
-      id: string,
-      name: string,
-      role: string,
-      systemPrompt: string,
-    ) => invoke<Agent>("update_agent", { id, name, role, systemPrompt }),
-
-    removeAgent: (id: string) => invoke<void>("remove_agent", { id }),
+    deleteAgent: (repoPath: string, filename: string) =>
+      invoke<void>("delete_agent", { repoPath, filename }),
 
     // Features
-    startFeature: (repoIds: string[], name: string, description: string) =>
-      invoke<Feature>("start_feature", { repoIds, name, description }),
+    startFeature: (repoId: string, name: string, description: string) =>
+      invoke<Feature>("start_feature", { repoId, name, description }),
 
     listFeatures: (repoId?: string) =>
       invoke<Feature[]>("list_features", { repoId: repoId ?? null }),
@@ -83,51 +77,48 @@ export function useTauri() {
     getFeature: (featureId: string) =>
       invoke<Feature>("get_feature", { featureId }),
 
-    // Ideation (on a feature)
+    // Ideation
     getIdeationPrompt: (featureId: string) =>
       invoke<string>("get_ideation_prompt", { featureId }),
-
-    launchIdeation: (featureId: string) =>
-      invoke<void>("launch_ideation", { featureId }),
 
     getIdeationTerminalCommand: (featureId: string) =>
       invoke<string>("get_ideation_terminal_command", { featureId }),
 
-    pollIdeationTasks: (featureId: string) =>
-      invoke<TaskSpec[]>("poll_ideation_tasks", { featureId }),
+    pollIdeationResult: (featureId: string) =>
+      invoke<IdeationResult>("poll_ideation_result", { featureId }),
 
-    // Tasks
-    importTasks: (featureId: string, specs: TaskSpec[]) =>
-      invoke<Task[]>("import_tasks", { featureId, specs }),
+    // Launch Configuration
+    configureLaunch: (
+      featureId: string,
+      executionMode: ExecutionMode,
+      executionRationale: string,
+      selectedAgents: string[],
+      taskSpecs: TaskSpec[],
+    ) =>
+      invoke<Feature>("configure_launch", {
+        featureId,
+        executionMode,
+        executionRationale,
+        selectedAgents,
+        taskSpecs,
+      }),
 
-    listTasks: (featureId: string) =>
-      invoke<Task[]>("list_tasks", { featureId }),
+    getLaunchCommand: (featureId: string) =>
+      invoke<string>("get_launch_command", { featureId }),
 
-    getTask: (taskId: string) => invoke<Task>("get_task", { taskId }),
+    markFeatureExecuting: (featureId: string) =>
+      invoke<Feature>("mark_feature_executing", { featureId }),
 
-    startTask: (taskId: string) => invoke<Task>("start_task", { taskId }),
+    markFeatureReady: (featureId: string) =>
+      invoke<Feature>("mark_feature_ready", { featureId }),
 
-    getTaskTerminalCommand: (taskId: string) =>
-      invoke<string>("get_task_terminal_command", { taskId }),
+    // Validation
+    runFeatureValidators: (featureId: string) =>
+      invoke<VerifyResult>("run_feature_validators", { featureId }),
 
-    launchTask: (taskId: string) =>
-      invoke<void>("launch_task", { taskId }),
-
-    completeTask: (taskId: string) =>
-      invoke<Task>("complete_task", { taskId }),
-
-    mergeTask: (taskId: string) => invoke<Task>("merge_task", { taskId }),
-
-    updateTaskStatus: (taskId: string, status: TaskStatus) =>
-      invoke<Task>("update_task_status", { taskId, status }),
-
-    deleteTask: (taskId: string) => invoke<void>("delete_task", { taskId }),
-
-    getTaskDiff: (taskId: string) =>
-      invoke<DiffSummary>("get_task_diff", { taskId }),
-
-    pollTaskStatuses: (featureId: string) =>
-      invoke<Task[]>("poll_task_statuses", { featureId }),
+    // Diff
+    getFeatureDiff: (featureId: string) =>
+      invoke<DiffSummary>("get_feature_diff", { featureId }),
 
     // Feature PR
     pushFeature: (featureId: string) =>
@@ -139,15 +130,7 @@ export function useTauri() {
     // Preferences
     getPreferences: () => invoke<Preferences>("get_preferences"),
 
-    setPreferences: (
-      shell: string,
-      verificationAgentIds: string[],
-      planningAgentIds: string[],
-    ) =>
-      invoke<Preferences>("set_preferences", {
-        shell,
-        verificationAgentIds,
-        planningAgentIds,
-      }),
+    setPreferences: (shell: string) =>
+      invoke<Preferences>("set_preferences", { shell }),
   };
 }

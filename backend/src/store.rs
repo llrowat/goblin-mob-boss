@@ -1,12 +1,11 @@
-use crate::models::{Agent, Feature, Preferences, Repository, Task};
+use crate::models::{AgentFile, Feature, Preferences, Repository};
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::Mutex;
 
 pub struct AppState {
     pub repositories: Mutex<HashMap<String, Repository>>,
-    pub agents: Mutex<HashMap<String, Agent>>,
     pub features: Mutex<HashMap<String, Feature>>,
-    pub tasks: Mutex<HashMap<String, Task>>,
     pub preferences: Mutex<Preferences>,
     pub config_path: String,
 }
@@ -15,14 +14,11 @@ impl AppState {
     pub fn new(config_path: String) -> Self {
         let state = Self {
             repositories: Mutex::new(HashMap::new()),
-            agents: Mutex::new(HashMap::new()),
             features: Mutex::new(HashMap::new()),
-            tasks: Mutex::new(HashMap::new()),
             preferences: Mutex::new(Preferences::default()),
             config_path,
         };
         state.load_repos();
-        state.load_agents();
         state.load_features();
         state.load_preferences();
         state
@@ -72,28 +68,6 @@ impl AppState {
         self.save_json_list("repositories.json", &list);
     }
 
-    // ── Agent persistence ──
-
-    fn load_agents(&self) {
-        let mut map = self.agents.lock().unwrap();
-        // Load built-in agents first
-        for agent in crate::models::default_agents() {
-            map.insert(agent.id.clone(), agent);
-        }
-        // Load user agents (overrides built-ins if same id)
-        let agents = self.load_json_list::<Agent>("agents.json");
-        for agent in agents {
-            map.insert(agent.id.clone(), agent);
-        }
-    }
-
-    pub fn save_agents(&self) {
-        let agents = self.agents.lock().unwrap();
-        // Only save non-builtin agents
-        let list: Vec<&Agent> = agents.values().filter(|a| !a.is_builtin).collect();
-        self.save_json_list("agents.json", &list);
-    }
-
     // ── Feature persistence ──
 
     fn load_features(&self) {
@@ -108,46 +82,6 @@ impl AppState {
         let features = self.features.lock().unwrap();
         let list: Vec<&Feature> = features.values().collect();
         self.save_json_list("features.json", &list);
-    }
-
-    // ── Task persistence (per-repo in .gmb/tasks.json) ──
-
-    pub fn save_tasks(&self) {
-        let tasks = self.tasks.lock().unwrap();
-        let repos = self.repositories.lock().unwrap();
-        for repo in repos.values() {
-            let repo_tasks: Vec<&Task> = tasks.values().filter(|t| t.repo_id == repo.id).collect();
-            let tasks_file = std::path::PathBuf::from(&repo.path)
-                .join(".gmb")
-                .join("tasks.json");
-            if let Some(parent) = tasks_file.parent() {
-                let _ = std::fs::create_dir_all(parent);
-            }
-            if let Ok(data) = serde_json::to_string_pretty(&repo_tasks) {
-                let _ = std::fs::write(&tasks_file, data);
-            }
-        }
-    }
-
-    pub fn load_tasks_for_repo(&self, repo: &Repository) {
-        {
-            let mut tasks = self.tasks.lock().unwrap();
-            tasks.retain(|_, t| t.repo_id != repo.id);
-        }
-
-        let tasks_file = std::path::PathBuf::from(&repo.path)
-            .join(".gmb")
-            .join("tasks.json");
-        if tasks_file.exists() {
-            if let Ok(data) = std::fs::read_to_string(&tasks_file) {
-                if let Ok(loaded) = serde_json::from_str::<Vec<Task>>(&data) {
-                    let mut tasks = self.tasks.lock().unwrap();
-                    for task in loaded {
-                        tasks.insert(task.task_id.clone(), task);
-                    }
-                }
-            }
-        }
     }
 
     // ── Preferences persistence ──
@@ -166,12 +100,84 @@ impl AppState {
 
     pub fn save_preferences(&self) {
         let prefs = self.preferences.lock().unwrap();
-        self.save_json_list("preferences.json", &[&*prefs]);
-        // Use direct write for single object
         let path = self.json_path("preferences.json");
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
         if let Ok(data) = serde_json::to_string_pretty(&*prefs) {
             let _ = std::fs::write(&path, data);
         }
+    }
+}
+
+// ── Agent File Operations ──
+// Agents are now stored as `.claude/agents/*.md` files in each repo (or globally).
+
+/// List all agent files from a repo's `.claude/agents/` directory.
+pub fn list_repo_agents(repo_path: &str) -> Result<Vec<AgentFile>, String> {
+    let agents_dir = Path::new(repo_path).join(".claude").join("agents");
+    read_agents_from_dir(&agents_dir, false)
+}
+
+/// List all global agent files from `~/.claude/agents/`.
+pub fn list_global_agents() -> Result<Vec<AgentFile>, String> {
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .map_err(|_| "Could not determine home directory".to_string())?;
+    let agents_dir = Path::new(&home).join(".claude").join("agents");
+    read_agents_from_dir(&agents_dir, true)
+}
+
+fn read_agents_from_dir(agents_dir: &Path, is_global: bool) -> Result<Vec<AgentFile>, String> {
+    if !agents_dir.exists() {
+        return Ok(vec![]);
+    }
+    let mut agents = Vec::new();
+    let entries = std::fs::read_dir(agents_dir)
+        .map_err(|e| format!("Failed to read agents dir: {}", e))?;
+
+    let mut files: Vec<_> = entries.flatten().collect();
+    files.sort_by_key(|e| e.file_name());
+
+    for entry in files {
+        let path = entry.path();
+        if path.extension().map(|e| e == "md").unwrap_or(false) {
+            let filename = path
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .to_string();
+            if let Ok(content) = std::fs::read_to_string(&path) {
+                if let Ok(mut agent) = AgentFile::parse(&filename, &content) {
+                    agent.is_global = is_global;
+                    agents.push(agent);
+                }
+            }
+        }
+    }
+    Ok(agents)
+}
+
+/// Save an agent file to a repo's `.claude/agents/` directory.
+pub fn save_repo_agent(repo_path: &str, agent: &AgentFile) -> Result<(), String> {
+    let agents_dir = Path::new(repo_path).join(".claude").join("agents");
+    std::fs::create_dir_all(&agents_dir)
+        .map_err(|e| format!("Failed to create agents dir: {}", e))?;
+    let path = agents_dir.join(&agent.filename);
+    let content = agent.to_markdown();
+    std::fs::write(&path, content).map_err(|e| format!("Failed to write agent file: {}", e))
+}
+
+/// Delete an agent file from a repo's `.claude/agents/` directory.
+pub fn delete_repo_agent(repo_path: &str, filename: &str) -> Result<(), String> {
+    let path = Path::new(repo_path)
+        .join(".claude")
+        .join("agents")
+        .join(filename);
+    if path.exists() {
+        std::fs::remove_file(&path).map_err(|e| format!("Failed to delete agent file: {}", e))
+    } else {
+        Err("Agent file not found".to_string())
     }
 }
 
@@ -182,12 +188,9 @@ mod tests {
 
     fn make_state(dir: &TempDir) -> AppState {
         let config_path = dir.path().to_string_lossy().to_string();
-        // Create a fresh state without loading (no files exist yet)
         AppState {
             repositories: Mutex::new(HashMap::new()),
-            agents: Mutex::new(HashMap::new()),
             features: Mutex::new(HashMap::new()),
-            tasks: Mutex::new(HashMap::new()),
             preferences: Mutex::new(Preferences::default()),
             config_path,
         }
@@ -239,10 +242,8 @@ mod tests {
         }
         state.save_repos();
 
-        // Verify file was created
         assert!(dir.path().join("repositories.json").exists());
 
-        // Load into a new state and verify
         let state2 = make_state(&dir);
         state2.load_repos();
         let repos = state2.repositories.lock().unwrap();
@@ -251,51 +252,15 @@ mod tests {
     }
 
     #[test]
-    fn save_agents_only_persists_non_builtin() {
-        let dir = TempDir::new().unwrap();
-        let state = make_state(&dir);
-
-        let builtin = Agent {
-            id: "builtin-test".to_string(),
-            name: "Built-in".to_string(),
-            role: "developer".to_string(),
-            system_prompt: "test".to_string(),
-            is_builtin: true,
-        };
-        let custom = Agent::new(
-            "Custom Agent".to_string(),
-            "testing".to_string(),
-            "You are custom".to_string(),
-        );
-        let custom_id = custom.id.clone();
-
-        {
-            let mut agents = state.agents.lock().unwrap();
-            agents.insert(builtin.id.clone(), builtin);
-            agents.insert(custom.id.clone(), custom);
-        }
-        state.save_agents();
-
-        // Read the saved file — should only contain the custom agent
-        let data = std::fs::read_to_string(dir.path().join("agents.json")).unwrap();
-        let saved: Vec<Agent> = serde_json::from_str(&data).unwrap();
-        assert_eq!(saved.len(), 1);
-        assert_eq!(saved[0].id, custom_id);
-        assert!(!saved[0].is_builtin);
-    }
-
-    #[test]
     fn save_and_load_features_roundtrip() {
         let dir = TempDir::new().unwrap();
         let state = make_state(&dir);
 
-        let feature = Feature::new(
-            vec![crate::models::FeatureRepo {
-                repo_id: "r1".to_string(),
-                branch: "feature/test-1234".to_string(),
-            }],
+        let feature = crate::models::Feature::new(
+            "r1".to_string(),
             "Test Feature".to_string(),
             "A test feature".to_string(),
+            "feature/test-1234".to_string(),
         );
         let feature_id = feature.id.clone();
 
@@ -320,7 +285,6 @@ mod tests {
         {
             let mut prefs = state.preferences.lock().unwrap();
             prefs.shell = "zsh".to_string();
-            prefs.verification_agent_ids = vec!["agent-1".to_string()];
         }
         state.save_preferences();
 
@@ -328,63 +292,65 @@ mod tests {
         state2.load_preferences();
         let prefs = state2.preferences.lock().unwrap();
         assert_eq!(prefs.shell, "zsh");
-        assert_eq!(prefs.verification_agent_ids, vec!["agent-1"]);
     }
 
     #[test]
-    fn save_and_load_tasks_for_repo() {
+    fn list_repo_agents_empty_when_no_dir() {
         let dir = TempDir::new().unwrap();
-        // Create a temp "repo" directory for tasks
-        let repo_dir = dir.path().join("fake-repo");
-        std::fs::create_dir_all(&repo_dir).unwrap();
+        let agents = list_repo_agents(&dir.path().to_string_lossy()).unwrap();
+        assert!(agents.is_empty());
+    }
 
-        let state = make_state(&dir);
-        let repo = Repository::new(
-            "test".to_string(),
-            repo_dir.to_string_lossy().to_string(),
-            "main".to_string(),
-            vec![],
-            None,
-        );
+    #[test]
+    fn save_and_list_repo_agents() {
+        let dir = TempDir::new().unwrap();
+        let repo_path = dir.path().to_string_lossy().to_string();
 
-        {
-            let mut repos = state.repositories.lock().unwrap();
-            repos.insert(repo.id.clone(), repo.clone());
-        }
-
-        let now = chrono::Utc::now();
-        let task = Task {
-            task_id: "task-1".to_string(),
-            feature_id: "feat-1".to_string(),
-            repo_id: repo.id.clone(),
-            title: "Test task".to_string(),
-            description: "A task".to_string(),
-            acceptance_criteria: vec![],
-            dependencies: vec![],
-            agent_id: "builtin-fullstack".to_string(),
-            subagent_ids: vec![],
-            verification_agent_ids: vec![],
-            status: crate::models::TaskStatus::Pending,
-            branch: "feature/test/task-1".to_string(),
-            worktree_path: "/tmp/wt".to_string(),
-            created_at: now,
-            updated_at: now,
+        let agent = AgentFile {
+            filename: "frontend-dev.md".to_string(),
+            name: "Frontend Developer".to_string(),
+            description: "React specialist".to_string(),
+            tools: Some("Read, Edit".to_string()),
+            model: None,
+            system_prompt: "You are a frontend dev.".to_string(),
+            is_global: false,
         };
 
-        {
-            let mut tasks = state.tasks.lock().unwrap();
-            tasks.insert(task.task_id.clone(), task);
-        }
-        state.save_tasks();
+        save_repo_agent(&repo_path, &agent).unwrap();
 
-        // Verify .gmb/tasks.json was created in the repo dir
-        assert!(repo_dir.join(".gmb").join("tasks.json").exists());
+        let agents = list_repo_agents(&repo_path).unwrap();
+        assert_eq!(agents.len(), 1);
+        assert_eq!(agents[0].name, "Frontend Developer");
+        assert_eq!(agents[0].description, "React specialist");
+        assert!(!agents[0].is_global);
+    }
 
-        // Load tasks for this repo into a fresh state
-        let state2 = make_state(&dir);
-        state2.load_tasks_for_repo(&repo);
-        let tasks = state2.tasks.lock().unwrap();
-        assert_eq!(tasks.len(), 1);
-        assert_eq!(tasks.get("task-1").unwrap().title, "Test task");
+    #[test]
+    fn delete_repo_agent_removes_file() {
+        let dir = TempDir::new().unwrap();
+        let repo_path = dir.path().to_string_lossy().to_string();
+
+        let agent = AgentFile {
+            filename: "test.md".to_string(),
+            name: "Test".to_string(),
+            description: String::new(),
+            tools: None,
+            model: None,
+            system_prompt: "test".to_string(),
+            is_global: false,
+        };
+
+        save_repo_agent(&repo_path, &agent).unwrap();
+        assert_eq!(list_repo_agents(&repo_path).unwrap().len(), 1);
+
+        delete_repo_agent(&repo_path, "test.md").unwrap();
+        assert_eq!(list_repo_agents(&repo_path).unwrap().len(), 0);
+    }
+
+    #[test]
+    fn delete_repo_agent_returns_error_for_missing() {
+        let dir = TempDir::new().unwrap();
+        let result = delete_repo_agent(&dir.path().to_string_lossy(), "nonexistent.md");
+        assert!(result.is_err());
     }
 }

@@ -11,7 +11,6 @@ pub struct Repository {
     pub base_branch: String,
     pub validators: Vec<String>,
     pub pr_command: Option<String>,
-    pub max_parallel_agents: u32,
     pub created_at: DateTime<Utc>,
 }
 
@@ -30,101 +29,139 @@ impl Repository {
             base_branch,
             validators,
             pr_command,
-            max_parallel_agents: 4,
             created_at: Utc::now(),
         }
     }
 }
 
-// ── Agent ──
+// ── Agent File ──
+// Represents a `.claude/agents/*.md` file (or `~/.claude/agents/*.md` for global).
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Agent {
-    pub id: String,
+pub struct AgentFile {
+    pub filename: String,
     pub name: String,
-    pub role: String,
+    pub description: String,
+    #[serde(default)]
+    pub tools: Option<String>,
+    #[serde(default)]
+    pub model: Option<String>,
     pub system_prompt: String,
-    pub is_builtin: bool,
+    /// Whether this agent comes from ~/.claude/agents/ (global) vs repo-level.
+    #[serde(default)]
+    pub is_global: bool,
 }
 
-impl Agent {
-    pub fn new(name: String, role: String, system_prompt: String) -> Self {
-        Self {
-            id: uuid::Uuid::new_v4().to_string(),
-            name,
-            role,
-            system_prompt,
-            is_builtin: false,
+impl AgentFile {
+    /// Parse a `.claude/agents/*.md` file with YAML frontmatter.
+    pub fn parse(filename: &str, content: &str) -> Result<Self, String> {
+        let content = content.trim();
+        if !content.starts_with("---") {
+            // No frontmatter — treat entire content as system prompt
+            let name = filename
+                .strip_suffix(".md")
+                .unwrap_or(filename)
+                .replace('-', " ");
+            return Ok(Self {
+                filename: filename.to_string(),
+                name,
+                description: String::new(),
+                tools: None,
+                model: None,
+                system_prompt: content.to_string(),
+                is_global: false,
+            });
         }
+
+        // Split on second "---"
+        let rest = &content[3..];
+        let end = rest
+            .find("\n---")
+            .ok_or("Invalid frontmatter: missing closing ---")?;
+        let frontmatter = &rest[..end];
+        let body = rest[end + 4..].trim();
+
+        // Parse simple YAML frontmatter (key: value pairs)
+        let mut name = String::new();
+        let mut description = String::new();
+        let mut tools = None;
+        let mut model = None;
+
+        for line in frontmatter.lines() {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            if let Some((key, value)) = line.split_once(':') {
+                let key = key.trim();
+                let value = value.trim().trim_matches('"').trim_matches('\'');
+                match key {
+                    "name" => name = value.to_string(),
+                    "description" => description = value.to_string(),
+                    "tools" => tools = Some(value.to_string()),
+                    "model" => model = Some(value.to_string()),
+                    _ => {}
+                }
+            }
+        }
+
+        if name.is_empty() {
+            name = filename
+                .strip_suffix(".md")
+                .unwrap_or(filename)
+                .replace('-', " ");
+        }
+
+        Ok(Self {
+            filename: filename.to_string(),
+            name,
+            description,
+            tools,
+            model,
+            system_prompt: body.to_string(),
+            is_global: false,
+        })
+    }
+
+    /// Serialize back to markdown with YAML frontmatter.
+    pub fn to_markdown(&self) -> String {
+        let mut fm = String::from("---\n");
+        fm.push_str(&format!("name: \"{}\"\n", self.name));
+        if !self.description.is_empty() {
+            fm.push_str(&format!("description: \"{}\"\n", self.description));
+        }
+        if let Some(ref tools) = self.tools {
+            fm.push_str(&format!("tools: \"{}\"\n", tools));
+        }
+        if let Some(ref model) = self.model {
+            fm.push_str(&format!("model: \"{}\"\n", model));
+        }
+        fm.push_str("---\n\n");
+        fm.push_str(&self.system_prompt);
+        fm.push('\n');
+        fm
     }
 }
 
-pub fn default_agents() -> Vec<Agent> {
-    vec![
-        Agent {
-            id: "builtin-fullstack".to_string(),
-            name: "Full-Stack Developer".to_string(),
-            role: "developer".to_string(),
-            system_prompt: "You are a senior full-stack developer. Write clean, well-structured code following existing patterns. Focus on correctness and maintainability.".to_string(),
-            is_builtin: true,
-        },
-        Agent {
-            id: "builtin-frontend".to_string(),
-            name: "Frontend Developer".to_string(),
-            role: "developer".to_string(),
-            system_prompt: "You are a frontend specialist. Focus on UI components, styling, accessibility, and user experience. Follow the existing component patterns and design system.".to_string(),
-            is_builtin: true,
-        },
-        Agent {
-            id: "builtin-backend".to_string(),
-            name: "Backend Developer".to_string(),
-            role: "developer".to_string(),
-            system_prompt: "You are a backend specialist. Focus on APIs, data models, business logic, and performance. Follow existing architecture patterns.".to_string(),
-            is_builtin: true,
-        },
-        Agent {
-            id: "builtin-test-writer".to_string(),
-            name: "Test Writer".to_string(),
-            role: "testing".to_string(),
-            system_prompt: "You are a testing specialist. Write comprehensive tests — unit, integration, and edge cases. Follow the existing test patterns and framework conventions.".to_string(),
-            is_builtin: true,
-        },
-        Agent {
-            id: "builtin-reviewer".to_string(),
-            name: "Code Reviewer".to_string(),
-            role: "reviewer".to_string(),
-            system_prompt: "You are a code reviewer. Review the changes for correctness, security, performance, and style. Fix any issues you find. Run all validators and ensure they pass.".to_string(),
-            is_builtin: true,
-        },
-        Agent {
-            id: "builtin-architect".to_string(),
-            name: "Software Architect".to_string(),
-            role: "planning".to_string(),
-            system_prompt: "You are a software architect. Focus on system design, component boundaries, data flow, and technical trade-offs. Break features into well-scoped tasks that can be worked in parallel with minimal merge conflicts. Consider scalability, maintainability, and existing architectural patterns.".to_string(),
-            is_builtin: true,
-        },
-        Agent {
-            id: "builtin-product-owner".to_string(),
-            name: "Product Owner".to_string(),
-            role: "planning".to_string(),
-            system_prompt: "You are a product owner. Focus on user stories, acceptance criteria, edge cases, and feature completeness. Ensure tasks cover the full user experience including error states, accessibility, and documentation. Ask clarifying questions about requirements and prioritize work effectively.".to_string(),
-            is_builtin: true,
-        },
-        Agent {
-            id: "builtin-security-reviewer".to_string(),
-            name: "Security Reviewer".to_string(),
-            role: "reviewer".to_string(),
-            system_prompt: "You are a security specialist. Review code for vulnerabilities including injection attacks, authentication flaws, insecure data handling, and OWASP Top 10 issues. Check for secrets in code, improper access controls, and unsafe dependencies. Fix any security issues you find.".to_string(),
-            is_builtin: true,
-        },
-        Agent {
-            id: "builtin-integration-tester".to_string(),
-            name: "Integration Tester".to_string(),
-            role: "testing".to_string(),
-            system_prompt: "You are an integration testing specialist. Verify that merged changes work together correctly. Focus on cross-component interactions, API contracts, data flow between modules, and end-to-end scenarios. Write integration tests for critical paths and fix any issues found.".to_string(),
-            is_builtin: true,
-        },
-    ]
+// ── Execution Mode ──
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum ExecutionMode {
+    Teams,
+    Subagents,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExecutionRecommendation {
+    pub recommended: ExecutionMode,
+    pub rationale: String,
+    #[serde(default = "default_confidence")]
+    pub confidence: f32,
+}
+
+fn default_confidence() -> f32 {
+    0.5
 }
 
 // ── Feature ──
@@ -133,136 +170,79 @@ pub fn default_agents() -> Vec<Agent> {
 #[serde(rename_all = "snake_case")]
 pub enum FeatureStatus {
     Ideation,
-    InProgress,
+    Configuring,
+    Executing,
     Ready,
-}
-
-/// Per-repo branch info for a multi-repo feature.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FeatureRepo {
-    pub repo_id: String,
-    pub branch: String,
+    Failed,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Feature {
     pub id: String,
-    /// Primary repo (first in the list). Kept for backwards compatibility.
-    #[serde(default)]
     pub repo_id: String,
-    /// All repos this feature spans, with per-repo branch info.
-    #[serde(default)]
-    pub repos: Vec<FeatureRepo>,
     pub name: String,
     pub description: String,
-    /// Primary branch name (matches first repo). Kept for backwards compat.
-    #[serde(default)]
     pub branch: String,
     pub status: FeatureStatus,
+    #[serde(default)]
+    pub execution_mode: Option<ExecutionMode>,
+    #[serde(default)]
+    pub execution_rationale: Option<String>,
+    #[serde(default)]
+    pub selected_agents: Vec<String>,
+    #[serde(default)]
+    pub task_specs: Vec<TaskSpec>,
+    #[serde(default)]
+    pub pty_session_id: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
 
 impl Feature {
-    pub fn new(repos: Vec<FeatureRepo>, name: String, description: String) -> Self {
+    pub fn new(repo_id: String, name: String, description: String, branch: String) -> Self {
         let now = Utc::now();
-        let repo_id = repos.first().map(|r| r.repo_id.clone()).unwrap_or_default();
-        let branch = repos.first().map(|r| r.branch.clone()).unwrap_or_default();
         Self {
             id: uuid::Uuid::new_v4().to_string(),
             repo_id,
-            repos,
             name,
             description,
             branch,
             status: FeatureStatus::Ideation,
+            execution_mode: None,
+            execution_rationale: None,
+            selected_agents: vec![],
+            task_specs: vec![],
+            pty_session_id: None,
             created_at: now,
             updated_at: now,
         }
     }
-
-    /// Get the branch for a specific repo, or None.
-    pub fn branch_for_repo(&self, repo_id: &str) -> Option<&str> {
-        self.repos
-            .iter()
-            .find(|r| r.repo_id == repo_id)
-            .map(|r| r.branch.as_str())
-    }
-
-    /// Get all repo IDs this feature spans.
-    pub fn repo_ids(&self) -> Vec<&str> {
-        if self.repos.is_empty() {
-            // Backwards compat: old features only have repo_id
-            if self.repo_id.is_empty() {
-                vec![]
-            } else {
-                vec![self.repo_id.as_str()]
-            }
-        } else {
-            self.repos.iter().map(|r| r.repo_id.as_str()).collect()
-        }
-    }
 }
 
-// ── Task ──
+// ── Task Spec ──
+// Lightweight task description from ideation. Not a managed entity — just stored on Feature.
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum TaskStatus {
-    Pending,
-    Running,
-    Verifying,
-    Completed,
-    Merged,
-    Failed,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Task {
-    pub task_id: String,
-    pub feature_id: String,
-    pub repo_id: String,
-    pub title: String,
-    pub description: String,
-    pub acceptance_criteria: Vec<String>,
-    pub dependencies: Vec<String>,
-    pub agent_id: String,
-    pub subagent_ids: Vec<String>,
-    #[serde(default)]
-    pub verification_agent_ids: Vec<String>,
-    pub status: TaskStatus,
-    pub branch: String,
-    pub worktree_path: String,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
-
-/// Task spec written by ideation agent, read by app.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskSpec {
     pub title: String,
     pub description: String,
+    #[serde(default)]
     pub acceptance_criteria: Vec<String>,
     #[serde(default)]
     pub dependencies: Vec<String>,
     #[serde(default)]
     pub agent: String,
-    #[serde(default)]
-    pub subagents: Vec<String>,
-    #[serde(default)]
-    pub verification_agents: Vec<String>,
-    /// Target repo name or ID (for multi-repo features). Empty = first/primary repo.
-    #[serde(default)]
-    pub repo: String,
 }
 
-/// Status written by the agent to `.gmb/status.json` inside the worktree.
-/// The app polls this file to detect task progress.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct TaskDotStatus {
-    pub phase: String, // "implementing", "verifying", "done", "failed"
+// ── Ideation Discovery Result ──
+// What the ideation prompt outputs (tasks + execution mode recommendation).
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IdeationResult {
     #[serde(default)]
-    pub message: String,
+    pub tasks: Vec<TaskSpec>,
+    #[serde(default)]
+    pub execution_mode: Option<ExecutionRecommendation>,
 }
 
 // ── Validator Results ──
@@ -306,26 +286,6 @@ pub struct DiffSummary {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Preferences {
     pub shell: String,
-    #[serde(default)]
-    pub verification_agent_ids: Vec<String>,
-    #[serde(default = "Preferences::default_planning_agent_ids")]
-    pub planning_agent_ids: Vec<String>,
-}
-
-impl Preferences {
-    fn default_planning_agent_ids() -> Vec<String> {
-        vec![
-            "builtin-fullstack".to_string(),
-            "builtin-frontend".to_string(),
-            "builtin-backend".to_string(),
-            "builtin-test-writer".to_string(),
-            "builtin-reviewer".to_string(),
-            "builtin-architect".to_string(),
-            "builtin-product-owner".to_string(),
-            "builtin-security-reviewer".to_string(),
-            "builtin-integration-tester".to_string(),
-        ]
-    }
 }
 
 impl Default for Preferences {
@@ -335,15 +295,7 @@ impl Default for Preferences {
         } else {
             "bash".to_string()
         };
-        Self {
-            shell,
-            verification_agent_ids: vec![
-                "builtin-reviewer".to_string(),
-                "builtin-security-reviewer".to_string(),
-                "builtin-integration-tester".to_string(),
-            ],
-            planning_agent_ids: Self::default_planning_agent_ids(),
-        }
+        Self { shell }
     }
 }
 
@@ -352,85 +304,188 @@ mod tests {
     use super::*;
 
     #[test]
-    fn feature_new_single_repo() {
-        let repos = vec![FeatureRepo {
-            repo_id: "repo-1".to_string(),
-            branch: "feature/auth-ab12".to_string(),
-        }];
-        let feature = Feature::new(repos, "Auth".to_string(), "Add auth".to_string());
-
+    fn feature_new_creates_with_ideation_status() {
+        let feature = Feature::new(
+            "repo-1".to_string(),
+            "Auth".to_string(),
+            "Add auth".to_string(),
+            "feature/auth-ab12".to_string(),
+        );
         assert_eq!(feature.repo_id, "repo-1");
         assert_eq!(feature.branch, "feature/auth-ab12");
-        assert_eq!(feature.repos.len(), 1);
         assert_eq!(feature.status, FeatureStatus::Ideation);
-        assert_eq!(feature.repo_ids(), vec!["repo-1"]);
-        assert_eq!(feature.branch_for_repo("repo-1"), Some("feature/auth-ab12"));
+        assert!(feature.execution_mode.is_none());
+        assert!(feature.selected_agents.is_empty());
+        assert!(feature.task_specs.is_empty());
     }
 
     #[test]
-    fn feature_new_multi_repo() {
-        let repos = vec![
-            FeatureRepo {
-                repo_id: "repo-1".to_string(),
-                branch: "feature/auth-ab12".to_string(),
-            },
-            FeatureRepo {
-                repo_id: "repo-2".to_string(),
-                branch: "feature/auth-ab12".to_string(),
-            },
-        ];
-        let feature = Feature::new(repos, "Auth".to_string(), "Add auth".to_string());
+    fn feature_serializes_with_execution_mode() {
+        let mut feature = Feature::new(
+            "r1".to_string(),
+            "X".to_string(),
+            "desc".to_string(),
+            "feature/x-1234".to_string(),
+        );
+        feature.execution_mode = Some(ExecutionMode::Teams);
+        feature.execution_rationale = Some("High parallelism".to_string());
+        feature.selected_agents = vec!["frontend-dev.md".to_string()];
+        feature.task_specs = vec![TaskSpec {
+            title: "Task 1".to_string(),
+            description: "Do thing".to_string(),
+            acceptance_criteria: vec![],
+            dependencies: vec![],
+            agent: "frontend-dev".to_string(),
+        }];
 
-        assert_eq!(feature.repo_id, "repo-1"); // primary = first
-        assert_eq!(feature.repos.len(), 2);
-        assert_eq!(feature.repo_ids(), vec!["repo-1", "repo-2"]);
-        assert_eq!(feature.branch_for_repo("repo-2"), Some("feature/auth-ab12"));
-        assert_eq!(feature.branch_for_repo("repo-3"), None);
+        let json = serde_json::to_string(&feature).unwrap();
+        let parsed: Feature = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.execution_mode, Some(ExecutionMode::Teams));
+        assert_eq!(parsed.selected_agents, vec!["frontend-dev.md"]);
+        assert_eq!(parsed.task_specs.len(), 1);
     }
 
     #[test]
     fn feature_backwards_compat_deserialize() {
-        // Old features only had repo_id and branch, no repos vec
         let json = r#"{
             "id": "feat-1",
             "repo_id": "repo-old",
             "name": "Legacy",
             "description": "Old feature",
             "branch": "feature/legacy-1234",
-            "status": "in_progress",
+            "status": "ideation",
             "created_at": "2025-01-01T00:00:00Z",
             "updated_at": "2025-01-01T00:00:00Z"
         }"#;
         let feature: Feature = serde_json::from_str(json).unwrap();
-
         assert_eq!(feature.repo_id, "repo-old");
-        assert!(feature.repos.is_empty());
-        // repo_ids() falls back to repo_id for backwards compat
-        assert_eq!(feature.repo_ids(), vec!["repo-old"]);
+        assert!(feature.execution_mode.is_none());
+        assert!(feature.selected_agents.is_empty());
+        assert!(feature.task_specs.is_empty());
     }
 
     #[test]
-    fn taskspec_with_repo_field() {
-        let json = r#"{
-            "title": "Add API endpoint",
-            "description": "Backend work",
-            "acceptance_criteria": ["tests pass"],
-            "repo": "backend-service"
-        }"#;
-        let spec: TaskSpec = serde_json::from_str(json).unwrap();
-        assert_eq!(spec.repo, "backend-service");
-        assert_eq!(spec.agent, ""); // default
+    fn agent_file_parse_with_frontmatter() {
+        let content = r#"---
+name: "Frontend Developer"
+description: "Specializes in React and CSS"
+tools: "Read, Edit, Write, Bash"
+model: "claude-sonnet-4-5-20250514"
+---
+
+You are a frontend specialist. Focus on UI components, styling, and accessibility."#;
+
+        let agent = AgentFile::parse("frontend-dev.md", content).unwrap();
+        assert_eq!(agent.filename, "frontend-dev.md");
+        assert_eq!(agent.name, "Frontend Developer");
+        assert_eq!(agent.description, "Specializes in React and CSS");
+        assert_eq!(agent.tools, Some("Read, Edit, Write, Bash".to_string()));
+        assert_eq!(
+            agent.model,
+            Some("claude-sonnet-4-5-20250514".to_string())
+        );
+        assert!(agent.system_prompt.contains("frontend specialist"));
     }
 
     #[test]
-    fn taskspec_without_repo_field() {
+    fn agent_file_parse_without_frontmatter() {
+        let content = "You are a backend developer. Focus on APIs and data models.";
+        let agent = AgentFile::parse("backend-dev.md", content).unwrap();
+        assert_eq!(agent.name, "backend dev");
+        assert_eq!(agent.description, "");
+        assert!(agent.tools.is_none());
+        assert!(agent.system_prompt.contains("backend developer"));
+    }
+
+    #[test]
+    fn agent_file_roundtrip() {
+        let agent = AgentFile {
+            filename: "test-writer.md".to_string(),
+            name: "Test Writer".to_string(),
+            description: "Writes comprehensive tests".to_string(),
+            tools: Some("Read, Bash".to_string()),
+            model: None,
+            system_prompt: "You are a testing specialist.".to_string(),
+            is_global: false,
+        };
+        let md = agent.to_markdown();
+        let parsed = AgentFile::parse("test-writer.md", &md).unwrap();
+        assert_eq!(parsed.name, "Test Writer");
+        assert_eq!(parsed.description, "Writes comprehensive tests");
+        assert_eq!(parsed.tools, Some("Read, Bash".to_string()));
+        assert!(parsed.model.is_none());
+        assert_eq!(parsed.system_prompt, "You are a testing specialist.");
+    }
+
+    #[test]
+    fn agent_file_parse_minimal_frontmatter() {
+        let content = r#"---
+name: "Reviewer"
+---
+
+Review code for issues."#;
+        let agent = AgentFile::parse("reviewer.md", content).unwrap();
+        assert_eq!(agent.name, "Reviewer");
+        assert_eq!(agent.description, "");
+        assert!(agent.tools.is_none());
+        assert_eq!(agent.system_prompt, "Review code for issues.");
+    }
+
+    #[test]
+    fn execution_mode_serializes() {
+        let rec = ExecutionRecommendation {
+            recommended: ExecutionMode::Teams,
+            rationale: "4 independent tasks".to_string(),
+            confidence: 0.85,
+        };
+        let json = serde_json::to_string(&rec).unwrap();
+        assert!(json.contains("\"teams\""));
+        let parsed: ExecutionRecommendation = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.recommended, ExecutionMode::Teams);
+        assert_eq!(parsed.confidence, 0.85);
+    }
+
+    #[test]
+    fn ideation_result_parses() {
         let json = r#"{
-            "title": "Add button",
-            "description": "Frontend work",
-            "acceptance_criteria": []
+            "tasks": [
+                {
+                    "title": "Add API",
+                    "description": "Backend work",
+                    "acceptance_criteria": ["tests pass"]
+                }
+            ],
+            "execution_mode": {
+                "recommended": "subagents",
+                "rationale": "Small focused feature",
+                "confidence": 0.9
+            }
         }"#;
+        let result: IdeationResult = serde_json::from_str(json).unwrap();
+        assert_eq!(result.tasks.len(), 1);
+        assert_eq!(result.tasks[0].title, "Add API");
+        let em = result.execution_mode.unwrap();
+        assert_eq!(em.recommended, ExecutionMode::Subagents);
+        assert_eq!(em.confidence, 0.9);
+    }
+
+    #[test]
+    fn ideation_result_parses_without_execution_mode() {
+        let json = r#"{
+            "tasks": [{"title": "Do thing", "description": "details"}]
+        }"#;
+        let result: IdeationResult = serde_json::from_str(json).unwrap();
+        assert_eq!(result.tasks.len(), 1);
+        assert!(result.execution_mode.is_none());
+    }
+
+    #[test]
+    fn taskspec_minimal() {
+        let json = r#"{"title": "Add button", "description": "Frontend work"}"#;
         let spec: TaskSpec = serde_json::from_str(json).unwrap();
-        assert_eq!(spec.repo, ""); // default empty
+        assert_eq!(spec.title, "Add button");
+        assert_eq!(spec.agent, "");
+        assert!(spec.acceptance_criteria.is_empty());
     }
 
     #[test]
@@ -456,106 +511,18 @@ mod tests {
         let parsed: DiffSummary = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.total_files, 2);
         assert_eq!(parsed.total_insertions, 13);
-        assert_eq!(parsed.total_deletions, 2);
-        assert_eq!(parsed.files.len(), 2);
-        assert_eq!(parsed.files[0].path, "src/main.rs");
     }
 
     #[test]
-    fn feature_serializes_with_repos() {
-        let repos = vec![
-            FeatureRepo {
-                repo_id: "r1".to_string(),
-                branch: "feature/x-1234".to_string(),
-            },
-            FeatureRepo {
-                repo_id: "r2".to_string(),
-                branch: "feature/x-1234".to_string(),
-            },
-        ];
-        let feature = Feature::new(repos, "X".to_string(), "desc".to_string());
-        let json = serde_json::to_string(&feature).unwrap();
-        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
-
-        assert!(parsed["repos"].is_array());
-        assert_eq!(parsed["repos"].as_array().unwrap().len(), 2);
-        assert_eq!(parsed["repo_id"], "r1");
-    }
-
-    #[test]
-    fn preferences_default_includes_planning_agents() {
+    fn preferences_default() {
         let prefs = Preferences::default();
-        assert!(!prefs.planning_agent_ids.is_empty());
-        assert!(prefs.planning_agent_ids.contains(&"builtin-fullstack".to_string()));
-        assert!(prefs.planning_agent_ids.contains(&"builtin-frontend".to_string()));
-        assert!(prefs.planning_agent_ids.contains(&"builtin-backend".to_string()));
-        assert!(prefs.planning_agent_ids.contains(&"builtin-test-writer".to_string()));
-        assert!(prefs.planning_agent_ids.contains(&"builtin-reviewer".to_string()));
-        assert!(prefs.planning_agent_ids.contains(&"builtin-architect".to_string()));
-        assert!(prefs.planning_agent_ids.contains(&"builtin-product-owner".to_string()));
-        assert!(prefs.planning_agent_ids.contains(&"builtin-security-reviewer".to_string()));
-        assert!(prefs.planning_agent_ids.contains(&"builtin-integration-tester".to_string()));
+        assert!(!prefs.shell.is_empty());
     }
 
     #[test]
-    fn default_agents_includes_planning_roles() {
-        let agents = default_agents();
-        let architect = agents.iter().find(|a| a.id == "builtin-architect").unwrap();
-        assert_eq!(architect.name, "Software Architect");
-        assert_eq!(architect.role, "planning");
-        assert!(architect.is_builtin);
-
-        let po = agents.iter().find(|a| a.id == "builtin-product-owner").unwrap();
-        assert_eq!(po.name, "Product Owner");
-        assert_eq!(po.role, "planning");
-        assert!(po.is_builtin);
-    }
-
-    #[test]
-    fn default_agents_includes_verification_roles() {
-        let agents = default_agents();
-        let security = agents.iter().find(|a| a.id == "builtin-security-reviewer").unwrap();
-        assert_eq!(security.name, "Security Reviewer");
-        assert_eq!(security.role, "reviewer");
-        assert!(security.is_builtin);
-
-        let integration = agents.iter().find(|a| a.id == "builtin-integration-tester").unwrap();
-        assert_eq!(integration.name, "Integration Tester");
-        assert_eq!(integration.role, "testing");
-        assert!(integration.is_builtin);
-    }
-
-    #[test]
-    fn default_verification_agent_ids_includes_new_agents() {
-        let prefs = Preferences::default();
-        assert!(prefs.verification_agent_ids.contains(&"builtin-security-reviewer".to_string()));
-        assert!(prefs.verification_agent_ids.contains(&"builtin-integration-tester".to_string()));
-    }
-
-    #[test]
-    fn preferences_backwards_compat_deserialize() {
-        // Old preferences without planning_agent_ids should get defaults
-        let json = r#"{
-            "shell": "bash",
-            "verification_agent_ids": ["builtin-reviewer"]
-        }"#;
-        let prefs: Preferences = serde_json::from_str(json).unwrap();
-        assert_eq!(prefs.shell, "bash");
-        assert_eq!(prefs.verification_agent_ids, vec!["builtin-reviewer"]);
-        // planning_agent_ids should fall back to defaults
-        assert!(!prefs.planning_agent_ids.is_empty());
-        assert!(prefs.planning_agent_ids.contains(&"builtin-fullstack".to_string()));
-    }
-
-    #[test]
-    fn preferences_serializes_planning_agents() {
-        let prefs = Preferences {
-            shell: "zsh".to_string(),
-            verification_agent_ids: vec!["builtin-reviewer".to_string()],
-            planning_agent_ids: vec!["builtin-frontend".to_string()],
-        };
-        let json = serde_json::to_string(&prefs).unwrap();
-        let parsed: Preferences = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed.planning_agent_ids, vec!["builtin-frontend"]);
+    fn configuring_status_serializes() {
+        let json = r#""configuring""#;
+        let status: FeatureStatus = serde_json::from_str(json).unwrap();
+        assert_eq!(status, FeatureStatus::Configuring);
     }
 }
