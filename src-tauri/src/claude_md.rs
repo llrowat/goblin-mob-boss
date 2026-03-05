@@ -1,16 +1,11 @@
 use std::fs;
 use std::path::Path;
 
-const GMB_SECTION_START: &str = "\n<!-- GMB:TASK-CONTEXT:START -->\n";
-const GMB_SECTION_END: &str = "\n<!-- GMB:TASK-CONTEXT:END -->\n";
-
-/// Add task context to the worktree's CLAUDE.md.
+/// Write task context to `.gmb/CLAUDE.md`.
 ///
-/// If a CLAUDE.md already exists (inherited from the repo), we append
-/// our task section using HTML comment delimiters so it's clearly
-/// separated and can be cleaned up later.
-///
-/// If no CLAUDE.md exists, we create one with just the task context.
+/// This file lives inside the `.gmb/` directory — we never touch the
+/// repo's own CLAUDE.md. The prompt passed to Claude Code tells it
+/// to read this file for context.
 pub fn generate_claude_md(
     worktree_path: &str,
     title: &str,
@@ -38,9 +33,8 @@ pub fn generate_claude_md(
             .join("\n")
     };
 
-    let task_section = format!(
-        r#"
-# Current Task: {title}
+    let content = format!(
+        r#"# Current Task: {title}
 
 {description}
 
@@ -74,35 +68,7 @@ Commit your changes here. Do not modify files outside this worktree.
         validators_text = validators_text,
     );
 
-    let claude_md_path = Path::new(worktree_path).join("CLAUDE.md");
-    let delimited_section = format!("{}{}{}", GMB_SECTION_START, task_section, GMB_SECTION_END);
-
-    if claude_md_path.exists() {
-        // Existing CLAUDE.md — read it, strip any old GMB section, append new one
-        let existing = fs::read_to_string(&claude_md_path)
-            .map_err(|e| format!("Failed to read existing CLAUDE.md: {}", e))?;
-
-        let cleaned = strip_gmb_section(&existing);
-        let updated = format!("{}{}", cleaned.trim_end(), delimited_section);
-
-        fs::write(&claude_md_path, updated)
-            .map_err(|e| format!("Failed to update CLAUDE.md: {}", e))
-    } else {
-        // No existing CLAUDE.md — create with just the task context
-        fs::write(&claude_md_path, delimited_section)
-            .map_err(|e| format!("Failed to write CLAUDE.md: {}", e))
-    }
-}
-
-/// Remove any existing GMB task section from CLAUDE.md content.
-fn strip_gmb_section(content: &str) -> String {
-    if let Some(start_idx) = content.find(GMB_SECTION_START) {
-        if let Some(end_marker_idx) = content.find(GMB_SECTION_END) {
-            let end_idx = end_marker_idx + GMB_SECTION_END.len();
-            let mut result = content[..start_idx].to_string();
-            result.push_str(&content[end_idx..]);
-            return result;
-        }
-    }
-    content.to_string()
+    let gmb_claude_md = Path::new(worktree_path).join(".gmb").join("CLAUDE.md");
+    fs::write(&gmb_claude_md, content)
+        .map_err(|e| format!("Failed to write .gmb/CLAUDE.md: {}", e))
 }

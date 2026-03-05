@@ -16,9 +16,13 @@ pub fn generate_prompts(
         .collect::<Vec<_>>()
         .join("\n");
 
+    let context_preamble = "First, read `.gmb/CLAUDE.md` for full task context, acceptance criteria, and validators.";
+
     // Plan prompt
     let plan = format!(
         r#"# Task: {}
+
+{}
 
 ## Description
 {}
@@ -33,7 +37,7 @@ pub fn generate_prompts(
 4. Explain your approach step by step.
 5. Do NOT implement yet — only plan.
 "#,
-        title, description, criteria_text
+        title, context_preamble, description, criteria_text
     );
     fs::write(prompts_dir.join("plan.md"), plan)
         .map_err(|e| format!("Failed to write plan.md: {}", e))?;
@@ -41,6 +45,8 @@ pub fn generate_prompts(
     // Code prompt
     let code = format!(
         r#"# Task: {}
+
+{}
 
 ## Description
 {}
@@ -55,7 +61,7 @@ pub fn generate_prompts(
 4. Follow existing code style and patterns.
 5. Summarize what you changed.
 "#,
-        title, description, criteria_text
+        title, context_preamble, description, criteria_text
     );
     fs::write(prompts_dir.join("code.md"), code)
         .map_err(|e| format!("Failed to write code.md: {}", e))?;
@@ -63,6 +69,8 @@ pub fn generate_prompts(
     // Verify prompt
     let verify = format!(
         r#"# Task: {}
+
+{}
 
 ## Verification Failed
 
@@ -77,7 +85,7 @@ The validators reported errors. Please review the failure output below and fix t
 3. Keep changes minimal — only fix what is broken.
 4. Summarize what you fixed.
 "#,
-        title, criteria_text
+        title, context_preamble, criteria_text
     );
     fs::write(prompts_dir.join("verify.md"), verify)
         .map_err(|e| format!("Failed to write verify.md: {}", e))?;
