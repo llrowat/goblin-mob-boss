@@ -23,7 +23,11 @@ fn run_git(repo_path: &str, args: &[&str]) -> GitResult<String> {
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        Err(GitError(format!("git {} failed: {}", args.join(" "), stderr)))
+        Err(GitError(format!(
+            "git {} failed: {}",
+            args.join(" "),
+            stderr
+        )))
     }
 }
 
@@ -77,9 +81,12 @@ pub fn is_git_repo(path: &str) -> bool {
 
 pub fn has_commits_beyond_base(worktree_path: &str, base_branch: &str) -> bool {
     // Check if there are commits on HEAD that aren't in the base branch
-    run_git(worktree_path, &["log", &format!("{}..HEAD", base_branch), "--oneline"])
-        .map(|output| !output.is_empty())
-        .unwrap_or(false)
+    run_git(
+        worktree_path,
+        &["log", &format!("{}..HEAD", base_branch), "--oneline"],
+    )
+    .map(|output| !output.is_empty())
+    .unwrap_or(false)
 }
 
 pub fn get_default_branch(repo_path: &str) -> GitResult<String> {

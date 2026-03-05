@@ -2,7 +2,7 @@
 
 ## Project Structure
 
-This is a Tauri v2 + React (TypeScript) desktop application with a Rust backend. The app provides structured AI-assisted development workflows — task creation, phase pipelines, verification, and Claude Code integration.
+This is a Tauri v2 + React (TypeScript) desktop application with a Rust backend. The app provides agent-based AI development workflows — ideation, task creation, parallel agent execution, and status tracking.
 
 ```
 goblin-mob-boss/
@@ -11,24 +11,23 @@ goblin-mob-boss/
 │   │   ├── lib.rs              # App entry, state management
 │   │   ├── main.rs             # Binary entry
 │   │   ├── commands.rs         # Tauri IPC command handlers
-│   │   ├── models.rs           # Data models (Task, Repository, Preferences, etc.)
-│   │   ├── store.rs            # JSON file-based persistence (repos, tasks, preferences)
-│   │   ├── context.rs          # Task context generation
-│   │   ├── claude_md.rs        # CLAUDE.md file management
-│   │   ├── git.rs              # Git operations
-│   │   ├── prompts.rs          # Prompt templates
-│   │   └── validators.rs       # Input validation
+│   │   ├── models.rs           # Data models (Ideation, Task, Repository, Preferences)
+│   │   ├── store.rs            # JSON file-based persistence (repos, ideations, tasks, preferences)
+│   │   ├── context.rs          # Repo map and related files generation
+│   │   ├── claude_md.rs        # CLAUDE.md file management for worktrees
+│   │   ├── git.rs              # Git operations (worktrees, branches)
+│   │   ├── prompts.rs          # Ideation and agent prompt templates
+│   │   └── validators.rs       # Validator execution
 │   └── tauri.conf.json
 ├── frontend/           # React frontend
 │   ├── components/     # Shared UI components
 │   │   ├── AddRepoModal        # Repository addition dialog (with folder picker)
-│   │   ├── PhasePipeline       # Task phase visualization
 │   │   └── StatusBadge         # Task status indicator
 │   ├── pages/          # Page components
-│   │   ├── HomePage            # New task creation
-│   │   ├── ReposPage           # Repository management
-│   │   ├── TaskListPage        # Task list view
-│   │   ├── TaskDetailPage      # Task detail with phases and Claude Code launch
+│   │   ├── HomePage            # Ideation launcher (describe what to build)
+│   │   ├── IdeationPage        # Claude Code launch + task discovery
+│   │   ├── TaskBoardPage       # Agent dashboard (task cards, status, actions)
+│   │   ├── ReposPage           # Repository management (validators, max agents)
 │   │   └── SettingsPage        # App preferences (shell selection)
 │   ├── hooks/          # React hooks
 │   │   └── useTauri            # Tauri IPC wrapper

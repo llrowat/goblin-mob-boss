@@ -1,12 +1,8 @@
 use std::fs;
 use std::path::Path;
 
-/// Write task context to `.gmb/CLAUDE.md`.
-///
-/// This file lives inside the `.gmb/` directory — we never touch the
-/// repo's own CLAUDE.md. The prompt passed to Claude Code tells it
-/// to read this file for context.
-pub fn generate_claude_md(
+/// Write a CLAUDE.md into a task worktree so Claude Code picks it up automatically.
+pub fn generate_task_claude_md(
     worktree_path: &str,
     title: &str,
     description: &str,
@@ -24,7 +20,7 @@ pub fn generate_claude_md(
     };
 
     let validators_text = if validators.is_empty() {
-        "No validators configured. Use your best judgement.".to_string()
+        "No validators configured.".to_string()
     } else {
         validators
             .iter()
@@ -44,23 +40,12 @@ pub fn generate_claude_md(
 
 ## Validators
 
-These commands must pass before the task is considered done:
-
 {validators_text}
 
 ## Working Directory
 
 This is a git worktree managed by Goblin Mob Boss.
 Commit your changes here. Do not modify files outside this worktree.
-
-## Instructions
-
-1. Read the task description and acceptance criteria carefully.
-2. Explore the codebase as needed to understand the relevant code.
-3. Implement the change with minimal, focused edits.
-4. Follow existing code style and patterns.
-5. Ensure all validators pass before considering the task done.
-6. Commit your changes with a clear message describing what you did.
 "#,
         title = title,
         description = description,
@@ -68,7 +53,9 @@ Commit your changes here. Do not modify files outside this worktree.
         validators_text = validators_text,
     );
 
-    let gmb_claude_md = Path::new(worktree_path).join(".gmb").join("CLAUDE.md");
-    fs::write(&gmb_claude_md, content)
+    // Write to .gmb/CLAUDE.md
+    let gmb_dir = Path::new(worktree_path).join(".gmb");
+    let _ = fs::create_dir_all(&gmb_dir);
+    fs::write(gmb_dir.join("CLAUDE.md"), content)
         .map_err(|e| format!("Failed to write .gmb/CLAUDE.md: {}", e))
 }

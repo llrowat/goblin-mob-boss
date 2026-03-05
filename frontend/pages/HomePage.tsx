@@ -8,7 +8,7 @@ export function HomePage() {
   const navigate = useNavigate();
   const [repos, setRepos] = useState<Repository[]>([]);
   const [selectedRepoId, setSelectedRepoId] = useState("");
-  const [taskInput, setTaskInput] = useState("");
+  const [description, setDescription] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -21,17 +21,16 @@ export function HomePage() {
     });
   }, []);
 
-  const handleStart = async () => {
-    if (!selectedRepoId || !taskInput.trim()) return;
+  const handleStartIdeation = async () => {
+    if (!selectedRepoId || !description.trim()) return;
     setLoading(true);
     setError("");
     try {
-      const task = await tauri.createTask({
-        repoId: selectedRepoId,
-        title: taskInput.trim(),
-        description: taskInput.trim(),
-      });
-      navigate(`/task/${task.task_id}`);
+      const ideation = await tauri.startIdeation(
+        selectedRepoId,
+        description.trim()
+      );
+      navigate(`/ideation/${ideation.id}`);
     } catch (e) {
       setError(String(e));
     } finally {
@@ -43,7 +42,7 @@ export function HomePage() {
     return (
       <div className="empty-state">
         <h3>No repositories yet</h3>
-        <p>Add a repository to get started with your first task.</p>
+        <p>Add a repository to get started.</p>
         <button
           className="btn btn-primary btn-lg"
           onClick={() => navigate("/repos")}
@@ -57,23 +56,16 @@ export function HomePage() {
   return (
     <div>
       <div className="page-header">
-        <h2>New Task</h2>
-        <p>Describe what you want to build or fix.</p>
+        <h2>Start Building</h2>
+        <p>
+          Describe what you want to build. Claude will analyze your codebase,
+          plan the work, and break it into tasks that agents can execute in
+          parallel.
+        </p>
       </div>
 
       {error && (
-        <div
-          style={{
-            color: "var(--danger)",
-            fontSize: 13,
-            marginBottom: 12,
-            padding: "8px 12px",
-            background: "rgba(196,101,74,0.1)",
-            borderRadius: 4,
-          }}
-        >
-          {error}
-        </div>
+        <div className="error-banner">{error}</div>
       )}
 
       <div className="panel">
@@ -93,26 +85,32 @@ export function HomePage() {
         </div>
 
         <div className="form-group">
-          <label className="form-label">What do you want to build or fix?</label>
+          <label className="form-label">
+            What do you want to build?
+          </label>
           <textarea
             className="form-textarea"
-            value={taskInput}
-            onChange={(e) => setTaskInput(e.target.value)}
-            placeholder="Fix login redirect loop when session expires"
-            style={{ minHeight: 100 }}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Add user authentication with OAuth2, including login page, callback handler, and session management..."
+            style={{ minHeight: 120 }}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && e.metaKey) handleStart();
+              if (e.key === "Enter" && e.metaKey) handleStartIdeation();
             }}
           />
+          <div className="form-help">
+            Be specific about what you want. Claude will create a plan and break
+            it into parallelizable tasks.
+          </div>
         </div>
 
         <button
           className="btn btn-primary btn-lg"
-          onClick={handleStart}
-          disabled={loading || !taskInput.trim()}
+          onClick={handleStartIdeation}
+          disabled={loading || !description.trim()}
           style={{ width: "100%" }}
         >
-          {loading ? "Gathering context..." : "Start"}
+          {loading ? "Setting up..." : "Start Ideation"}
         </button>
       </div>
     </div>

@@ -1,94 +1,106 @@
-use std::fs;
-use std::path::Path;
+/// Generate the ideation prompt that tells Claude to analyze the codebase
+/// and produce structured task specs.
+pub fn ideation_prompt(description: &str, repo_map: &str) -> String {
+    format!(
+        r#"# Ideation: Plan and Create Tasks
 
-pub fn generate_prompts(
-    worktree_path: &str,
+## What the user wants
+
+{description}
+
+## Repository Overview
+
+{repo_map}
+
+## Your Job
+
+Analyze this codebase and break the user's request into concrete, parallelizable tasks.
+
+**Output format:** Write each task as a separate JSON file in `.gmb/tasks/`. Each file should be named `01.json`, `02.json`, etc. and contain:
+
+```json
+{{
+  "title": "Short task title",
+  "description": "Detailed description of what to implement",
+  "acceptance_criteria": [
+    "Criterion 1",
+    "Criterion 2"
+  ],
+  "dependencies": []
+}}
+```
+
+**Rules:**
+1. Each task should be independently workable by a separate agent in its own worktree.
+2. Use the `dependencies` array to list task numbers (e.g., `["01"]`) that must complete before this task can start.
+3. Keep tasks focused — one concern per task.
+4. Include clear acceptance criteria so an agent knows when it's done.
+5. Create the `.gmb/tasks/` directory first, then write each task file.
+6. After writing all task files, provide a brief summary of the plan.
+
+**Important:** Do NOT implement any code. Only create the task files.
+"#,
+        description = description,
+        repo_map = repo_map,
+    )
+}
+
+/// Generate the agent prompt for a specific task.
+pub fn agent_prompt(
     title: &str,
     description: &str,
     acceptance_criteria: &[String],
-) -> Result<(), String> {
-    let prompts_dir = Path::new(worktree_path).join(".gmb").join("prompts");
-    fs::create_dir_all(&prompts_dir).map_err(|e| format!("Failed to create prompts dir: {}", e))?;
+    validators: &[String],
+) -> String {
+    let criteria_text = if acceptance_criteria.is_empty() {
+        "- Complete the task as described above".to_string()
+    } else {
+        acceptance_criteria
+            .iter()
+            .map(|c| format!("- {}", c))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
 
-    let criteria_text = acceptance_criteria
-        .iter()
-        .map(|c| format!("- {}", c))
-        .collect::<Vec<_>>()
-        .join("\n");
+    let validators_text = if validators.is_empty() {
+        "No validators configured.".to_string()
+    } else {
+        validators
+            .iter()
+            .map(|v| format!("- `{}`", v))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
 
-    let context_preamble = "First, read `.gmb/CLAUDE.md` for full task context, acceptance criteria, and validators.";
-
-    // Plan prompt
-    let plan = format!(
-        r#"# Task: {}
-
-{}
-
-## Description
-{}
-
-## Acceptance Criteria
-{}
-
-## Instructions
-1. Read the context files in `.gmb/context/` to understand the repository.
-2. Propose an implementation plan.
-3. List the files you will modify or create.
-4. Explain your approach step by step.
-5. Do NOT implement yet — only plan.
-"#,
-        title, context_preamble, description, criteria_text
-    );
-    fs::write(prompts_dir.join("plan.md"), plan)
-        .map_err(|e| format!("Failed to write plan.md: {}", e))?;
-
-    // Code prompt
-    let code = format!(
-        r#"# Task: {}
-
-{}
+    format!(
+        r#"# Task: {title}
 
 ## Description
-{}
+
+{description}
 
 ## Acceptance Criteria
-{}
+
+{criteria_text}
+
+## Validators
+
+These commands must pass before the task is done:
+
+{validators_text}
 
 ## Instructions
-1. Read the context files in `.gmb/context/` and the plan if available.
-2. Implement the change.
-3. Prefer minimal edits.
-4. Follow existing code style and patterns.
-5. Summarize what you changed.
+
+1. Read and understand the relevant parts of the codebase.
+2. Implement the change with minimal, focused edits.
+3. Follow existing code style and patterns.
+4. Run the validators to confirm everything passes.
+5. Commit your changes with a clear message.
+6. Keep changes scoped to this task only.
 "#,
-        title, context_preamble, description, criteria_text
-    );
-    fs::write(prompts_dir.join("code.md"), code)
-        .map_err(|e| format!("Failed to write code.md: {}", e))?;
-
-    // Verify prompt
-    let verify = format!(
-        r#"# Task: {}
-
-{}
-
-## Verification Failed
-
-The validators reported errors. Please review the failure output below and fix the issues.
-
-## Acceptance Criteria
-{}
-
-## Instructions
-1. Read the verification results in `.gmb/results/verify/`.
-2. Identify and fix the failing tests or lint errors.
-3. Keep changes minimal — only fix what is broken.
-4. Summarize what you fixed.
-"#,
-        title, context_preamble, criteria_text
-    );
-    fs::write(prompts_dir.join("verify.md"), verify)
-        .map_err(|e| format!("Failed to write verify.md: {}", e))?;
-
-    Ok(())
+        title = title,
+        description = description,
+        criteria_text = criteria_text,
+        validators_text = validators_text,
+    )
 }

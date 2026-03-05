@@ -1,10 +1,12 @@
+use crate::claude_md::generate_task_claude_md;
 use crate::context::generate_context_pack;
 use crate::git;
 use crate::models::*;
-use crate::prompts::generate_prompts;
+use crate::prompts;
 use crate::store::AppState;
 use crate::validators::run_validators;
 use chrono::Utc;
+use std::path::Path;
 use tauri::State;
 
 // ── Repository Commands ──
@@ -24,8 +26,7 @@ pub fn add_repository(
     validators: Vec<String>,
     pr_command: Option<String>,
 ) -> Result<Repository, String> {
-    // Validate path exists and is a git repo
-    if !std::path::Path::new(&path).exists() {
+    if !Path::new(&path).exists() {
         return Err("Path does not exist".to_string());
     }
     if !git::is_git_repo(&path) {
@@ -49,6 +50,7 @@ pub fn update_repository(
     base_branch: String,
     validators: Vec<String>,
     pr_command: Option<String>,
+    max_parallel_agents: Option<u32>,
 ) -> Result<Repository, String> {
     let mut repos = state.repositories.lock().unwrap();
     let repo = repos.get_mut(&id).ok_or("Repository not found")?;
@@ -56,6 +58,9 @@ pub fn update_repository(
     repo.base_branch = base_branch;
     repo.validators = validators;
     repo.pr_command = pr_command;
+    if let Some(max) = max_parallel_agents {
+        repo.max_parallel_agents = max;
+    }
     let updated = repo.clone();
     drop(repos);
     state.save_repos();
@@ -73,14 +78,14 @@ pub fn remove_repository(state: State<AppState>, id: String) -> Result<(), Strin
 
 #[tauri::command]
 pub fn detect_repo_info(path: String) -> Result<serde_json::Value, String> {
-    if !std::path::Path::new(&path).exists() {
+    if !Path::new(&path).exists() {
         return Err("Path does not exist".to_string());
     }
     if !git::is_git_repo(&path) {
         return Err("Path is not a git repository".to_string());
     }
     let base_branch = git::get_default_branch(&path).unwrap_or_else(|_| "main".to_string());
-    let name = std::path::Path::new(&path)
+    let name = Path::new(&path)
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| "unknown".to_string());
@@ -91,93 +96,278 @@ pub fn detect_repo_info(path: String) -> Result<serde_json::Value, String> {
     }))
 }
 
-// ── Task Commands ──
+// ── Ideation Commands ──
 
 #[tauri::command]
-pub fn create_task(
+pub fn start_ideation(
     state: State<AppState>,
     repo_id: String,
-    title: String,
     description: String,
-) -> Result<Task, String> {
+) -> Result<Ideation, String> {
     let repos = state.repositories.lock().unwrap();
     let repo = repos.get(&repo_id).ok_or("Repository not found")?.clone();
     drop(repos);
 
-    // Generate branch name
-    let task_slug = slug::slugify(&title);
-    let short_id = &uuid::Uuid::new_v4().to_string()[..4];
-    let branch = format!("gmb/{}-{}", task_slug, short_id);
+    let ideation = Ideation::new(repo_id.clone(), description.clone());
 
-    // Worktree path
-    let worktree_path = format!(
-        "{}/.gmb/worktrees/{}-{}",
-        repo.path, task_slug, short_id
-    );
+    // Create .gmb/tasks directory in the repo for this ideation
+    let tasks_dir = Path::new(&repo.path)
+        .join(".gmb")
+        .join("ideations")
+        .join(&ideation.id)
+        .join("tasks");
+    std::fs::create_dir_all(&tasks_dir)
+        .map_err(|e| format!("Failed to create tasks dir: {}", e))?;
 
-    // Create worktree
-    git::create_worktree(&repo.path, &branch, &worktree_path, &repo.base_branch)
-        .map_err(|e| e.to_string())?;
+    // Generate repo map for context
+    let repo_map = generate_context_pack_string(&repo.path);
 
-    // Create .gmb directory in worktree
-    let gmb_dir = format!("{}/.gmb", worktree_path);
-    std::fs::create_dir_all(&gmb_dir)
-        .map_err(|e| format!("Failed to create .gmb dir: {}", e))?;
+    // Generate the ideation prompt
+    let prompt = prompts::ideation_prompt(&description, &repo_map);
+
+    // Write prompt to file so the user can see it
+    let ideation_dir = Path::new(&repo.path)
+        .join(".gmb")
+        .join("ideations")
+        .join(&ideation.id);
+    std::fs::write(ideation_dir.join("prompt.md"), &prompt)
+        .map_err(|e| format!("Failed to write prompt: {}", e))?;
+
+    // Store ideation
+    let mut ideations = state.ideations.lock().unwrap();
+    ideations.insert(ideation.id.clone(), ideation.clone());
+    drop(ideations);
+    state.save_ideations();
+
+    Ok(ideation)
+}
+
+#[tauri::command]
+pub fn get_ideation_prompt(state: State<AppState>, ideation_id: String) -> Result<String, String> {
+    let ideations = state.ideations.lock().unwrap();
+    let ideation = ideations
+        .get(&ideation_id)
+        .ok_or("Ideation not found")?
+        .clone();
+    drop(ideations);
+
+    let repos = state.repositories.lock().unwrap();
+    let repo = repos
+        .get(&ideation.repo_id)
+        .ok_or("Repository not found")?
+        .clone();
+    drop(repos);
+
+    let prompt_path = Path::new(&repo.path)
+        .join(".gmb")
+        .join("ideations")
+        .join(&ideation.id)
+        .join("prompt.md");
+
+    std::fs::read_to_string(&prompt_path).map_err(|e| format!("Failed to read prompt: {}", e))
+}
+
+#[tauri::command]
+pub fn launch_ideation(state: State<AppState>, ideation_id: String) -> Result<(), String> {
+    let ideations = state.ideations.lock().unwrap();
+    let ideation = ideations
+        .get(&ideation_id)
+        .ok_or("Ideation not found")?
+        .clone();
+    drop(ideations);
+
+    let repos = state.repositories.lock().unwrap();
+    let repo = repos
+        .get(&ideation.repo_id)
+        .ok_or("Repository not found")?
+        .clone();
+    drop(repos);
+
+    let prefs = state.preferences.lock().unwrap().clone();
+
+    let prompt_path = Path::new(&repo.path)
+        .join(".gmb")
+        .join("ideations")
+        .join(&ideation.id)
+        .join("prompt.md");
+
+    let prompt_content = std::fs::read_to_string(&prompt_path)
+        .map_err(|e| format!("Failed to read prompt: {}", e))?;
+
+    let escaped = prompt_content.replace('\'', "'\\''");
+    launch_terminal(&prefs.shell, &repo.path, &escaped)
+}
+
+#[tauri::command]
+pub fn get_ideation_terminal_command(
+    state: State<AppState>,
+    ideation_id: String,
+) -> Result<String, String> {
+    let ideations = state.ideations.lock().unwrap();
+    let ideation = ideations
+        .get(&ideation_id)
+        .ok_or("Ideation not found")?
+        .clone();
+    drop(ideations);
+
+    let repos = state.repositories.lock().unwrap();
+    let repo = repos
+        .get(&ideation.repo_id)
+        .ok_or("Repository not found")?
+        .clone();
+    drop(repos);
+
+    let prompt_path = Path::new(&repo.path)
+        .join(".gmb")
+        .join("ideations")
+        .join(&ideation.id)
+        .join("prompt.md");
+
+    Ok(format!(
+        "cd {} && claude \"$(cat {})\"",
+        repo.path,
+        prompt_path.display()
+    ))
+}
+
+#[tauri::command]
+pub fn poll_ideation_tasks(
+    state: State<AppState>,
+    ideation_id: String,
+) -> Result<Vec<TaskSpec>, String> {
+    let ideations = state.ideations.lock().unwrap();
+    let ideation = ideations
+        .get(&ideation_id)
+        .ok_or("Ideation not found")?
+        .clone();
+    drop(ideations);
+
+    let repos = state.repositories.lock().unwrap();
+    let repo = repos
+        .get(&ideation.repo_id)
+        .ok_or("Repository not found")?
+        .clone();
+    drop(repos);
+
+    let tasks_dir = Path::new(&repo.path)
+        .join(".gmb")
+        .join("ideations")
+        .join(&ideation.id)
+        .join("tasks");
+
+    if !tasks_dir.exists() {
+        return Ok(vec![]);
+    }
+
+    let mut specs = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&tasks_dir) {
+        let mut files: Vec<_> = entries
+            .flatten()
+            .filter(|e| {
+                e.path()
+                    .extension()
+                    .map(|ext| ext == "json")
+                    .unwrap_or(false)
+            })
+            .collect();
+        files.sort_by_key(|e| e.file_name());
+
+        for entry in files {
+            if let Ok(data) = std::fs::read_to_string(entry.path()) {
+                if let Ok(spec) = serde_json::from_str::<TaskSpec>(&data) {
+                    specs.push(spec);
+                }
+            }
+        }
+    }
+
+    Ok(specs)
+}
+
+#[tauri::command]
+pub fn complete_ideation(state: State<AppState>, ideation_id: String) -> Result<Ideation, String> {
+    let mut ideations = state.ideations.lock().unwrap();
+    let ideation = ideations
+        .get_mut(&ideation_id)
+        .ok_or("Ideation not found")?;
+    ideation.status = IdeationStatus::Completed;
+    let updated = ideation.clone();
+    drop(ideations);
+    state.save_ideations();
+    Ok(updated)
+}
+
+#[tauri::command]
+pub fn list_ideations(state: State<AppState>, repo_id: String) -> Vec<Ideation> {
+    state.load_ideations();
+    let ideations = state.ideations.lock().unwrap();
+    ideations
+        .values()
+        .filter(|i| i.repo_id == repo_id)
+        .cloned()
+        .collect()
+}
+
+// ── Task Commands ──
+
+#[tauri::command]
+pub fn import_tasks(
+    state: State<AppState>,
+    ideation_id: String,
+    specs: Vec<TaskSpec>,
+) -> Result<Vec<Task>, String> {
+    let ideations = state.ideations.lock().unwrap();
+    let ideation = ideations
+        .get(&ideation_id)
+        .ok_or("Ideation not found")?
+        .clone();
+    drop(ideations);
+
+    let repos = state.repositories.lock().unwrap();
+    let repo = repos
+        .get(&ideation.repo_id)
+        .ok_or("Repository not found")?
+        .clone();
+    drop(repos);
 
     let now = Utc::now();
-    let task = Task {
-        schema: "gmb.task.v1".to_string(),
-        task_id: uuid::Uuid::new_v4().to_string(),
-        repo_id: repo_id.clone(),
-        title: title.clone(),
-        description: description.clone(),
-        phase: TaskPhase::Plan,
-        status: TaskStatus::Running,
-        base_branch: repo.base_branch.clone(),
-        branch: branch.clone(),
-        worktree_path: worktree_path.clone(),
-        acceptance_criteria: vec![],
-        created_at: now,
-        updated_at: now,
-    };
+    let mut created_tasks = Vec::new();
 
-    // Save task.json
-    save_task_file(&task)?;
+    for spec in specs {
+        let task_slug = slug::slugify(&spec.title);
+        let short_id = &uuid::Uuid::new_v4().to_string()[..4];
+        let branch = format!("gmb/{}-{}", task_slug, short_id);
+        let worktree_path = format!("{}/.gmb/worktrees/{}-{}", repo.path, task_slug, short_id);
 
-    // Initialize event log
-    let event = TaskEvent {
-        event_type: "task_created".to_string(),
-        timestamp: now,
-        data: serde_json::json!({"title": title, "branch": branch}),
-    };
-    append_event(&worktree_path, &event)?;
+        let task = Task {
+            task_id: uuid::Uuid::new_v4().to_string(),
+            ideation_id: ideation_id.clone(),
+            repo_id: repo.id.clone(),
+            title: spec.title,
+            description: spec.description,
+            acceptance_criteria: spec.acceptance_criteria,
+            dependencies: spec.dependencies,
+            status: TaskStatus::Pending,
+            branch,
+            worktree_path,
+            agent_pid: None,
+            created_at: now,
+            updated_at: now,
+        };
 
-    // Generate context pack
-    let keywords: Vec<&str> = title.split_whitespace().collect();
-    let _ = generate_context_pack(&worktree_path, &repo.path, &keywords);
+        let mut tasks = state.tasks.lock().unwrap();
+        tasks.insert(task.task_id.clone(), task.clone());
+        drop(tasks);
 
-    // Generate prompts
-    let _ = generate_prompts(&worktree_path, &title, &description, &task.acceptance_criteria);
+        created_tasks.push(task);
+    }
 
-    // Generate CLAUDE.md in worktree root for automatic Claude Code pickup
-    let _ = crate::claude_md::generate_claude_md(
-        &worktree_path,
-        &title,
-        &description,
-        &task.acceptance_criteria,
-        &repo.validators,
-    );
-
-    // Store in memory
-    let mut tasks = state.tasks.lock().unwrap();
-    tasks.insert(task.task_id.clone(), task.clone());
-
-    Ok(task)
+    state.save_tasks();
+    Ok(created_tasks)
 }
 
 #[tauri::command]
 pub fn list_tasks(state: State<AppState>, repo_id: String) -> Vec<Task> {
-    // Reload tasks from disk for this repo
     let repos = state.repositories.lock().unwrap();
     if let Some(repo) = repos.get(&repo_id) {
         state.load_tasks_for_repo(repo);
@@ -202,69 +392,150 @@ pub fn get_task(state: State<AppState>, task_id: String) -> Result<Task, String>
 }
 
 #[tauri::command]
-pub fn advance_phase(state: State<AppState>, task_id: String) -> Result<Task, String> {
+pub fn start_agent(state: State<AppState>, task_id: String) -> Result<Task, String> {
     let mut tasks = state.tasks.lock().unwrap();
     let task = tasks.get_mut(&task_id).ok_or("Task not found")?;
-
-    let old_phase = task.phase.clone();
-    task.phase = match task.phase {
-        TaskPhase::Plan => TaskPhase::Code,
-        TaskPhase::Code => TaskPhase::Verify,
-        TaskPhase::Verify => TaskPhase::Ready,
-        TaskPhase::Ready => return Err("Task is already in Ready phase".to_string()),
-    };
-    task.updated_at = Utc::now();
-
-    let updated = task.clone();
+    let mut task = task.clone();
     drop(tasks);
 
-    save_task_file(&updated)?;
-    append_event(
-        &updated.worktree_path,
-        &TaskEvent {
-            event_type: "phase_changed".to_string(),
-            timestamp: Utc::now(),
-            data: serde_json::json!({
-                "from": old_phase,
-                "to": updated.phase,
-            }),
-        },
-    )?;
+    let repos = state.repositories.lock().unwrap();
+    let repo = repos
+        .get(&task.repo_id)
+        .ok_or("Repository not found")?
+        .clone();
+    drop(repos);
 
-    // Update in-memory state
+    // Create worktree if it doesn't exist
+    if !Path::new(&task.worktree_path).exists() {
+        git::create_worktree(
+            &repo.path,
+            &task.branch,
+            &task.worktree_path,
+            &repo.base_branch,
+        )
+        .map_err(|e| e.to_string())?;
+
+        // Create .gmb directory in worktree
+        let gmb_dir = format!("{}/.gmb", task.worktree_path);
+        std::fs::create_dir_all(&gmb_dir)
+            .map_err(|e| format!("Failed to create .gmb dir: {}", e))?;
+    }
+
+    // Generate context
+    let keywords: Vec<&str> = task.title.split_whitespace().collect();
+    let _ = generate_context_pack(&task.worktree_path, &repo.path, &keywords);
+
+    // Generate CLAUDE.md for automatic pickup
+    let _ = generate_task_claude_md(
+        &task.worktree_path,
+        &task.title,
+        &task.description,
+        &task.acceptance_criteria,
+        &repo.validators,
+    );
+
+    // Generate agent prompt
+    let prompt = prompts::agent_prompt(
+        &task.title,
+        &task.description,
+        &task.acceptance_criteria,
+        &repo.validators,
+    );
+
+    // Write prompt to file
+    let prompts_dir = Path::new(&task.worktree_path).join(".gmb").join("prompts");
+    std::fs::create_dir_all(&prompts_dir)
+        .map_err(|e| format!("Failed to create prompts dir: {}", e))?;
+    std::fs::write(prompts_dir.join("agent.md"), &prompt)
+        .map_err(|e| format!("Failed to write agent prompt: {}", e))?;
+
+    // Update task status
+    task.status = TaskStatus::Running;
+    task.updated_at = Utc::now();
+
     let mut tasks = state.tasks.lock().unwrap();
-    tasks.insert(updated.task_id.clone(), updated.clone());
+    tasks.insert(task.task_id.clone(), task.clone());
+    drop(tasks);
+    state.save_tasks();
 
-    Ok(updated)
+    Ok(task)
 }
 
 #[tauri::command]
-pub fn set_task_phase(state: State<AppState>, task_id: String, phase: TaskPhase) -> Result<Task, String> {
+pub fn get_agent_terminal_command(
+    state: State<AppState>,
+    task_id: String,
+) -> Result<String, String> {
+    let tasks = state.tasks.lock().unwrap();
+    let task = tasks.get(&task_id).ok_or("Task not found")?;
+
+    let prompt_path = format!("{}/.gmb/prompts/agent.md", task.worktree_path);
+
+    Ok(format!(
+        "cd {} && claude \"$(cat {})\"",
+        task.worktree_path, prompt_path
+    ))
+}
+
+#[tauri::command]
+pub fn launch_agent(state: State<AppState>, task_id: String) -> Result<(), String> {
+    let tasks = state.tasks.lock().unwrap();
+    let task = tasks.get(&task_id).ok_or("Task not found")?.clone();
+    drop(tasks);
+
+    let prefs = state.preferences.lock().unwrap().clone();
+
+    let prompt_path = format!("{}/.gmb/prompts/agent.md", task.worktree_path);
+    let prompt_content = std::fs::read_to_string(&prompt_path)
+        .map_err(|e| format!("Failed to read prompt: {}", e))?;
+
+    let escaped = prompt_content.replace('\'', "'\\''");
+    launch_terminal(&prefs.shell, &task.worktree_path, &escaped)
+}
+
+#[tauri::command]
+pub fn poll_task_status(state: State<AppState>, task_id: String) -> Result<Task, String> {
     let mut tasks = state.tasks.lock().unwrap();
     let task = tasks.get_mut(&task_id).ok_or("Task not found")?;
 
-    let old_phase = task.phase.clone();
-    task.phase = phase;
-    task.updated_at = Utc::now();
+    // Only poll running tasks
+    if task.status != TaskStatus::Running {
+        return Ok(task.clone());
+    }
+
+    // Check if worktree exists (agent may not have started yet)
+    if !Path::new(&task.worktree_path).exists() {
+        return Ok(task.clone());
+    }
+
+    // Check for verify results
+    let verify_dir = Path::new(&task.worktree_path)
+        .join(".gmb")
+        .join("results")
+        .join("verify");
+    if verify_dir.exists() {
+        if let Ok(entries) = std::fs::read_dir(&verify_dir) {
+            let latest = entries
+                .flatten()
+                .filter(|e| e.path().is_dir())
+                .max_by_key(|e| e.file_name());
+            if let Some(dir) = latest {
+                let summary = dir.path().join("summary.json");
+                if let Ok(content) = std::fs::read_to_string(summary) {
+                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) {
+                        if v.get("all_passed").and_then(|v| v.as_bool()) == Some(true) {
+                            task.status = TaskStatus::Completed;
+                            task.updated_at = Utc::now();
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     let updated = task.clone();
     drop(tasks);
-
-    save_task_file(&updated)?;
-    append_event(
-        &updated.worktree_path,
-        &TaskEvent {
-            event_type: "phase_changed".to_string(),
-            timestamp: Utc::now(),
-            data: serde_json::json!({
-                "from": old_phase,
-                "to": updated.phase,
-            }),
-        },
-    )?;
-
-    let mut tasks = state.tasks.lock().unwrap();
-    tasks.insert(updated.task_id.clone(), updated.clone());
+    state.save_tasks();
 
     Ok(updated)
 }
@@ -281,36 +552,31 @@ pub fn update_task_status(
     task.updated_at = Utc::now();
     let updated = task.clone();
     drop(tasks);
-    save_task_file(&updated)?;
-
-    let mut tasks = state.tasks.lock().unwrap();
-    tasks.insert(updated.task_id.clone(), updated.clone());
-
+    state.save_tasks();
     Ok(updated)
 }
 
 // ── Verification Commands ──
 
 #[tauri::command]
-pub fn run_verification(
-    state: State<AppState>,
-    task_id: String,
-) -> Result<crate::models::VerifyResult, String> {
+pub fn run_verification(state: State<AppState>, task_id: String) -> Result<VerifyResult, String> {
     let tasks = state.tasks.lock().unwrap();
     let task = tasks.get(&task_id).ok_or("Task not found")?.clone();
     drop(tasks);
 
     let repos = state.repositories.lock().unwrap();
-    let repo = repos.get(&task.repo_id).ok_or("Repository not found")?.clone();
+    let repo = repos
+        .get(&task.repo_id)
+        .ok_or("Repository not found")?
+        .clone();
     drop(repos);
 
     if repo.validators.is_empty() {
         return Err("No validators configured for this repository".to_string());
     }
 
-    // Count existing attempts
     let results_dir = format!("{}/.gmb/results/verify", task.worktree_path);
-    let attempt = if std::path::Path::new(&results_dir).exists() {
+    let attempt = if Path::new(&results_dir).exists() {
         std::fs::read_dir(&results_dir)
             .map(|entries| entries.count() as u32 + 1)
             .unwrap_or(1)
@@ -320,175 +586,20 @@ pub fn run_verification(
 
     let result = run_validators(&task.worktree_path, &repo.validators, attempt)?;
 
-    // Log event
-    append_event(
-        &task.worktree_path,
-        &TaskEvent {
-            event_type: "validator_run".to_string(),
-            timestamp: Utc::now(),
-            data: serde_json::json!({
-                "attempt": attempt,
-                "all_passed": result.all_passed,
-            }),
-        },
-    )?;
-
-    // Update task phase based on result
+    // Update task status based on result
     let mut tasks = state.tasks.lock().unwrap();
     if let Some(t) = tasks.get_mut(&task_id) {
         if result.all_passed {
-            t.phase = TaskPhase::Ready;
             t.status = TaskStatus::Completed;
         } else {
-            t.phase = TaskPhase::Code;
-            t.status = TaskStatus::Running;
+            t.status = TaskStatus::Failed;
         }
         t.updated_at = Utc::now();
-        let updated = t.clone();
-        drop(tasks);
-        save_task_file(&updated)?;
-        let mut tasks = state.tasks.lock().unwrap();
-        tasks.insert(updated.task_id.clone(), updated);
     }
+    drop(tasks);
+    state.save_tasks();
 
     Ok(result)
-}
-
-// ── Prompt Commands ──
-
-#[tauri::command]
-pub fn get_prompt(task_id: String, state: State<AppState>) -> Result<String, String> {
-    let tasks = state.tasks.lock().unwrap();
-    let task = tasks.get(&task_id).ok_or("Task not found")?;
-
-    let phase_file = match task.phase {
-        TaskPhase::Plan => "plan.md",
-        TaskPhase::Code => "code.md",
-        TaskPhase::Verify => "verify.md",
-        TaskPhase::Ready => return Ok("Task is ready for PR!".to_string()),
-    };
-
-    let prompt_path = format!("{}/.gmb/prompts/{}", task.worktree_path, phase_file);
-    std::fs::read_to_string(&prompt_path)
-        .map_err(|e| format!("Failed to read prompt: {}", e))
-}
-
-#[tauri::command]
-pub fn get_terminal_command(task_id: String, state: State<AppState>) -> Result<String, String> {
-    let tasks = state.tasks.lock().unwrap();
-    let task = tasks.get(&task_id).ok_or("Task not found")?;
-
-    let phase_file = match task.phase {
-        TaskPhase::Plan => "plan.md",
-        TaskPhase::Code => "code.md",
-        TaskPhase::Verify => "verify.md",
-        TaskPhase::Ready => return Ok(format!("cd {}", task.worktree_path)),
-    };
-
-    // Launch claude interactively with the prompt pre-populated.
-    // CLAUDE.md in the worktree root provides background context automatically.
-    let prompt_path = format!("{}/.gmb/prompts/{}", task.worktree_path, phase_file);
-    Ok(format!(
-        "cd {} && claude \"$(cat {})\"",
-        task.worktree_path, prompt_path
-    ))
-}
-
-#[tauri::command]
-pub fn detect_phase(task_id: String, state: State<AppState>) -> Result<Task, String> {
-    let mut tasks = state.tasks.lock().unwrap();
-    let task = tasks.get_mut(&task_id).ok_or("Task not found")?;
-
-    let old_phase = task.phase.clone();
-
-    // Check worktree state to infer phase
-    let has_commits = crate::git::has_commits_beyond_base(
-        &task.worktree_path,
-        &task.base_branch,
-    );
-    let has_verify_results = std::path::Path::new(&task.worktree_path)
-        .join(".gmb/results/verify")
-        .exists();
-
-    let detected = if has_verify_results {
-        // Check latest verify result
-        let results_dir = format!("{}/.gmb/results/verify", task.worktree_path);
-        let latest_passed = std::fs::read_dir(&results_dir)
-            .ok()
-            .and_then(|entries| {
-                entries
-                    .filter_map(|e| e.ok())
-                    .filter(|e| e.path().is_dir())
-                    .max_by_key(|e| e.file_name())
-            })
-            .and_then(|dir| {
-                let summary = dir.path().join("summary.json");
-                std::fs::read_to_string(summary).ok()
-            })
-            .and_then(|content| serde_json::from_str::<serde_json::Value>(&content).ok())
-            .and_then(|v| v.get("all_passed")?.as_bool())
-            .unwrap_or(false);
-
-        if latest_passed {
-            TaskPhase::Ready
-        } else {
-            TaskPhase::Code
-        }
-    } else if has_commits {
-        TaskPhase::Code
-    } else {
-        TaskPhase::Plan
-    };
-
-    if detected != old_phase {
-        task.phase = detected;
-        task.updated_at = Utc::now();
-        let updated = task.clone();
-        drop(tasks);
-
-        save_task_file(&updated)?;
-        append_event(
-            &updated.worktree_path,
-            &TaskEvent {
-                event_type: "phase_auto_detected".to_string(),
-                timestamp: Utc::now(),
-                data: serde_json::json!({
-                    "from": old_phase,
-                    "to": updated.phase,
-                }),
-            },
-        )?;
-
-        let mut tasks = state.tasks.lock().unwrap();
-        tasks.insert(updated.task_id.clone(), updated.clone());
-        Ok(updated)
-    } else {
-        let current = task.clone();
-        Ok(current)
-    }
-}
-
-// ── Event Commands ──
-
-#[tauri::command]
-pub fn get_events(task_id: String, state: State<AppState>) -> Result<Vec<TaskEvent>, String> {
-    let tasks = state.tasks.lock().unwrap();
-    let task = tasks.get(&task_id).ok_or("Task not found")?;
-
-    let events_path = format!("{}/.gmb/events.jsonl", task.worktree_path);
-    if !std::path::Path::new(&events_path).exists() {
-        return Ok(vec![]);
-    }
-
-    let content =
-        std::fs::read_to_string(&events_path).map_err(|e| format!("Failed to read events: {}", e))?;
-
-    let events: Vec<TaskEvent> = content
-        .lines()
-        .filter_map(|line| serde_json::from_str(line).ok())
-        .collect();
-
-    Ok(events)
 }
 
 // ── Cleanup Commands ──
@@ -500,15 +611,22 @@ pub fn delete_task(state: State<AppState>, task_id: String) -> Result<(), String
     drop(tasks);
 
     let repos = state.repositories.lock().unwrap();
-    let repo = repos.get(&task.repo_id).ok_or("Repository not found")?.clone();
+    let repo = repos
+        .get(&task.repo_id)
+        .ok_or("Repository not found")?
+        .clone();
     drop(repos);
 
     // Remove worktree
-    let _ = git::remove_worktree(&repo.path, &task.worktree_path);
+    if Path::new(&task.worktree_path).exists() {
+        let _ = git::remove_worktree(&repo.path, &task.worktree_path);
+    }
 
-    // Remove from memory
+    // Remove from memory and save
     let mut tasks = state.tasks.lock().unwrap();
     tasks.remove(&task_id);
+    drop(tasks);
+    state.save_tasks();
 
     Ok(())
 }
@@ -516,12 +634,12 @@ pub fn delete_task(state: State<AppState>, task_id: String) -> Result<(), String
 // ── Preferences Commands ──
 
 #[tauri::command]
-pub fn get_preferences(state: State<AppState>) -> crate::models::Preferences {
+pub fn get_preferences(state: State<AppState>) -> Preferences {
     state.preferences.lock().unwrap().clone()
 }
 
 #[tauri::command]
-pub fn set_preferences(state: State<AppState>, shell: String) -> crate::models::Preferences {
+pub fn set_preferences(state: State<AppState>, shell: String) -> Preferences {
     let mut prefs = state.preferences.lock().unwrap();
     prefs.shell = shell;
     let updated = prefs.clone();
@@ -530,31 +648,54 @@ pub fn set_preferences(state: State<AppState>, shell: String) -> crate::models::
     updated
 }
 
-// ── Launch Commands ──
+// ── Helpers ──
 
-#[tauri::command]
-pub fn launch_claude(state: State<AppState>, task_id: String) -> Result<(), String> {
-    let tasks = state.tasks.lock().unwrap();
-    let task = tasks.get(&task_id).ok_or("Task not found")?.clone();
-    drop(tasks);
+fn generate_context_pack_string(repo_path: &str) -> String {
+    // Generate a simple repo map string for the ideation prompt
+    let mut map = String::new();
 
-    let prefs = state.preferences.lock().unwrap().clone();
+    // Detect languages
+    let indicators = vec![
+        ("package.json", "JavaScript/TypeScript (Node.js)"),
+        ("Cargo.toml", "Rust"),
+        ("go.mod", "Go"),
+        ("requirements.txt", "Python"),
+        ("pyproject.toml", "Python"),
+    ];
 
-    let phase_file = match task.phase {
-        TaskPhase::Plan => "plan.md",
-        TaskPhase::Code => "code.md",
-        TaskPhase::Verify => "verify.md",
-        TaskPhase::Ready => return Err("Task is in Ready phase — nothing to launch".to_string()),
-    };
+    map.push_str("**Languages:** ");
+    let langs: Vec<&str> = indicators
+        .iter()
+        .filter(|(file, _)| Path::new(repo_path).join(file).exists())
+        .map(|(_, lang)| *lang)
+        .collect();
+    map.push_str(&langs.join(", "));
+    map.push_str("\n\n**Structure:**\n");
 
-    let prompt_path = format!("{}/.gmb/prompts/{}", task.worktree_path, phase_file);
-    let prompt_content = std::fs::read_to_string(&prompt_path)
-        .map_err(|e| format!("Failed to read prompt: {}", e))?;
+    if let Ok(entries) = std::fs::read_dir(repo_path) {
+        let mut items: Vec<String> = entries
+            .flatten()
+            .filter_map(|e| {
+                let name = e.file_name().to_string_lossy().to_string();
+                if name.starts_with('.')
+                    || name == "node_modules"
+                    || name == "target"
+                    || name == "__pycache__"
+                {
+                    return None;
+                }
+                if e.path().is_dir() {
+                    Some(format!("- `{}/`", name))
+                } else {
+                    Some(format!("- `{}`", name))
+                }
+            })
+            .collect();
+        items.sort();
+        map.push_str(&items.join("\n"));
+    }
 
-    // Escape the prompt for shell embedding
-    let escaped_prompt = prompt_content.replace('\'', "'\\''");
-
-    launch_terminal(&prefs.shell, &task.worktree_path, &escaped_prompt)
+    map
 }
 
 fn launch_terminal(shell: &str, cwd: &str, prompt: &str) -> Result<(), String> {
@@ -563,66 +704,57 @@ fn launch_terminal(shell: &str, cwd: &str, prompt: &str) -> Result<(), String> {
     let result = if cfg!(target_os = "windows") {
         match shell {
             "powershell" => Command::new("cmd")
-                .args(["/c", "start", "powershell", "-NoExit", "-Command",
-                    &format!("cd '{}'; claude '{}'", cwd, prompt)])
+                .args([
+                    "/c",
+                    "start",
+                    "powershell",
+                    "-NoExit",
+                    "-Command",
+                    &format!("cd '{}'; claude '{}'", cwd, prompt),
+                ])
                 .spawn(),
             "cmd" => Command::new("cmd")
-                .args(["/c", "start", "cmd", "/k",
-                    &format!("cd /d \"{}\" && claude \"{}\"", cwd, prompt)])
-                .spawn(),
-            "wt" | "windows-terminal" => Command::new("cmd")
-                .args(["/c", "start", "wt", "-d", cwd, "cmd", "/k",
-                    &format!("claude \"{}\"", prompt)])
+                .args([
+                    "/c",
+                    "start",
+                    "cmd",
+                    "/k",
+                    &format!("cd /d \"{}\" && claude \"{}\"", cwd, prompt),
+                ])
                 .spawn(),
             _ => Command::new("cmd")
-                .args(["/c", "start", shell, "-NoExit", "-Command",
-                    &format!("cd '{}'; claude '{}'", cwd, prompt)])
+                .args([
+                    "/c",
+                    "start",
+                    shell,
+                    "-NoExit",
+                    "-Command",
+                    &format!("cd '{}'; claude '{}'", cwd, prompt),
+                ])
                 .spawn(),
         }
     } else if cfg!(target_os = "macos") {
-        // Use open -a Terminal with a temp script
         let script = format!("cd '{}' && claude '{}'\n", cwd, prompt);
         let tmp = format!("/tmp/gmb-launch-{}.sh", uuid::Uuid::new_v4());
         std::fs::write(&tmp, &script)
             .map_err(|e| format!("Failed to write launch script: {}", e))?;
         let _ = Command::new("chmod").args(["+x", &tmp]).output();
-        Command::new("open")
-            .args(["-a", "Terminal", &tmp])
-            .spawn()
+        Command::new("open").args(["-a", "Terminal", &tmp]).spawn()
     } else {
-        // Linux: try common terminal emulators
+        // Linux
         let terminal = match shell {
             "bash" | "zsh" | "fish" => "x-terminal-emulator",
             other => other,
         };
         Command::new(terminal)
-            .args(["-e", &format!("cd '{}' && claude '{}'; exec {}", cwd, prompt, shell)])
+            .args([
+                "-e",
+                &format!("cd '{}' && claude '{}'; exec {}", cwd, prompt, shell),
+            ])
             .spawn()
     };
 
     result
         .map(|_| ())
         .map_err(|e| format!("Failed to launch terminal: {}", e))
-}
-
-// ── Helpers ──
-
-fn save_task_file(task: &Task) -> Result<(), String> {
-    let task_path = format!("{}/.gmb/task.json", task.worktree_path);
-    let data =
-        serde_json::to_string_pretty(task).map_err(|e| format!("Failed to serialize task: {}", e))?;
-    std::fs::write(&task_path, data).map_err(|e| format!("Failed to write task.json: {}", e))
-}
-
-fn append_event(worktree_path: &str, event: &TaskEvent) -> Result<(), String> {
-    let events_path = format!("{}/.gmb/events.jsonl", worktree_path);
-    let line =
-        serde_json::to_string(event).map_err(|e| format!("Failed to serialize event: {}", e))?;
-    use std::io::Write;
-    let mut file = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&events_path)
-        .map_err(|e| format!("Failed to open events file: {}", e))?;
-    writeln!(file, "{}", line).map_err(|e| format!("Failed to write event: {}", e))
 }

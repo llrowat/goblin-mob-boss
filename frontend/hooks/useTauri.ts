@@ -1,11 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   Repository,
+  Ideation,
   Task,
+  TaskSpec,
   VerifyResult,
-  TaskEvent,
   RepoInfo,
-  TaskPhase,
   TaskStatus,
   Preferences,
 } from "../types";
@@ -36,6 +36,7 @@ export function useTauri() {
       baseBranch: string;
       validators: string[];
       prCommand: string | null;
+      maxParallelAgents?: number;
     }) =>
       invoke<Repository>("update_repository", {
         id: args.id,
@@ -43,6 +44,7 @@ export function useTauri() {
         baseBranch: args.baseBranch,
         validators: args.validators,
         prCommand: args.prCommand,
+        maxParallelAgents: args.maxParallelAgents,
       }),
 
     removeRepository: (id: string) =>
@@ -51,52 +53,55 @@ export function useTauri() {
     detectRepoInfo: (path: string) =>
       invoke<RepoInfo>("detect_repo_info", { path }),
 
+    // Ideation
+    startIdeation: (repoId: string, description: string) =>
+      invoke<Ideation>("start_ideation", { repoId, description }),
+
+    getIdeationPrompt: (ideationId: string) =>
+      invoke<string>("get_ideation_prompt", { ideationId }),
+
+    launchIdeation: (ideationId: string) =>
+      invoke<void>("launch_ideation", { ideationId }),
+
+    getIdeationTerminalCommand: (ideationId: string) =>
+      invoke<string>("get_ideation_terminal_command", { ideationId }),
+
+    pollIdeationTasks: (ideationId: string) =>
+      invoke<TaskSpec[]>("poll_ideation_tasks", { ideationId }),
+
+    completeIdeation: (ideationId: string) =>
+      invoke<Ideation>("complete_ideation", { ideationId }),
+
+    listIdeations: (repoId: string) =>
+      invoke<Ideation[]>("list_ideations", { repoId }),
+
     // Tasks
-    createTask: (args: {
-      repoId: string;
-      title: string;
-      description: string;
-    }) =>
-      invoke<Task>("create_task", {
-        repoId: args.repoId,
-        title: args.title,
-        description: args.description,
-      }),
+    importTasks: (ideationId: string, specs: TaskSpec[]) =>
+      invoke<Task[]>("import_tasks", { ideationId, specs }),
 
     listTasks: (repoId: string) =>
       invoke<Task[]>("list_tasks", { repoId }),
 
     getTask: (taskId: string) => invoke<Task>("get_task", { taskId }),
 
-    advancePhase: (taskId: string) =>
-      invoke<Task>("advance_phase", { taskId }),
+    startAgent: (taskId: string) =>
+      invoke<Task>("start_agent", { taskId }),
 
-    setTaskPhase: (taskId: string, phase: TaskPhase) =>
-      invoke<Task>("set_task_phase", { taskId, phase }),
+    getAgentTerminalCommand: (taskId: string) =>
+      invoke<string>("get_agent_terminal_command", { taskId }),
+
+    launchAgent: (taskId: string) =>
+      invoke<void>("launch_agent", { taskId }),
+
+    pollTaskStatus: (taskId: string) =>
+      invoke<Task>("poll_task_status", { taskId }),
 
     updateTaskStatus: (taskId: string, status: TaskStatus) =>
       invoke<Task>("update_task_status", { taskId, status }),
 
-    // Verification
     runVerification: (taskId: string) =>
       invoke<VerifyResult>("run_verification", { taskId }),
 
-    // Prompts
-    getPrompt: (taskId: string) =>
-      invoke<string>("get_prompt", { taskId }),
-
-    getTerminalCommand: (taskId: string) =>
-      invoke<string>("get_terminal_command", { taskId }),
-
-    // Events
-    getEvents: (taskId: string) =>
-      invoke<TaskEvent[]>("get_events", { taskId }),
-
-    // Phase detection
-    detectPhase: (taskId: string) =>
-      invoke<Task>("detect_phase", { taskId }),
-
-    // Cleanup
     deleteTask: (taskId: string) =>
       invoke<void>("delete_task", { taskId }),
 
@@ -105,9 +110,5 @@ export function useTauri() {
 
     setPreferences: (shell: string) =>
       invoke<Preferences>("set_preferences", { shell }),
-
-    // Launch
-    launchClaude: (taskId: string) =>
-      invoke<void>("launch_claude", { taskId }),
   };
 }

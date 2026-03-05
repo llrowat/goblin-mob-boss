@@ -5,26 +5,43 @@ export interface Repository {
   base_branch: string;
   validators: string[];
   pr_command: string | null;
+  max_parallel_agents: number;
   created_at: string;
 }
 
-export type TaskPhase = "plan" | "code" | "verify" | "ready";
-export type TaskStatus = "pending" | "running" | "paused" | "completed" | "failed";
+export type IdeationStatus = "running" | "completed";
+
+export interface Ideation {
+  id: string;
+  repo_id: string;
+  description: string;
+  status: IdeationStatus;
+  created_at: string;
+}
+
+export type TaskStatus = "pending" | "running" | "completed" | "failed";
 
 export interface Task {
-  schema: string;
   task_id: string;
+  ideation_id: string;
   repo_id: string;
   title: string;
   description: string;
-  phase: TaskPhase;
+  acceptance_criteria: string[];
+  dependencies: string[];
   status: TaskStatus;
-  base_branch: string;
   branch: string;
   worktree_path: string;
-  acceptance_criteria: string[];
+  agent_pid: number | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface TaskSpec {
+  title: string;
+  description: string;
+  acceptance_criteria: string[];
+  dependencies: string[];
 }
 
 export interface ValidatorResult {
@@ -40,12 +57,6 @@ export interface VerifyResult {
   all_passed: boolean;
   results: ValidatorResult[];
   timestamp: string;
-}
-
-export interface TaskEvent {
-  type: string;
-  timestamp: string;
-  [key: string]: unknown;
 }
 
 export interface RepoInfo {

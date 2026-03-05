@@ -1,8 +1,8 @@
 import { BrowserRouter, Routes, Route, NavLink } from "react-router-dom";
 import { HomePage } from "./pages/HomePage";
+import { IdeationPage } from "./pages/IdeationPage";
+import { TaskBoardPage } from "./pages/TaskBoardPage";
 import { ReposPage } from "./pages/ReposPage";
-import { TaskListPage } from "./pages/TaskListPage";
-import { TaskDetailPage } from "./pages/TaskDetailPage";
 import { SettingsPage } from "./pages/SettingsPage";
 
 function App() {
@@ -12,7 +12,9 @@ function App() {
         <nav className="sidebar">
           <div className="sidebar-header">
             <div className="sidebar-brand">
-              <span className="brand-icon" aria-hidden="true">&#x2692;</span>
+              <span className="brand-icon" aria-hidden="true">
+                &#x2692;
+              </span>
               <h1>Goblin Mob Boss</h1>
             </div>
           </div>
@@ -24,15 +26,7 @@ function App() {
                 `sidebar-nav-item ${isActive ? "active" : ""}`
               }
             >
-              New Task
-            </NavLink>
-            <NavLink
-              to="/tasks"
-              className={({ isActive }) =>
-                `sidebar-nav-item ${isActive ? "active" : ""}`
-              }
-            >
-              Tasks
+              Ideate
             </NavLink>
 
             <div className="sidebar-section-label">Settings</div>
@@ -58,9 +52,9 @@ function App() {
         <main className="main-content">
           <Routes>
             <Route path="/" element={<HomePage />} />
+            <Route path="/ideation/:ideationId" element={<IdeationPage />} />
+            <Route path="/tasks/:repoId" element={<TaskBoardPage />} />
             <Route path="/repos" element={<ReposPage />} />
-            <Route path="/tasks" element={<TaskListPage />} />
-            <Route path="/task/:taskId" element={<TaskDetailPage />} />
             <Route path="/settings" element={<SettingsPage />} />
           </Routes>
         </main>

@@ -14,8 +14,7 @@ pub fn run_validators(
         .join("results")
         .join("verify")
         .join(format!("{}", attempt));
-    fs::create_dir_all(&results_dir)
-        .map_err(|e| format!("Failed to create results dir: {}", e))?;
+    fs::create_dir_all(&results_dir).map_err(|e| format!("Failed to create results dir: {}", e))?;
 
     let mut results = Vec::new();
     let mut all_passed = true;
