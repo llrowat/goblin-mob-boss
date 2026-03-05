@@ -177,7 +177,6 @@ pub struct ExecutionRecommendation {
 fn default_confidence() -> f32 {
     0.5
 }
-}
 
 // ── Feature ──
 
@@ -422,6 +421,7 @@ You are a frontend specialist. Focus on UI components, styling, and accessibilit
             model: None,
             system_prompt: "You are a testing specialist.".to_string(),
             is_global: false,
+            color: default_agent_color(),
         };
         let md = agent.to_markdown();
         let parsed = AgentFile::parse("test-writer.md", &md).unwrap();
