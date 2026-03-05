@@ -1,31 +1,31 @@
 # Goblin Mob Boss
 
-A desktop app for agent-based AI development workflows. Configure agents, plan features interactively with Claude, then launch parallel agents to execute tasks on isolated git worktrees. Features can span multiple repositories simultaneously.
+A desktop app for agent-based AI development workflows. Configure agents, plan features interactively with Claude, choose an execution mode (Agent Teams or Subagents), then launch Claude Code to execute — GMB handles setup, visibility, and git workflow.
 
 ## How It Works
 
-1. **Configure Agents** — Set up AI agents with specialized roles (Full-Stack, Frontend, Backend, Test Writer, Reviewer, Architect, Product Owner, Security Reviewer, Integration Tester). 9 built-in agents are provided; create custom agents with custom colors, roles, and system prompts via the form-based agent editor.
-2. **Start a Feature** — Describe what you want to build and select one or more repositories. Feature branches are created in all selected repos.
-3. **Plan with Claude** — An interactive Claude Code session in plan mode helps you refine the approach and break it into tasks, each with assigned implementation agents and verification agents.
-4. **Execute in Parallel** — Each task gets its own git worktree. Claude Code agents work on tasks simultaneously, implementing changes and self-verifying using the assigned verification agents' expertise. Tasks report progress via `.gmb/status.json` dot files.
-5. **Auto-Merge** — When a task completes (detected via dot file polling), it automatically merges back to the feature branch. When all tasks are merged, the feature is marked ready.
-6. **Push & PR** — Push feature branches and create pull requests across all repos.
+1. **Configure Agents** — Agents are defined as `.claude/agents/*.md` files with YAML frontmatter (name, description, tools, model, system prompt, color). Manage them per-repo or globally via the built-in form editor.
+2. **Start a Feature** — Describe what you want to build and select a repository. A feature branch is created from the repo's base branch.
+3. **Plan with Claude** — An interactive Claude Code session in plan mode helps you refine the approach and break it into task specs, each with assigned agents. The ideation prompt includes repo context (languages, structure, available agents).
+4. **Configure Launch** — Claude recommends an execution mode based on task analysis:
+   - **Agent Teams** — Multiple Claude Code instances in parallel tmux panes, each with its own agent identity. Best for large features with 3+ independent workstreams.
+   - **Subagents** — A single lead Claude Code instance that delegates subtasks. Best for focused features with dependent tasks.
+   You can accept or override the recommendation, and select which agents participate.
+5. **Execute** — Copy the generated launch command and run it. GMB tracks feature status and provides a dashboard with diff summaries and validator results.
+6. **Validate & PR** — Run repository validators against the feature branch, review diffs, then push and create a PR.
 
 ## Features
 
-- **Agent-based workflow** — Configurable AI agents with roles, system prompts, and custom colors; 9 built-in agents with a full form-based editor for creating and customizing agents
-- **Interactive planning** — Back-and-forth conversation with Claude in plan mode during ideation; configure which agents are available for task assignment during planning
-- **Planning & verification agents** — Choose which agents participate in planning and which handle per-task verification, independently configured in Settings
-- **Inline verification** — Each task includes verification agents whose expertise is applied as a self-review step before completion — no separate verification phase
-- **Status dot files** — Agents report progress (`implementing`, `verifying`, `done`, `failed`) via `.gmb/status.json`; the app polls these to auto-update status and trigger merges
-- **Auto-merge** — Completed tasks automatically merge back to the feature branch; when all tasks merge, the feature is ready for PR
-- **Multi-repo features** — A single feature can span multiple repositories with coordinated branches, tasks, and PRs
-- **Feature branch flow** — Base → feature branch → task worktrees → auto-merge → PR (per repo)
-- **Parallel execution** — Multiple Claude Code agents work on separate worktrees simultaneously across repos
-- **Repository management** — Register local git repos, configure validators and max parallel agents
-- **Auto-generated prompts** — Each agent gets context-aware prompts with acceptance criteria and verification lenses
-- **Change summary** — See files changed, lines added/removed per task before merging
-- **Live status tracking** — Dashboard polls dot files for real-time task progress
+- **Execution mode intelligence** — Ideation analyzes planned tasks and recommends Teams or Subagents mode with confidence scoring and rationale
+- **Agent management** — Agents stored as `.claude/agents/*.md` files with YAML frontmatter; form-based editor with color picker, tools, model, and system prompt configuration
+- **Interactive planning** — Back-and-forth conversation with Claude in plan mode; task specs written to `plan.json` with automatic polling
+- **Launch command generation** — GMB builds the appropriate Claude Code command with environment variables, agent configs, and system prompts for the chosen execution mode
+- **Repository validators** — Configure shell commands (tests, linters) per repo; run them against the feature branch with detailed stdout/stderr output
+- **Feature lifecycle** — Features progress through statuses: Ideation → Configuring → Executing → Ready (or Failed)
+- **Git diff summary** — View files changed, lines added/removed before pushing
+- **PR creation** — Push feature branch and generate PR command (supports custom `pr_command` templates with `{branch}` placeholder)
+- **Repository management** — Register local git repos, configure base branch, validators, and PR commands
+- **Dark theme UI** — Full dark theme with sidebar navigation
 
 ## Project Structure
 
@@ -33,19 +33,19 @@ A desktop app for agent-based AI development workflows. Configure agents, plan f
 goblin-mob-boss/
 ├── backend/            # Rust backend (Tauri v2)
 │   ├── src/
-│   │   ├── lib.rs              # App entry, state management
-│   │   ├── commands.rs         # Tauri IPC commands (agents, features, tasks, status polling)
-│   │   ├── models.rs           # Data models (Agent, Feature, Task, Repository)
-│   │   ├── store.rs            # JSON file-based persistence
-│   │   ├── context.rs          # Repo map and related files generation
-│   │   ├── claude_md.rs        # CLAUDE.md generation for worktrees
-│   │   ├── git.rs              # Git operations (worktrees, branches, merge, push)
-│   │   ├── prompts.rs          # Ideation and agent prompt templates
-│   │   └── validators.rs       # Validator execution
+│   │   ├── lib.rs              # App entry, state management, plugin setup
+│   │   ├── main.rs             # Binary entry point
+│   │   ├── commands.rs         # Tauri IPC command handlers
+│   │   ├── models.rs           # Data models (Agent, Feature, TaskSpec, Repository, Preferences)
+│   │   ├── store.rs            # JSON file-based persistence (repos, features, agents, preferences)
+│   │   ├── launch.rs           # Launch command builder (Teams/Subagents mode)
+│   │   ├── git.rs              # Git operations (branches, merge, push, diff)
+│   │   ├── prompts.rs          # Ideation prompt templates
+│   │   └── validators.rs       # Validator execution and result aggregation
 │   └── tauri.conf.json
 ├── frontend/           # React (TypeScript) frontend
-│   ├── components/     # StatusBadge, AddRepoModal
-│   ├── pages/          # HomePage, IdeationPage, TaskBoardPage, AgentsPage, ReposPage, SettingsPage
+│   ├── components/     # AddRepoModal, StatusBadge
+│   ├── pages/          # HomePage, IdeationPage, LaunchConfigPage, FeatureStatusPage, AgentsPage, ReposPage, SettingsPage
 │   ├── hooks/          # useTauri (IPC wrapper)
 │   ├── types/          # TypeScript type definitions
 │   ├── test/           # Vitest setup
