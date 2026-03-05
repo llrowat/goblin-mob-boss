@@ -2,14 +2,16 @@ import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useTauri } from "../hooks/useTauri";
 import { StatusBadge } from "../components/StatusBadge";
-import type { Task, Repository, VerifyResult } from "../types";
+import type { Task, Feature, Repository, Agent, VerifyResult } from "../types";
 
 export function TaskBoardPage() {
-  const { repoId } = useParams<{ repoId: string }>();
+  const { featureId } = useParams<{ featureId: string }>();
   const tauri = useTauri();
   const navigate = useNavigate();
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [feature, setFeature] = useState<Feature | null>(null);
   const [repo, setRepo] = useState<Repository | null>(null);
+  const [agents, setAgents] = useState<Record<string, Agent>>({});
   const [expandedTask, setExpandedTask] = useState<string | null>(null);
   const [terminalCmds, setTerminalCmds] = useState<Record<string, string>>({});
   const [verifyResults, setVerifyResults] = useState<
@@ -17,20 +19,30 @@ export function TaskBoardPage() {
   >({});
   const [error, setError] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [prCommand, setPrCommand] = useState("");
 
-  // Load repo info
+  // Load feature and repo
   useEffect(() => {
-    tauri.listRepositories().then((repos) => {
-      const found = repos.find((r) => r.id === repoId);
-      if (found) setRepo(found);
+    if (!featureId) return;
+    tauri.getFeature(featureId).then((f) => {
+      setFeature(f);
+      tauri.listRepositories().then((repos) => {
+        const found = repos.find((r) => r.id === f.repo_id);
+        if (found) setRepo(found);
+      });
     });
-  }, [repoId]);
+    tauri.listAgents().then((list) => {
+      const map: Record<string, Agent> = {};
+      list.forEach((a) => (map[a.id] = a));
+      setAgents(map);
+    });
+  }, [featureId]);
 
   // Load & poll tasks
   const loadTasks = useCallback(() => {
-    if (!repoId) return;
-    tauri.listTasks(repoId).then(setTasks).catch(() => {});
-  }, [repoId]);
+    if (!featureId) return;
+    tauri.listTasks(featureId).then(setTasks).catch(() => {});
+  }, [featureId]);
 
   useEffect(() => {
     loadTasks();
@@ -38,55 +50,37 @@ export function TaskBoardPage() {
     return () => clearInterval(interval);
   }, [loadTasks]);
 
-  // Poll running task statuses
-  useEffect(() => {
-    const running = tasks.filter((t) => t.status === "running");
-    running.forEach((t) => {
-      tauri.pollTaskStatus(t.task_id).then((updated) => {
-        if (updated.status !== t.status) {
-          setTasks((prev) =>
-            prev.map((p) =>
-              p.task_id === updated.task_id ? updated : p
-            )
-          );
-        }
-      });
-    });
-  }, [tasks]);
-
   const canStart = (task: Task): boolean => {
     if (task.status !== "pending") return false;
     if (task.dependencies.length === 0) return true;
-    // Check all dependencies are completed
     return task.dependencies.every((depNum) => {
-      const depTask = tasks.find((_, i) =>
-        depNum === String(i + 1).padStart(2, "0")
+      const depTask = tasks.find(
+        (_, i) => depNum === String(i + 1).padStart(2, "0"),
       );
-      return depTask?.status === "completed";
+      return depTask?.status === "completed" || depTask?.status === "merged";
     });
   };
 
   const runningCount = tasks.filter((t) => t.status === "running").length;
   const maxParallel = repo?.max_parallel_agents ?? 4;
 
-  const handleStartAgent = async (taskId: string) => {
+  const handleStartTask = async (taskId: string) => {
     setError("");
     try {
-      const updated = await tauri.startAgent(taskId);
+      const updated = await tauri.startTask(taskId);
       setTasks((prev) =>
-        prev.map((t) => (t.task_id === updated.task_id ? updated : t))
+        prev.map((t) => (t.task_id === updated.task_id ? updated : t)),
       );
-      // Get terminal command
-      const cmd = await tauri.getAgentTerminalCommand(taskId);
+      const cmd = await tauri.getTaskTerminalCommand(taskId);
       setTerminalCmds((prev) => ({ ...prev, [taskId]: cmd }));
     } catch (e) {
       setError(String(e));
     }
   };
 
-  const handleLaunchAgent = async (taskId: string) => {
+  const handleLaunchTask = async (taskId: string) => {
     try {
-      await tauri.launchAgent(taskId);
+      await tauri.launchTask(taskId);
     } catch (e) {
       setError(String(e));
     }
@@ -95,7 +89,7 @@ export function TaskBoardPage() {
   const handleCopyCommand = async (taskId: string) => {
     let cmd = terminalCmds[taskId];
     if (!cmd) {
-      cmd = await tauri.getAgentTerminalCommand(taskId);
+      cmd = await tauri.getTaskTerminalCommand(taskId);
       setTerminalCmds((prev) => ({ ...prev, [taskId]: cmd }));
     }
     await navigator.clipboard.writeText(cmd);
@@ -114,11 +108,23 @@ export function TaskBoardPage() {
     }
   };
 
-  const handleMarkComplete = async (taskId: string) => {
+  const handleCompleteTask = async (taskId: string) => {
     try {
-      const updated = await tauri.updateTaskStatus(taskId, "completed");
+      const updated = await tauri.completeTask(taskId);
       setTasks((prev) =>
-        prev.map((t) => (t.task_id === updated.task_id ? updated : t))
+        prev.map((t) => (t.task_id === updated.task_id ? updated : t)),
+      );
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const handleMergeTask = async (taskId: string) => {
+    setError("");
+    try {
+      const updated = await tauri.mergeTask(taskId);
+      setTasks((prev) =>
+        prev.map((t) => (t.task_id === updated.task_id ? updated : t)),
       );
     } catch (e) {
       setError(String(e));
@@ -135,27 +141,83 @@ export function TaskBoardPage() {
   };
 
   const handleStartAll = async () => {
-    const startable = tasks.filter(
-      (t) => canStart(t) && runningCount < maxParallel
-    );
-    for (const task of startable) {
-      await handleStartAgent(task.task_id);
+    let running = runningCount;
+    for (const task of tasks) {
+      if (canStart(task) && running < maxParallel) {
+        await handleStartTask(task.task_id);
+        running++;
+      }
+    }
+  };
+
+  // Feature-level actions
+  const handleStartVerification = async () => {
+    if (!featureId) return;
+    setError("");
+    try {
+      const updated = await tauri.startFeatureVerification(featureId);
+      setFeature(updated);
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const handleLaunchVerification = async () => {
+    if (!featureId) return;
+    try {
+      await tauri.launchVerification(featureId);
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const handleMarkReady = async () => {
+    if (!featureId) return;
+    try {
+      const updated = await tauri.markFeatureReady(featureId);
+      setFeature(updated);
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const handlePushAndPR = async () => {
+    if (!featureId) return;
+    setError("");
+    try {
+      await tauri.pushFeature(featureId);
+      const cmd = await tauri.getPrCommand(featureId);
+      setPrCommand(cmd);
+    } catch (e) {
+      setError(String(e));
     }
   };
 
   const completedCount = tasks.filter((t) => t.status === "completed").length;
+  const mergedCount = tasks.filter((t) => t.status === "merged").length;
   const pendingCount = tasks.filter((t) => t.status === "pending").length;
+  const allDone =
+    tasks.length > 0 &&
+    tasks.every((t) => t.status === "completed" || t.status === "merged");
+
+  if (!feature) {
+    return (
+      <div className="empty-state">
+        <p>Loading feature...</p>
+      </div>
+    );
+  }
 
   if (tasks.length === 0) {
     return (
       <div className="empty-state">
         <h3>No tasks yet</h3>
-        <p>Start an ideation session to generate tasks.</p>
+        <p>Go to the planning session to create tasks.</p>
         <button
           className="btn btn-primary btn-lg"
-          onClick={() => navigate("/")}
+          onClick={() => navigate(`/feature/${featureId}/ideation`)}
         >
-          Start Ideation
+          Open Planning
         </button>
       </div>
     );
@@ -164,11 +226,21 @@ export function TaskBoardPage() {
   return (
     <div>
       <div className="page-header">
-        <h2>{repo?.name ?? "Tasks"}</h2>
+        <h2>{feature.name}</h2>
         <p>
-          {completedCount}/{tasks.length} complete
+          {mergedCount + completedCount}/{tasks.length} done
           {runningCount > 0 && ` \u00B7 ${runningCount} running`}
           {pendingCount > 0 && ` \u00B7 ${pendingCount} pending`}
+          <span
+            style={{
+              marginLeft: 12,
+              fontFamily: "var(--font-mono)",
+              fontSize: 12,
+              color: "var(--muted)",
+            }}
+          >
+            {feature.branch}
+          </span>
         </p>
       </div>
 
@@ -180,18 +252,53 @@ export function TaskBoardPage() {
           <div
             className="progress-bar-fill"
             style={{
-              width: `${(completedCount / tasks.length) * 100}%`,
+              width: `${((mergedCount + completedCount) / tasks.length) * 100}%`,
             }}
           />
         </div>
       </div>
 
-      {/* Batch actions */}
-      {pendingCount > 0 && (
-        <div style={{ marginBottom: 16 }}>
+      {/* Feature-level actions */}
+      <div style={{ marginBottom: 16, display: "flex", gap: 8 }}>
+        {pendingCount > 0 && (
           <button className="btn btn-primary" onClick={handleStartAll}>
             Start Available Tasks
           </button>
+        )}
+
+        {allDone && feature.status === "in_progress" && (
+          <button className="btn btn-brass" onClick={handleStartVerification}>
+            Start Final Verification
+          </button>
+        )}
+
+        {feature.status === "verifying" && (
+          <>
+            <button
+              className="btn btn-primary"
+              onClick={handleLaunchVerification}
+            >
+              Launch Verification
+            </button>
+            <button className="btn btn-brass" onClick={handleMarkReady}>
+              Mark Ready
+            </button>
+          </>
+        )}
+
+        {feature.status === "ready" && (
+          <button className="btn btn-primary" onClick={handlePushAndPR}>
+            Push & Create PR
+          </button>
+        )}
+      </div>
+
+      {prCommand && (
+        <div className="panel" style={{ marginBottom: 16 }}>
+          <div className="panel-title" style={{ marginBottom: 8 }}>
+            PR Command
+          </div>
+          <div className="code-block">{prCommand}</div>
         </div>
       )}
 
@@ -203,7 +310,7 @@ export function TaskBoardPage() {
               className="task-card-header"
               onClick={() =>
                 setExpandedTask(
-                  expandedTask === task.task_id ? null : task.task_id
+                  expandedTask === task.task_id ? null : task.task_id,
                 )
               }
             >
@@ -211,6 +318,11 @@ export function TaskBoardPage() {
                 {String(index + 1).padStart(2, "0")}
               </div>
               <div className="task-card-title">{task.title}</div>
+              {agents[task.agent_id] && (
+                <span className="agent-tag">
+                  {agents[task.agent_id].name}
+                </span>
+              )}
               <StatusBadge status={task.status} />
             </div>
 
@@ -255,7 +367,7 @@ export function TaskBoardPage() {
                   {task.status === "pending" && canStart(task) && (
                     <button
                       className="btn btn-primary btn-sm"
-                      onClick={() => handleStartAgent(task.task_id)}
+                      onClick={() => handleStartTask(task.task_id)}
                     >
                       Start Agent
                     </button>
@@ -265,7 +377,7 @@ export function TaskBoardPage() {
                     <>
                       <button
                         className="btn btn-primary btn-sm"
-                        onClick={() => handleLaunchAgent(task.task_id)}
+                        onClick={() => handleLaunchTask(task.task_id)}
                       >
                         Launch Claude Code
                       </button>
@@ -283,24 +395,33 @@ export function TaskBoardPage() {
                       </button>
                       <button
                         className="btn btn-secondary btn-sm"
-                        onClick={() => handleMarkComplete(task.task_id)}
+                        onClick={() => handleCompleteTask(task.task_id)}
                       >
                         Mark Done
                       </button>
                     </>
                   )}
 
+                  {task.status === "completed" && (
+                    <button
+                      className="btn btn-brass btn-sm"
+                      onClick={() => handleMergeTask(task.task_id)}
+                    >
+                      Merge to Feature
+                    </button>
+                  )}
+
                   {task.status === "failed" && (
                     <>
                       <button
                         className="btn btn-primary btn-sm"
-                        onClick={() => handleStartAgent(task.task_id)}
+                        onClick={() => handleStartTask(task.task_id)}
                       >
                         Retry Agent
                       </button>
                       <button
                         className="btn btn-secondary btn-sm"
-                        onClick={() => handleLaunchAgent(task.task_id)}
+                        onClick={() => handleLaunchTask(task.task_id)}
                       >
                         Launch Claude Code
                       </button>
@@ -335,9 +456,7 @@ export function TaskBoardPage() {
                         className={`verify-result ${r.success ? "pass" : "fail"}`}
                       >
                         <div className="verify-result-header">
-                          <span className="verify-result-cmd">
-                            {r.command}
-                          </span>
+                          <span className="verify-result-cmd">{r.command}</span>
                           <span
                             style={{
                               color: r.success
@@ -349,7 +468,10 @@ export function TaskBoardPage() {
                           </span>
                         </div>
                         {!r.success && (r.stderr || r.stdout) && (
-                          <div className="code-block" style={{ marginTop: 4 }}>
+                          <div
+                            className="code-block"
+                            style={{ marginTop: 4 }}
+                          >
                             {r.stderr || r.stdout}
                           </div>
                         )}

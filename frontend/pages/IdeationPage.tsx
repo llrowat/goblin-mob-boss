@@ -1,13 +1,13 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useTauri } from "../hooks/useTauri";
-import type { Ideation, TaskSpec } from "../types";
+import type { Feature, TaskSpec } from "../types";
 
 export function IdeationPage() {
-  const { ideationId } = useParams<{ ideationId: string }>();
+  const { featureId } = useParams<{ featureId: string }>();
   const tauri = useTauri();
   const navigate = useNavigate();
-  const [ideation, setIdeation] = useState<Ideation | null>(null);
+  const [feature, setFeature] = useState<Feature | null>(null);
   const [systemPrompt, setSystemPrompt] = useState("");
   const [terminalCmd, setTerminalCmd] = useState("");
   const [discoveredTasks, setDiscoveredTasks] = useState<TaskSpec[]>([]);
@@ -17,28 +17,24 @@ export function IdeationPage() {
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    if (!ideationId) return;
+    if (!featureId) return;
 
-    tauri.listIdeations("").then((ideations) => {
-      const found = ideations.find((i) => i.id === ideationId);
-      if (found) setIdeation(found);
-    });
-
-    tauri.getIdeationPrompt(ideationId).then(setSystemPrompt).catch(() => {});
+    tauri.getFeature(featureId).then(setFeature).catch(() => {});
+    tauri.getIdeationPrompt(featureId).then(setSystemPrompt).catch(() => {});
     tauri
-      .getIdeationTerminalCommand(ideationId)
+      .getIdeationTerminalCommand(featureId)
       .then(setTerminalCmd)
       .catch(() => {});
-  }, [ideationId]);
+  }, [featureId]);
 
   // Poll for discovered tasks
   const pollTasks = useCallback(() => {
-    if (!ideationId) return;
+    if (!featureId) return;
     tauri
-      .pollIdeationTasks(ideationId)
+      .pollIdeationTasks(featureId)
       .then(setDiscoveredTasks)
       .catch(() => {});
-  }, [ideationId]);
+  }, [featureId]);
 
   useEffect(() => {
     pollTasks();
@@ -47,9 +43,9 @@ export function IdeationPage() {
   }, [pollTasks]);
 
   const handleLaunch = async () => {
-    if (!ideationId) return;
+    if (!featureId) return;
     try {
-      await tauri.launchIdeation(ideationId);
+      await tauri.launchIdeation(featureId);
     } catch (e) {
       setError(String(e));
     }
@@ -62,15 +58,12 @@ export function IdeationPage() {
   };
 
   const handleImportTasks = async () => {
-    if (!ideationId || discoveredTasks.length === 0) return;
+    if (!featureId || discoveredTasks.length === 0) return;
     setImporting(true);
     setError("");
     try {
-      await tauri.importTasks(ideationId, discoveredTasks);
-      await tauri.completeIdeation(ideationId);
-      if (ideation) {
-        navigate(`/tasks/${ideation.repo_id}`);
-      }
+      await tauri.importTasks(featureId, discoveredTasks);
+      navigate(`/feature/${featureId}/tasks`);
     } catch (e) {
       setError(String(e));
     } finally {
@@ -78,10 +71,10 @@ export function IdeationPage() {
     }
   };
 
-  if (!ideation) {
+  if (!feature) {
     return (
       <div className="empty-state">
-        <p>Loading ideation...</p>
+        <p>Loading feature...</p>
       </div>
     );
   }
@@ -89,8 +82,8 @@ export function IdeationPage() {
   return (
     <div>
       <div className="page-header">
-        <h2>Planning Session</h2>
-        <p>{ideation.description}</p>
+        <h2>Planning: {feature.name}</h2>
+        <p>{feature.description}</p>
       </div>
 
       {error && <div className="error-banner">{error}</div>}
@@ -109,8 +102,8 @@ export function IdeationPage() {
           }}
         >
           This opens Claude Code in plan mode for an interactive conversation.
-          Discuss your goals, ask questions, refine the approach — then when
-          you agree on the plan, ask Claude to create the task files.
+          Discuss your goals, ask questions, refine the approach — then when you
+          agree on the plan, ask Claude to create the task files.
         </p>
 
         <div className="actions-bar" style={{ marginTop: 0 }}>
@@ -170,6 +163,9 @@ export function IdeationPage() {
                     <div className="task-spec-description">
                       {spec.description}
                     </div>
+                    {spec.agent && (
+                      <div className="task-spec-agent">Agent: {spec.agent}</div>
+                    )}
                     {spec.acceptance_criteria.length > 0 && (
                       <ul className="task-spec-criteria">
                         {spec.acceptance_criteria.map((c, j) => (
@@ -181,6 +177,11 @@ export function IdeationPage() {
                       <div className="task-spec-deps">
                         Depends on:{" "}
                         {spec.dependencies.map((d) => `#${d}`).join(", ")}
+                      </div>
+                    )}
+                    {spec.subagents.length > 0 && (
+                      <div className="task-spec-deps">
+                        Subagents: {spec.subagents.join(", ")}
                       </div>
                     )}
                   </div>
@@ -196,7 +197,7 @@ export function IdeationPage() {
             >
               {importing
                 ? "Importing..."
-                : `Import ${discoveredTasks.length} Tasks & Go`}
+                : `Import ${discoveredTasks.length} Tasks & Start Working`}
             </button>
           </>
         )}

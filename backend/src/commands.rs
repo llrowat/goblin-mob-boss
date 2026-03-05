@@ -13,8 +13,13 @@ use tauri::State;
 
 #[tauri::command]
 pub fn list_repositories(state: State<AppState>) -> Vec<Repository> {
-    let repos = state.repositories.lock().unwrap();
-    repos.values().cloned().collect()
+    state
+        .repositories
+        .lock()
+        .unwrap()
+        .values()
+        .cloned()
+        .collect()
 }
 
 #[tauri::command]
@@ -32,13 +37,11 @@ pub fn add_repository(
     if !git::is_git_repo(&path) {
         return Err("Path is not a git repository".to_string());
     }
-
     let repo = Repository::new(name, path, base_branch, validators, pr_command);
     let mut repos = state.repositories.lock().unwrap();
     repos.insert(repo.id.clone(), repo.clone());
     drop(repos);
     state.save_repos();
-
     Ok(repo)
 }
 
@@ -89,93 +92,178 @@ pub fn detect_repo_info(path: String) -> Result<serde_json::Value, String> {
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| "unknown".to_string());
+    Ok(serde_json::json!({ "name": name, "base_branch": base_branch }))
+}
 
-    Ok(serde_json::json!({
-        "name": name,
-        "base_branch": base_branch,
-    }))
+// ── Agent Commands ──
+
+#[tauri::command]
+pub fn list_agents(state: State<AppState>) -> Vec<Agent> {
+    state.agents.lock().unwrap().values().cloned().collect()
+}
+
+#[tauri::command]
+pub fn add_agent(
+    state: State<AppState>,
+    name: String,
+    role: String,
+    system_prompt: String,
+) -> Agent {
+    let agent = Agent::new(name, role, system_prompt);
+    let mut agents = state.agents.lock().unwrap();
+    agents.insert(agent.id.clone(), agent.clone());
+    drop(agents);
+    state.save_agents();
+    agent
+}
+
+#[tauri::command]
+pub fn update_agent(
+    state: State<AppState>,
+    id: String,
+    name: String,
+    role: String,
+    system_prompt: String,
+) -> Result<Agent, String> {
+    let mut agents = state.agents.lock().unwrap();
+    let agent = agents.get_mut(&id).ok_or("Agent not found")?;
+    agent.name = name;
+    agent.role = role;
+    agent.system_prompt = system_prompt;
+    let updated = agent.clone();
+    drop(agents);
+    state.save_agents();
+    Ok(updated)
+}
+
+#[tauri::command]
+pub fn remove_agent(state: State<AppState>, id: String) -> Result<(), String> {
+    let mut agents = state.agents.lock().unwrap();
+    let agent = agents.get(&id).ok_or("Agent not found")?;
+    if agent.is_builtin {
+        return Err("Cannot remove built-in agents".to_string());
+    }
+    agents.remove(&id);
+    drop(agents);
+    state.save_agents();
+    Ok(())
+}
+
+// ── Feature Commands ──
+
+#[tauri::command]
+pub fn start_feature(
+    state: State<AppState>,
+    repo_id: String,
+    name: String,
+    description: String,
+) -> Result<Feature, String> {
+    let repos = state.repositories.lock().unwrap();
+    let repo = repos.get(&repo_id).ok_or("Repository not found")?.clone();
+    drop(repos);
+
+    // Create feature branch
+    let feature_slug = slug::slugify(&name);
+    let short_id = &uuid::Uuid::new_v4().to_string()[..4];
+    let branch = format!("feature/{}-{}", feature_slug, short_id);
+
+    git::create_branch(&repo.path, &branch, &repo.base_branch).map_err(|e| e.to_string())?;
+
+    let feature = Feature::new(repo_id, name, description, branch);
+
+    // Create ideation directory
+    let ideation_dir = Path::new(&repo.path)
+        .join(".gmb")
+        .join("features")
+        .join(&feature.id);
+    let tasks_dir = ideation_dir.join("tasks");
+    std::fs::create_dir_all(&tasks_dir)
+        .map_err(|e| format!("Failed to create feature dir: {}", e))?;
+
+    // Generate system prompt for ideation
+    let repo_map = generate_context_pack_string(&repo.path);
+    let agents = state.agents.lock().unwrap();
+    let agent_list = agents
+        .values()
+        .map(|a| format!("- **{}** ({}): {}", a.name, a.role, a.system_prompt))
+        .collect::<Vec<_>>()
+        .join("\n");
+    drop(agents);
+
+    let system_prompt =
+        prompts::ideation_system_prompt(&tasks_dir.to_string_lossy(), &repo_map, &agent_list);
+    std::fs::write(ideation_dir.join("system-prompt.md"), &system_prompt)
+        .map_err(|e| format!("Failed to write system prompt: {}", e))?;
+
+    let mut features = state.features.lock().unwrap();
+    features.insert(feature.id.clone(), feature.clone());
+    drop(features);
+    state.save_features();
+
+    Ok(feature)
+}
+
+#[tauri::command]
+pub fn list_features(state: State<AppState>, repo_id: String) -> Vec<Feature> {
+    state
+        .features
+        .lock()
+        .unwrap()
+        .values()
+        .filter(|f| f.repo_id == repo_id)
+        .cloned()
+        .collect()
+}
+
+#[tauri::command]
+pub fn get_feature(state: State<AppState>, feature_id: String) -> Result<Feature, String> {
+    state
+        .features
+        .lock()
+        .unwrap()
+        .get(&feature_id)
+        .cloned()
+        .ok_or("Feature not found".to_string())
 }
 
 // ── Ideation Commands ──
 
 #[tauri::command]
-pub fn start_ideation(
-    state: State<AppState>,
-    repo_id: String,
-    description: String,
-) -> Result<Ideation, String> {
-    let repos = state.repositories.lock().unwrap();
-    let repo = repos.get(&repo_id).ok_or("Repository not found")?.clone();
-    drop(repos);
-
-    let ideation = Ideation::new(repo_id.clone(), description.clone());
-
-    // Create ideation directory with tasks subdirectory
-    let ideation_dir = Path::new(&repo.path)
-        .join(".gmb")
-        .join("ideations")
-        .join(&ideation.id);
-    let tasks_dir = ideation_dir.join("tasks");
-    std::fs::create_dir_all(&tasks_dir)
-        .map_err(|e| format!("Failed to create tasks dir: {}", e))?;
-
-    // Generate repo map for context
-    let repo_map = generate_context_pack_string(&repo.path);
-
-    // Write system prompt file for Claude Code's --append-system-prompt-file flag.
-    // This gives Claude the context about the repo and instructions for task creation,
-    // while the user's description becomes the initial interactive message.
-    let system_prompt = prompts::ideation_system_prompt(&tasks_dir.to_string_lossy(), &repo_map);
-    std::fs::write(ideation_dir.join("system-prompt.md"), &system_prompt)
-        .map_err(|e| format!("Failed to write system prompt: {}", e))?;
-
-    // Store ideation
-    let mut ideations = state.ideations.lock().unwrap();
-    ideations.insert(ideation.id.clone(), ideation.clone());
-    drop(ideations);
-    state.save_ideations();
-
-    Ok(ideation)
-}
-
-#[tauri::command]
-pub fn get_ideation_prompt(state: State<AppState>, ideation_id: String) -> Result<String, String> {
-    let ideations = state.ideations.lock().unwrap();
-    let ideation = ideations
-        .get(&ideation_id)
-        .ok_or("Ideation not found")?
+pub fn get_ideation_prompt(state: State<AppState>, feature_id: String) -> Result<String, String> {
+    let features = state.features.lock().unwrap();
+    let feature = features
+        .get(&feature_id)
+        .ok_or("Feature not found")?
         .clone();
-    drop(ideations);
+    drop(features);
 
     let repos = state.repositories.lock().unwrap();
     let repo = repos
-        .get(&ideation.repo_id)
+        .get(&feature.repo_id)
         .ok_or("Repository not found")?
         .clone();
     drop(repos);
 
-    let prompt_path = Path::new(&repo.path)
+    let path = Path::new(&repo.path)
         .join(".gmb")
-        .join("ideations")
-        .join(&ideation.id)
+        .join("features")
+        .join(&feature.id)
         .join("system-prompt.md");
-
-    std::fs::read_to_string(&prompt_path)
-        .map_err(|e| format!("Failed to read system prompt: {}", e))
+    std::fs::read_to_string(&path).map_err(|e| format!("Failed to read prompt: {}", e))
 }
 
 #[tauri::command]
-pub fn launch_ideation(state: State<AppState>, ideation_id: String) -> Result<(), String> {
-    let ideations = state.ideations.lock().unwrap();
-    let ideation = ideations
-        .get(&ideation_id)
-        .ok_or("Ideation not found")?
+pub fn launch_ideation(state: State<AppState>, feature_id: String) -> Result<(), String> {
+    let features = state.features.lock().unwrap();
+    let feature = features
+        .get(&feature_id)
+        .ok_or("Feature not found")?
         .clone();
-    drop(ideations);
+    drop(features);
 
     let repos = state.repositories.lock().unwrap();
     let repo = repos
-        .get(&ideation.repo_id)
+        .get(&feature.repo_id)
         .ok_or("Repository not found")?
         .clone();
     drop(repos);
@@ -184,13 +272,11 @@ pub fn launch_ideation(state: State<AppState>, ideation_id: String) -> Result<()
 
     let system_prompt_path = Path::new(&repo.path)
         .join(".gmb")
-        .join("ideations")
-        .join(&ideation.id)
+        .join("features")
+        .join(&feature.id)
         .join("system-prompt.md");
 
-    // Launch Claude Code in interactive plan mode with the system prompt appended.
-    // The user's description becomes the initial message for a back-and-forth conversation.
-    let escaped_desc = ideation.description.replace('\'', "'\\''");
+    let escaped_desc = feature.description.replace('\'', "'\\''");
     let escaped_path = system_prompt_path.to_string_lossy().replace('\'', "'\\''");
 
     launch_terminal_claude_interactive(&prefs.shell, &repo.path, &escaped_path, &escaped_desc)
@@ -199,29 +285,29 @@ pub fn launch_ideation(state: State<AppState>, ideation_id: String) -> Result<()
 #[tauri::command]
 pub fn get_ideation_terminal_command(
     state: State<AppState>,
-    ideation_id: String,
+    feature_id: String,
 ) -> Result<String, String> {
-    let ideations = state.ideations.lock().unwrap();
-    let ideation = ideations
-        .get(&ideation_id)
-        .ok_or("Ideation not found")?
+    let features = state.features.lock().unwrap();
+    let feature = features
+        .get(&feature_id)
+        .ok_or("Feature not found")?
         .clone();
-    drop(ideations);
+    drop(features);
 
     let repos = state.repositories.lock().unwrap();
     let repo = repos
-        .get(&ideation.repo_id)
+        .get(&feature.repo_id)
         .ok_or("Repository not found")?
         .clone();
     drop(repos);
 
     let system_prompt_path = Path::new(&repo.path)
         .join(".gmb")
-        .join("ideations")
-        .join(&ideation.id)
+        .join("features")
+        .join(&feature.id)
         .join("system-prompt.md");
 
-    let escaped_desc = ideation.description.replace('\'', "'\\''");
+    let escaped_desc = feature.description.replace('\'', "'\\''");
 
     Ok(format!(
         "cd {} && claude --permission-mode plan --append-system-prompt-file '{}' '{}'",
@@ -234,26 +320,26 @@ pub fn get_ideation_terminal_command(
 #[tauri::command]
 pub fn poll_ideation_tasks(
     state: State<AppState>,
-    ideation_id: String,
+    feature_id: String,
 ) -> Result<Vec<TaskSpec>, String> {
-    let ideations = state.ideations.lock().unwrap();
-    let ideation = ideations
-        .get(&ideation_id)
-        .ok_or("Ideation not found")?
+    let features = state.features.lock().unwrap();
+    let feature = features
+        .get(&feature_id)
+        .ok_or("Feature not found")?
         .clone();
-    drop(ideations);
+    drop(features);
 
     let repos = state.repositories.lock().unwrap();
     let repo = repos
-        .get(&ideation.repo_id)
+        .get(&feature.repo_id)
         .ok_or("Repository not found")?
         .clone();
     drop(repos);
 
     let tasks_dir = Path::new(&repo.path)
         .join(".gmb")
-        .join("ideations")
-        .join(&ideation.id)
+        .join("features")
+        .join(&feature.id)
         .join("tasks");
 
     if !tasks_dir.exists() {
@@ -272,7 +358,6 @@ pub fn poll_ideation_tasks(
             })
             .collect();
         files.sort_by_key(|e| e.file_name());
-
         for entry in files {
             if let Ok(data) = std::fs::read_to_string(entry.path()) {
                 if let Ok(spec) = serde_json::from_str::<TaskSpec>(&data) {
@@ -285,51 +370,45 @@ pub fn poll_ideation_tasks(
     Ok(specs)
 }
 
-#[tauri::command]
-pub fn complete_ideation(state: State<AppState>, ideation_id: String) -> Result<Ideation, String> {
-    let mut ideations = state.ideations.lock().unwrap();
-    let ideation = ideations
-        .get_mut(&ideation_id)
-        .ok_or("Ideation not found")?;
-    ideation.status = IdeationStatus::Completed;
-    let updated = ideation.clone();
-    drop(ideations);
-    state.save_ideations();
-    Ok(updated)
-}
-
-#[tauri::command]
-pub fn list_ideations(state: State<AppState>, repo_id: String) -> Vec<Ideation> {
-    state.load_ideations();
-    let ideations = state.ideations.lock().unwrap();
-    ideations
-        .values()
-        .filter(|i| i.repo_id == repo_id)
-        .cloned()
-        .collect()
-}
-
 // ── Task Commands ──
 
 #[tauri::command]
 pub fn import_tasks(
     state: State<AppState>,
-    ideation_id: String,
+    feature_id: String,
     specs: Vec<TaskSpec>,
 ) -> Result<Vec<Task>, String> {
-    let ideations = state.ideations.lock().unwrap();
-    let ideation = ideations
-        .get(&ideation_id)
-        .ok_or("Ideation not found")?
+    let features = state.features.lock().unwrap();
+    let feature = features
+        .get(&feature_id)
+        .ok_or("Feature not found")?
         .clone();
-    drop(ideations);
+    drop(features);
 
     let repos = state.repositories.lock().unwrap();
     let repo = repos
-        .get(&ideation.repo_id)
+        .get(&feature.repo_id)
         .ok_or("Repository not found")?
         .clone();
     drop(repos);
+
+    // Resolve agent names to IDs
+    let agents = state.agents.lock().unwrap();
+    let resolve_agent = |name: &str| -> String {
+        if name.is_empty() {
+            return "builtin-fullstack".to_string();
+        }
+        // Try exact ID match first
+        if agents.contains_key(name) {
+            return name.to_string();
+        }
+        // Try name match (case-insensitive)
+        agents
+            .values()
+            .find(|a| a.name.to_lowercase() == name.to_lowercase())
+            .map(|a| a.id.clone())
+            .unwrap_or_else(|| "builtin-fullstack".to_string())
+    };
 
     let now = Utc::now();
     let mut created_tasks = Vec::new();
@@ -337,21 +416,25 @@ pub fn import_tasks(
     for spec in specs {
         let task_slug = slug::slugify(&spec.title);
         let short_id = &uuid::Uuid::new_v4().to_string()[..4];
-        let branch = format!("gmb/{}-{}", task_slug, short_id);
+        let branch = format!("{}/{}-{}", feature.branch, task_slug, short_id);
         let worktree_path = format!("{}/.gmb/worktrees/{}-{}", repo.path, task_slug, short_id);
+
+        let agent_id = resolve_agent(&spec.agent);
+        let subagent_ids: Vec<String> = spec.subagents.iter().map(|s| resolve_agent(s)).collect();
 
         let task = Task {
             task_id: uuid::Uuid::new_v4().to_string(),
-            ideation_id: ideation_id.clone(),
+            feature_id: feature_id.clone(),
             repo_id: repo.id.clone(),
             title: spec.title,
             description: spec.description,
             acceptance_criteria: spec.acceptance_criteria,
             dependencies: spec.dependencies,
+            agent_id,
+            subagent_ids,
             status: TaskStatus::Pending,
             branch,
             worktree_path,
-            agent_pid: None,
             created_at: now,
             updated_at: now,
         };
@@ -359,44 +442,48 @@ pub fn import_tasks(
         let mut tasks = state.tasks.lock().unwrap();
         tasks.insert(task.task_id.clone(), task.clone());
         drop(tasks);
-
         created_tasks.push(task);
     }
+    drop(agents);
 
+    // Move feature to in_progress
+    let mut features = state.features.lock().unwrap();
+    if let Some(f) = features.get_mut(&feature_id) {
+        f.status = FeatureStatus::InProgress;
+        f.updated_at = Utc::now();
+    }
+    drop(features);
+    state.save_features();
     state.save_tasks();
+
     Ok(created_tasks)
 }
 
 #[tauri::command]
-pub fn list_tasks(state: State<AppState>, repo_id: String) -> Vec<Task> {
-    let repos = state.repositories.lock().unwrap();
-    if let Some(repo) = repos.get(&repo_id) {
-        state.load_tasks_for_repo(repo);
-    }
-    drop(repos);
-
+pub fn list_tasks(state: State<AppState>, feature_id: String) -> Vec<Task> {
     let tasks = state.tasks.lock().unwrap();
     tasks
         .values()
-        .filter(|t| t.repo_id == repo_id)
+        .filter(|t| t.feature_id == feature_id)
         .cloned()
         .collect()
 }
 
 #[tauri::command]
 pub fn get_task(state: State<AppState>, task_id: String) -> Result<Task, String> {
-    let tasks = state.tasks.lock().unwrap();
-    tasks
+    state
+        .tasks
+        .lock()
+        .unwrap()
         .get(&task_id)
         .cloned()
         .ok_or("Task not found".to_string())
 }
 
 #[tauri::command]
-pub fn start_agent(state: State<AppState>, task_id: String) -> Result<Task, String> {
-    let mut tasks = state.tasks.lock().unwrap();
-    let task = tasks.get_mut(&task_id).ok_or("Task not found")?;
-    let mut task = task.clone();
+pub fn start_task(state: State<AppState>, task_id: String) -> Result<Task, String> {
+    let tasks = state.tasks.lock().unwrap();
+    let mut task = tasks.get(&task_id).ok_or("Task not found")?.clone();
     drop(tasks);
 
     let repos = state.repositories.lock().unwrap();
@@ -406,17 +493,23 @@ pub fn start_agent(state: State<AppState>, task_id: String) -> Result<Task, Stri
         .clone();
     drop(repos);
 
-    // Create worktree if it doesn't exist
+    let features = state.features.lock().unwrap();
+    let feature = features
+        .get(&task.feature_id)
+        .ok_or("Feature not found")?
+        .clone();
+    drop(features);
+
+    // Create worktree branching from the feature branch
     if !Path::new(&task.worktree_path).exists() {
         git::create_worktree(
             &repo.path,
             &task.branch,
             &task.worktree_path,
-            &repo.base_branch,
+            &feature.branch,
         )
         .map_err(|e| e.to_string())?;
 
-        // Create .gmb directory in worktree
         let gmb_dir = format!("{}/.gmb", task.worktree_path);
         std::fs::create_dir_all(&gmb_dir)
             .map_err(|e| format!("Failed to create .gmb dir: {}", e))?;
@@ -426,7 +519,7 @@ pub fn start_agent(state: State<AppState>, task_id: String) -> Result<Task, Stri
     let keywords: Vec<&str> = task.title.split_whitespace().collect();
     let _ = generate_context_pack(&task.worktree_path, &repo.path, &keywords);
 
-    // Generate CLAUDE.md for automatic pickup
+    // Generate CLAUDE.md
     let _ = generate_task_claude_md(
         &task.worktree_path,
         &task.title,
@@ -435,22 +528,37 @@ pub fn start_agent(state: State<AppState>, task_id: String) -> Result<Task, Stri
         &repo.validators,
     );
 
-    // Generate agent prompt
-    let prompt = prompts::agent_prompt(
+    // Write agent system prompt
+    let agents = state.agents.lock().unwrap();
+    let agent = agents.get(&task.agent_id);
+    let agent_prompt = agent.map(|a| a.system_prompt.clone()).unwrap_or_default();
+    let subagent_prompts: String = task
+        .subagent_ids
+        .iter()
+        .filter_map(|id| agents.get(id))
+        .map(|a| format!("- **{}** ({}): {}", a.name, a.role, a.system_prompt))
+        .collect::<Vec<_>>()
+        .join("\n");
+    drop(agents);
+
+    let system_prompt = prompts::agent_system_prompt(&agent_prompt, &subagent_prompts);
+
+    let prompts_dir = Path::new(&task.worktree_path).join(".gmb").join("prompts");
+    std::fs::create_dir_all(&prompts_dir)
+        .map_err(|e| format!("Failed to create prompts dir: {}", e))?;
+    std::fs::write(prompts_dir.join("system-prompt.md"), &system_prompt)
+        .map_err(|e| format!("Failed to write system prompt: {}", e))?;
+
+    // Write task prompt (initial message)
+    let task_prompt = prompts::agent_task_prompt(
         &task.title,
         &task.description,
         &task.acceptance_criteria,
         &repo.validators,
     );
+    std::fs::write(prompts_dir.join("task.md"), &task_prompt)
+        .map_err(|e| format!("Failed to write task prompt: {}", e))?;
 
-    // Write prompt to file
-    let prompts_dir = Path::new(&task.worktree_path).join(".gmb").join("prompts");
-    std::fs::create_dir_all(&prompts_dir)
-        .map_err(|e| format!("Failed to create prompts dir: {}", e))?;
-    std::fs::write(prompts_dir.join("agent.md"), &prompt)
-        .map_err(|e| format!("Failed to write agent prompt: {}", e))?;
-
-    // Update task status
     task.status = TaskStatus::Running;
     task.updated_at = Utc::now();
 
@@ -463,77 +571,93 @@ pub fn start_agent(state: State<AppState>, task_id: String) -> Result<Task, Stri
 }
 
 #[tauri::command]
-pub fn get_agent_terminal_command(
+pub fn get_task_terminal_command(
     state: State<AppState>,
     task_id: String,
 ) -> Result<String, String> {
     let tasks = state.tasks.lock().unwrap();
     let task = tasks.get(&task_id).ok_or("Task not found")?;
 
-    let prompt_path = format!("{}/.gmb/prompts/agent.md", task.worktree_path);
+    let system_prompt_path = format!("{}/.gmb/prompts/system-prompt.md", task.worktree_path);
+    let task_prompt_path = format!("{}/.gmb/prompts/task.md", task.worktree_path);
 
     Ok(format!(
-        "cd {} && claude \"$(cat {})\"",
-        task.worktree_path, prompt_path
+        "cd {} && claude --append-system-prompt-file '{}' \"$(cat '{}')\"",
+        task.worktree_path, system_prompt_path, task_prompt_path
     ))
 }
 
 #[tauri::command]
-pub fn launch_agent(state: State<AppState>, task_id: String) -> Result<(), String> {
+pub fn launch_task(state: State<AppState>, task_id: String) -> Result<(), String> {
     let tasks = state.tasks.lock().unwrap();
     let task = tasks.get(&task_id).ok_or("Task not found")?.clone();
     drop(tasks);
 
     let prefs = state.preferences.lock().unwrap().clone();
 
-    let prompt_path = format!("{}/.gmb/prompts/agent.md", task.worktree_path);
-    let prompt_content = std::fs::read_to_string(&prompt_path)
-        .map_err(|e| format!("Failed to read prompt: {}", e))?;
+    let system_prompt_path = format!("{}/.gmb/prompts/system-prompt.md", task.worktree_path);
+    let task_prompt_path = format!("{}/.gmb/prompts/task.md", task.worktree_path);
 
-    let escaped = prompt_content.replace('\'', "'\\''");
-    launch_terminal(&prefs.shell, &task.worktree_path, &escaped)
+    let task_prompt = std::fs::read_to_string(&task_prompt_path)
+        .map_err(|e| format!("Failed to read task prompt: {}", e))?;
+    let escaped_prompt = task_prompt.replace('\'', "'\\''");
+    let escaped_path = system_prompt_path.replace('\'', "'\\''");
+
+    let cmd = format!(
+        "claude --append-system-prompt-file '{}' '{}'",
+        escaped_path, escaped_prompt
+    );
+    launch_terminal_cmd(&prefs.shell, &task.worktree_path, &cmd)
 }
 
 #[tauri::command]
-pub fn poll_task_status(state: State<AppState>, task_id: String) -> Result<Task, String> {
+pub fn complete_task(state: State<AppState>, task_id: String) -> Result<Task, String> {
     let mut tasks = state.tasks.lock().unwrap();
     let task = tasks.get_mut(&task_id).ok_or("Task not found")?;
+    task.status = TaskStatus::Completed;
+    task.updated_at = Utc::now();
+    let updated = task.clone();
+    drop(tasks);
+    state.save_tasks();
+    Ok(updated)
+}
 
-    // Only poll running tasks
-    if task.status != TaskStatus::Running {
-        return Ok(task.clone());
+#[tauri::command]
+pub fn merge_task(state: State<AppState>, task_id: String) -> Result<Task, String> {
+    let tasks = state.tasks.lock().unwrap();
+    let task = tasks.get(&task_id).ok_or("Task not found")?.clone();
+    drop(tasks);
+
+    if task.status != TaskStatus::Completed {
+        return Err("Task must be completed before merging".to_string());
     }
 
-    // Check if worktree exists (agent may not have started yet)
-    if !Path::new(&task.worktree_path).exists() {
-        return Ok(task.clone());
+    let repos = state.repositories.lock().unwrap();
+    let repo = repos
+        .get(&task.repo_id)
+        .ok_or("Repository not found")?
+        .clone();
+    drop(repos);
+
+    let features = state.features.lock().unwrap();
+    let feature = features
+        .get(&task.feature_id)
+        .ok_or("Feature not found")?
+        .clone();
+    drop(features);
+
+    // Merge task branch into feature branch
+    git::merge_branch(&repo.path, &feature.branch, &task.branch).map_err(|e| e.to_string())?;
+
+    // Clean up worktree
+    if Path::new(&task.worktree_path).exists() {
+        let _ = git::remove_worktree(&repo.path, &task.worktree_path);
     }
 
-    // Check for verify results
-    let verify_dir = Path::new(&task.worktree_path)
-        .join(".gmb")
-        .join("results")
-        .join("verify");
-    if verify_dir.exists() {
-        if let Ok(entries) = std::fs::read_dir(&verify_dir) {
-            let latest = entries
-                .flatten()
-                .filter(|e| e.path().is_dir())
-                .max_by_key(|e| e.file_name());
-            if let Some(dir) = latest {
-                let summary = dir.path().join("summary.json");
-                if let Ok(content) = std::fs::read_to_string(summary) {
-                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) {
-                        if v.get("all_passed").and_then(|v| v.as_bool()) == Some(true) {
-                            task.status = TaskStatus::Completed;
-                            task.updated_at = Utc::now();
-                        }
-                    }
-                }
-            }
-        }
-    }
-
+    let mut tasks = state.tasks.lock().unwrap();
+    let task = tasks.get_mut(&task_id).ok_or("Task not found")?;
+    task.status = TaskStatus::Merged;
+    task.updated_at = Utc::now();
     let updated = task.clone();
     drop(tasks);
     state.save_tasks();
@@ -557,6 +681,30 @@ pub fn update_task_status(
     Ok(updated)
 }
 
+#[tauri::command]
+pub fn delete_task(state: State<AppState>, task_id: String) -> Result<(), String> {
+    let tasks = state.tasks.lock().unwrap();
+    let task = tasks.get(&task_id).ok_or("Task not found")?.clone();
+    drop(tasks);
+
+    let repos = state.repositories.lock().unwrap();
+    let repo = repos
+        .get(&task.repo_id)
+        .ok_or("Repository not found")?
+        .clone();
+    drop(repos);
+
+    if Path::new(&task.worktree_path).exists() {
+        let _ = git::remove_worktree(&repo.path, &task.worktree_path);
+    }
+
+    let mut tasks = state.tasks.lock().unwrap();
+    tasks.remove(&task_id);
+    drop(tasks);
+    state.save_tasks();
+    Ok(())
+}
+
 // ── Verification Commands ──
 
 #[tauri::command]
@@ -573,7 +721,7 @@ pub fn run_verification(state: State<AppState>, task_id: String) -> Result<Verif
     drop(repos);
 
     if repo.validators.is_empty() {
-        return Err("No validators configured for this repository".to_string());
+        return Err("No validators configured".to_string());
     }
 
     let results_dir = format!("{}/.gmb/results/verify", task.worktree_path);
@@ -587,7 +735,6 @@ pub fn run_verification(state: State<AppState>, task_id: String) -> Result<Verif
 
     let result = run_validators(&task.worktree_path, &repo.validators, attempt)?;
 
-    // Update task status based on result
     let mut tasks = state.tasks.lock().unwrap();
     if let Some(t) = tasks.get_mut(&task_id) {
         if result.all_passed {
@@ -603,33 +750,152 @@ pub fn run_verification(state: State<AppState>, task_id: String) -> Result<Verif
     Ok(result)
 }
 
-// ── Cleanup Commands ──
-
+/// Start final verification on the feature branch after all tasks are merged.
 #[tauri::command]
-pub fn delete_task(state: State<AppState>, task_id: String) -> Result<(), String> {
-    let tasks = state.tasks.lock().unwrap();
-    let task = tasks.get(&task_id).ok_or("Task not found")?.clone();
-    drop(tasks);
+pub fn start_feature_verification(
+    state: State<AppState>,
+    feature_id: String,
+) -> Result<Feature, String> {
+    let features = state.features.lock().unwrap();
+    let feature = features
+        .get(&feature_id)
+        .ok_or("Feature not found")?
+        .clone();
+    drop(features);
 
     let repos = state.repositories.lock().unwrap();
     let repo = repos
-        .get(&task.repo_id)
+        .get(&feature.repo_id)
         .ok_or("Repository not found")?
         .clone();
     drop(repos);
 
-    // Remove worktree
-    if Path::new(&task.worktree_path).exists() {
-        let _ = git::remove_worktree(&repo.path, &task.worktree_path);
+    // Create a worktree for verification on the feature branch
+    let verify_slug = format!("verify-{}", &feature.id[..4]);
+    let worktree_path = format!("{}/.gmb/worktrees/{}", repo.path, verify_slug);
+
+    if !Path::new(&worktree_path).exists() {
+        // Checkout feature branch in a worktree (no new branch needed)
+        let verify_branch = format!("{}/verify", feature.branch);
+        git::create_worktree(&repo.path, &verify_branch, &worktree_path, &feature.branch)
+            .map_err(|e| e.to_string())?;
     }
 
-    // Remove from memory and save
-    let mut tasks = state.tasks.lock().unwrap();
-    tasks.remove(&task_id);
-    drop(tasks);
-    state.save_tasks();
+    // Write verification prompt
+    let prompt = prompts::verification_prompt(&feature.name, &repo.validators);
+    let gmb_dir = Path::new(&worktree_path).join(".gmb").join("prompts");
+    std::fs::create_dir_all(&gmb_dir).map_err(|e| format!("Failed to create dir: {}", e))?;
+    std::fs::write(gmb_dir.join("verify.md"), &prompt)
+        .map_err(|e| format!("Failed to write verify prompt: {}", e))?;
 
-    Ok(())
+    // Update feature status
+    let mut features = state.features.lock().unwrap();
+    if let Some(f) = features.get_mut(&feature_id) {
+        f.status = FeatureStatus::Verifying;
+        f.updated_at = Utc::now();
+    }
+    let updated = features.get(&feature_id).cloned().unwrap();
+    drop(features);
+    state.save_features();
+
+    Ok(updated)
+}
+
+#[tauri::command]
+pub fn get_verification_terminal_command(
+    state: State<AppState>,
+    feature_id: String,
+) -> Result<String, String> {
+    let features = state.features.lock().unwrap();
+    let feature = features
+        .get(&feature_id)
+        .ok_or("Feature not found")?
+        .clone();
+    drop(features);
+
+    let repos = state.repositories.lock().unwrap();
+    let repo = repos
+        .get(&feature.repo_id)
+        .ok_or("Repository not found")?
+        .clone();
+    drop(repos);
+
+    let verify_slug = format!("verify-{}", &feature.id[..4]);
+    let worktree_path = format!("{}/.gmb/worktrees/{}", repo.path, verify_slug);
+    let prompt_path = format!("{}/.gmb/prompts/verify.md", worktree_path);
+
+    Ok(format!(
+        "cd {} && claude \"$(cat '{}')\"",
+        worktree_path, prompt_path
+    ))
+}
+
+#[tauri::command]
+pub fn launch_verification(state: State<AppState>, feature_id: String) -> Result<(), String> {
+    let cmd = get_verification_terminal_command(state.clone(), feature_id)?;
+    let prefs = state.preferences.lock().unwrap().clone();
+    // Parse the cd target from the command
+    let parts: Vec<&str> = cmd.splitn(2, " && ").collect();
+    let cwd = parts[0].strip_prefix("cd ").unwrap_or(".");
+    let claude_cmd = parts.get(1).unwrap_or(&"");
+    launch_terminal_cmd(&prefs.shell, cwd, claude_cmd)
+}
+
+#[tauri::command]
+pub fn mark_feature_ready(state: State<AppState>, feature_id: String) -> Result<Feature, String> {
+    let mut features = state.features.lock().unwrap();
+    let feature = features.get_mut(&feature_id).ok_or("Feature not found")?;
+    feature.status = FeatureStatus::Ready;
+    feature.updated_at = Utc::now();
+    let updated = feature.clone();
+    drop(features);
+    state.save_features();
+    Ok(updated)
+}
+
+#[tauri::command]
+pub fn push_feature(state: State<AppState>, feature_id: String) -> Result<String, String> {
+    let features = state.features.lock().unwrap();
+    let feature = features
+        .get(&feature_id)
+        .ok_or("Feature not found")?
+        .clone();
+    drop(features);
+
+    let repos = state.repositories.lock().unwrap();
+    let repo = repos
+        .get(&feature.repo_id)
+        .ok_or("Repository not found")?
+        .clone();
+    drop(repos);
+
+    git::push_branch(&repo.path, &feature.branch).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_pr_command(state: State<AppState>, feature_id: String) -> Result<String, String> {
+    let features = state.features.lock().unwrap();
+    let feature = features
+        .get(&feature_id)
+        .ok_or("Feature not found")?
+        .clone();
+    drop(features);
+
+    let repos = state.repositories.lock().unwrap();
+    let repo = repos
+        .get(&feature.repo_id)
+        .ok_or("Repository not found")?
+        .clone();
+    drop(repos);
+
+    if let Some(pr_cmd) = &repo.pr_command {
+        Ok(pr_cmd.replace("{branch}", &feature.branch))
+    } else {
+        Ok(format!(
+            "gh pr create --head {} --title '{}' --body '{}'",
+            feature.branch, feature.name, feature.description
+        ))
+    }
 }
 
 // ── Preferences Commands ──
@@ -652,10 +918,7 @@ pub fn set_preferences(state: State<AppState>, shell: String) -> Preferences {
 // ── Helpers ──
 
 fn generate_context_pack_string(repo_path: &str) -> String {
-    // Generate a simple repo map string for the ideation prompt
     let mut map = String::new();
-
-    // Detect languages
     let indicators = vec![
         ("package.json", "JavaScript/TypeScript (Node.js)"),
         ("Cargo.toml", "Rust"),
@@ -699,24 +962,17 @@ fn generate_context_pack_string(repo_path: &str) -> String {
     map
 }
 
-/// Launch Claude Code in interactive plan mode with a system prompt file and initial message.
-/// This gives the user a back-and-forth conversation for ideation.
 fn launch_terminal_claude_interactive(
     shell: &str,
     cwd: &str,
     system_prompt_file: &str,
     initial_message: &str,
 ) -> Result<(), String> {
-    let claude_cmd = format!(
+    let cmd = format!(
         "claude --permission-mode plan --append-system-prompt-file '{}' '{}'",
         system_prompt_file, initial_message
     );
-    launch_terminal_cmd(shell, cwd, &claude_cmd)
-}
-
-fn launch_terminal(shell: &str, cwd: &str, prompt: &str) -> Result<(), String> {
-    let claude_cmd = format!("claude '{}'", prompt);
-    launch_terminal_cmd(shell, cwd, &claude_cmd)
+    launch_terminal_cmd(shell, cwd, &cmd)
 }
 
 fn launch_terminal_cmd(shell: &str, cwd: &str, cmd: &str) -> Result<(), String> {
@@ -762,7 +1018,6 @@ fn launch_terminal_cmd(shell: &str, cwd: &str, cmd: &str) -> Result<(), String> 
         let _ = Command::new("chmod").args(["+x", &tmp]).output();
         Command::new("open").args(["-a", "Terminal", &tmp]).spawn()
     } else {
-        // Linux
         let terminal = match shell {
             "bash" | "zsh" | "fish" => "x-terminal-emulator",
             other => other,

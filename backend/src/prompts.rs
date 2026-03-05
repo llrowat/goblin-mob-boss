@@ -1,56 +1,74 @@
-/// Generate the system prompt file for ideation.
-/// This is appended to Claude Code's default system prompt via --append-system-prompt-file,
-/// so the user gets an interactive planning conversation (not a one-shot dump).
-pub fn ideation_system_prompt(tasks_dir: &str, repo_map: &str) -> String {
+/// System prompt for ideation — appended to Claude Code via --append-system-prompt-file.
+/// The user gets an interactive conversation to plan and create tasks.
+pub fn ideation_system_prompt(tasks_dir: &str, repo_map: &str, available_agents: &str) -> String {
     format!(
-        r#"You are helping the user plan a development project and break it into parallelizable tasks.
+        r#"You are helping the user plan a development feature and break it into parallelizable tasks.
 
 ## Repository Overview
 
 {repo_map}
 
+## Available Agents
+
+The user has these agents configured. Assign the most appropriate agent to each task:
+
+{available_agents}
+
 ## How This Works
 
-This is an interactive planning session. Have a back-and-forth conversation with the user:
+This is an interactive planning session. Have a back-and-forth conversation:
 
-1. **Understand** — Ask clarifying questions about what they want to build. Don't assume.
-2. **Explore** — Read the codebase to understand the architecture, patterns, and conventions.
-3. **Plan** — Propose a high-level approach. Discuss trade-offs. Let the user refine it.
-4. **Break down** — Once the plan is agreed on, break it into concrete, parallel tasks.
+1. **Understand** — Ask clarifying questions about what they want to build.
+2. **Explore** — Read the codebase to understand architecture and patterns.
+3. **Plan** — Propose a high-level approach. Discuss trade-offs.
+4. **Break down** — Once agreed, create concrete tasks with agent assignments.
 
 ## Creating Tasks
 
-When you and the user have agreed on a plan, write each task as a JSON file in `{tasks_dir}`.
+When the plan is agreed, write each task as a JSON file in `{tasks_dir}`.
 
-Name files `01.json`, `02.json`, etc. Each file should contain:
+Name files `01.json`, `02.json`, etc:
 
 ```json
 {{{{
   "title": "Short task title",
-  "description": "Detailed description of what to implement, including specific files and approach",
-  "acceptance_criteria": [
-    "Specific, verifiable criterion"
-  ],
-  "dependencies": []
+  "description": "Detailed description including specific files and approach",
+  "acceptance_criteria": ["Specific, verifiable criterion"],
+  "dependencies": [],
+  "agent": "agent-name-or-id",
+  "subagents": []
 }}}}
 ```
 
-Rules for tasks:
-- Each task must be independently workable by a separate agent in its own git worktree
-- Use `dependencies` to list task numbers (e.g. `["01"]`) that must complete first
-- Keep tasks focused — one concern per task
-- Include enough detail in the description that an agent can work without asking questions
-- Acceptance criteria should be specific and testable
+Rules:
+- Each task is worked by a separate agent in its own git worktree
+- Use `dependencies` for task numbers (e.g. `["01"]`) that must complete first
+- Assign the best-fit agent from the available list
+- Use `subagents` for helpers (e.g. a test writer alongside a developer)
+- Include enough detail that an agent can work without asking questions
 
-**Do NOT create task files until the user confirms the plan.** Discuss first, then write.
+**Do NOT create task files until the user confirms the plan.**
 "#,
         tasks_dir = tasks_dir,
         repo_map = repo_map,
+        available_agents = available_agents,
     )
 }
 
-/// Generate the agent prompt for a specific task.
-pub fn agent_prompt(
+/// Agent system prompt — appended to Claude Code when launching a task agent.
+pub fn agent_system_prompt(agent_prompt: &str, subagent_prompts: &str) -> String {
+    let mut prompt = agent_prompt.to_string();
+    if !subagent_prompts.is_empty() {
+        prompt.push_str(&format!(
+            "\n\nYou have access to subagents with the following specializations. Use them as needed:\n\n{}",
+            subagent_prompts
+        ));
+    }
+    prompt
+}
+
+/// The initial message for a task agent with full task context.
+pub fn agent_task_prompt(
     title: &str,
     description: &str,
     acceptance_criteria: &[String],
@@ -105,6 +123,37 @@ These commands must pass before the task is done:
         title = title,
         description = description,
         criteria_text = criteria_text,
+        validators_text = validators_text,
+    )
+}
+
+/// Verification prompt — used after all tasks are merged to the feature branch.
+pub fn verification_prompt(feature_name: &str, validators: &[String]) -> String {
+    let validators_text = validators
+        .iter()
+        .map(|v| format!("- `{}`", v))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    format!(
+        r#"# Final Verification: {feature_name}
+
+All tasks for this feature have been merged. Your job is to verify everything works together.
+
+## Steps
+
+1. Run all validators and fix any failures:
+
+{validators_text}
+
+2. Check for integration issues between the merged changes.
+3. Ensure the codebase builds and all tests pass.
+4. Fix any issues you find — keep changes minimal.
+5. Commit fixes with clear messages.
+
+If everything passes, you're done. If there are issues, fix them and re-run validators until everything is green.
+"#,
+        feature_name = feature_name,
         validators_text = validators_text,
     )
 }

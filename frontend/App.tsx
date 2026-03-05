@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, NavLink } from "react-router-dom";
 import { HomePage } from "./pages/HomePage";
 import { IdeationPage } from "./pages/IdeationPage";
 import { TaskBoardPage } from "./pages/TaskBoardPage";
+import { AgentsPage } from "./pages/AgentsPage";
 import { ReposPage } from "./pages/ReposPage";
 import { SettingsPage } from "./pages/SettingsPage";
 
@@ -26,10 +27,18 @@ function App() {
                 `sidebar-nav-item ${isActive ? "active" : ""}`
               }
             >
-              Ideate
+              Features
             </NavLink>
 
             <div className="sidebar-section-label">Settings</div>
+            <NavLink
+              to="/agents"
+              className={({ isActive }) =>
+                `sidebar-nav-item ${isActive ? "active" : ""}`
+              }
+            >
+              Agents
+            </NavLink>
             <NavLink
               to="/repos"
               className={({ isActive }) =>
@@ -52,8 +61,15 @@ function App() {
         <main className="main-content">
           <Routes>
             <Route path="/" element={<HomePage />} />
-            <Route path="/ideation/:ideationId" element={<IdeationPage />} />
-            <Route path="/tasks/:repoId" element={<TaskBoardPage />} />
+            <Route
+              path="/feature/:featureId/ideation"
+              element={<IdeationPage />}
+            />
+            <Route
+              path="/feature/:featureId/tasks"
+              element={<TaskBoardPage />}
+            />
+            <Route path="/agents" element={<AgentsPage />} />
             <Route path="/repos" element={<ReposPage />} />
             <Route path="/settings" element={<SettingsPage />} />
           </Routes>

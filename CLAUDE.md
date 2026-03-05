@@ -1,8 +1,8 @@
-# Goblin Mob Boss — Claude Code Launch Pad
+# Goblin Mob Boss — Agent-Based Development Workflow
 
 ## Project Structure
 
-This is a Tauri v2 + React (TypeScript) desktop application with a Rust backend. The app provides agent-based AI development workflows — ideation, task creation, parallel agent execution, and status tracking.
+This is a Tauri v2 + React (TypeScript) desktop application with a Rust backend. The app provides agent-based AI development workflows — configure agents, plan features interactively, execute tasks in parallel via Claude Code, merge, verify, and create PRs.
 
 ```
 goblin-mob-boss/
@@ -10,23 +10,24 @@ goblin-mob-boss/
 │   ├── src/
 │   │   ├── lib.rs              # App entry, state management
 │   │   ├── main.rs             # Binary entry
-│   │   ├── commands.rs         # Tauri IPC command handlers
-│   │   ├── models.rs           # Data models (Ideation, Task, Repository, Preferences)
-│   │   ├── store.rs            # JSON file-based persistence (repos, ideations, tasks, preferences)
+│   │   ├── commands.rs         # Tauri IPC command handlers (agents, features, tasks, verification, PR)
+│   │   ├── models.rs           # Data models (Agent, Feature, Task, Repository, Preferences)
+│   │   ├── store.rs            # JSON file-based persistence (repos, agents, features, tasks, preferences)
 │   │   ├── context.rs          # Repo map and related files generation
 │   │   ├── claude_md.rs        # CLAUDE.md file management for worktrees
-│   │   ├── git.rs              # Git operations (worktrees, branches)
-│   │   ├── prompts.rs          # Ideation and agent prompt templates
+│   │   ├── git.rs              # Git operations (worktrees, branches, merge, push)
+│   │   ├── prompts.rs          # Ideation, agent, and verification prompt templates
 │   │   └── validators.rs       # Validator execution
 │   └── tauri.conf.json
 ├── frontend/           # React frontend
 │   ├── components/     # Shared UI components
 │   │   ├── AddRepoModal        # Repository addition dialog (with folder picker)
-│   │   └── StatusBadge         # Task status indicator
+│   │   └── StatusBadge         # Task/feature status indicator
 │   ├── pages/          # Page components
-│   │   ├── HomePage            # Ideation launcher (describe what to build)
-│   │   ├── IdeationPage        # Claude Code launch + task discovery
-│   │   ├── TaskBoardPage       # Agent dashboard (task cards, status, actions)
+│   │   ├── HomePage            # Feature launcher (describe what to build, list active features)
+│   │   ├── IdeationPage        # Interactive Claude Code planning + task discovery
+│   │   ├── TaskBoardPage       # Agent dashboard (task cards, merge, verification, PR)
+│   │   ├── AgentsPage          # Agent CRUD (built-in + custom agents)
 │   │   ├── ReposPage           # Repository management (validators, max agents)
 │   │   └── SettingsPage        # App preferences (shell selection)
 │   ├── hooks/          # React hooks
@@ -39,6 +40,16 @@ goblin-mob-boss/
 ├── package.json        # Frontend dependencies
 └── vite.config.ts      # Vite configuration (with vitest)
 ```
+
+## Core Workflow
+
+1. **Agents** — 5 built-in agents (Full-Stack, Frontend, Backend, Test Writer, Reviewer) + custom agents
+2. **Feature** — User starts a feature → creates feature branch from repo base
+3. **Ideation** — Interactive Claude Code session in plan mode; results in task specs with assigned agents
+4. **Tasks** — Each task gets a worktree branched from the feature branch; Claude Code executes with agent config
+5. **Merge** — Completed tasks merge back to the feature branch
+6. **Verification** — Final verification pass with test/reviewer agents on the feature branch
+7. **PR** — Push feature branch and create PR
 
 ## Development
 

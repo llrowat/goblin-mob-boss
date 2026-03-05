@@ -37,12 +37,10 @@ pub fn create_worktree(
     worktree_path: &str,
     base_branch: &str,
 ) -> GitResult<()> {
-    // Ensure the worktree parent directory exists
     if let Some(parent) = Path::new(worktree_path).parent() {
         std::fs::create_dir_all(parent)
             .map_err(|e| GitError(format!("Failed to create worktree dir: {}", e)))?;
     }
-
     run_git(
         repo_path,
         &["worktree", "add", "-b", branch, worktree_path, base_branch],
@@ -54,6 +52,42 @@ pub fn remove_worktree(repo_path: &str, worktree_path: &str) -> GitResult<()> {
     let _ = run_git(repo_path, &["worktree", "remove", worktree_path, "--force"]);
     let _ = run_git(repo_path, &["worktree", "prune"]);
     Ok(())
+}
+
+/// Create a branch (not a worktree) from a base.
+pub fn create_branch(repo_path: &str, branch: &str, base: &str) -> GitResult<()> {
+    run_git(repo_path, &["branch", branch, base])?;
+    Ok(())
+}
+
+/// Merge a source branch into a target branch.
+pub fn merge_branch(repo_path: &str, target: &str, source: &str) -> GitResult<String> {
+    // Checkout target
+    run_git(repo_path, &["checkout", target])?;
+    // Merge source
+    let result = run_git(
+        repo_path,
+        &[
+            "merge",
+            source,
+            "--no-ff",
+            "-m",
+            &format!("Merge {} into {}", source, target),
+        ],
+    );
+    match result {
+        Ok(output) => Ok(output),
+        Err(e) => {
+            // Abort merge on conflict
+            let _ = run_git(repo_path, &["merge", "--abort"]);
+            Err(e)
+        }
+    }
+}
+
+/// Push a branch to origin.
+pub fn push_branch(repo_path: &str, branch: &str) -> GitResult<String> {
+    run_git(repo_path, &["push", "-u", "origin", branch])
 }
 
 pub fn get_current_branch(repo_path: &str) -> GitResult<String> {
@@ -80,7 +114,6 @@ pub fn is_git_repo(path: &str) -> bool {
 }
 
 pub fn has_commits_beyond_base(worktree_path: &str, base_branch: &str) -> bool {
-    // Check if there are commits on HEAD that aren't in the base branch
     run_git(
         worktree_path,
         &["log", &format!("{}..HEAD", base_branch), "--oneline"],
@@ -90,12 +123,10 @@ pub fn has_commits_beyond_base(worktree_path: &str, base_branch: &str) -> bool {
 }
 
 pub fn get_default_branch(repo_path: &str) -> GitResult<String> {
-    // Try common default branch names
     for branch in &["main", "master"] {
         if run_git(repo_path, &["rev-parse", "--verify", branch]).is_ok() {
             return Ok(branch.to_string());
         }
     }
-    // Fall back to current branch
     get_current_branch(repo_path)
 }

@@ -9,30 +9,47 @@ export interface Repository {
   created_at: string;
 }
 
-export type IdeationStatus = "running" | "completed";
-
-export interface Ideation {
+export interface Agent {
   id: string;
-  repo_id: string;
-  description: string;
-  status: IdeationStatus;
-  created_at: string;
+  name: string;
+  role: string;
+  system_prompt: string;
+  is_builtin: boolean;
 }
 
-export type TaskStatus = "pending" | "running" | "completed" | "failed";
+export type FeatureStatus = "ideation" | "in_progress" | "verifying" | "ready";
+
+export interface Feature {
+  id: string;
+  repo_id: string;
+  name: string;
+  description: string;
+  branch: string;
+  status: FeatureStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+export type TaskStatus =
+  | "pending"
+  | "running"
+  | "completed"
+  | "merged"
+  | "failed";
 
 export interface Task {
   task_id: string;
-  ideation_id: string;
+  feature_id: string;
   repo_id: string;
   title: string;
   description: string;
   acceptance_criteria: string[];
   dependencies: string[];
+  agent_id: string;
+  subagent_ids: string[];
   status: TaskStatus;
   branch: string;
   worktree_path: string;
-  agent_pid: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -42,6 +59,8 @@ export interface TaskSpec {
   description: string;
   acceptance_criteria: string[];
   dependencies: string[];
+  agent: string;
+  subagents: string[];
 }
 
 export interface ValidatorResult {
