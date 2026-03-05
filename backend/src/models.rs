@@ -243,6 +243,23 @@ pub struct VerifyResult {
     pub timestamp: DateTime<Utc>,
 }
 
+// ── Diff Summary ──
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FileDiff {
+    pub path: String,
+    pub insertions: u32,
+    pub deletions: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiffSummary {
+    pub files: Vec<FileDiff>,
+    pub total_files: u32,
+    pub total_insertions: u32,
+    pub total_deletions: u32,
+}
+
 // ── Preferences ──
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -353,6 +370,34 @@ mod tests {
         }"#;
         let spec: TaskSpec = serde_json::from_str(json).unwrap();
         assert_eq!(spec.repo, ""); // default empty
+    }
+
+    #[test]
+    fn diff_summary_serializes() {
+        let summary = DiffSummary {
+            files: vec![
+                FileDiff {
+                    path: "src/main.rs".to_string(),
+                    insertions: 10,
+                    deletions: 2,
+                },
+                FileDiff {
+                    path: "README.md".to_string(),
+                    insertions: 3,
+                    deletions: 0,
+                },
+            ],
+            total_files: 2,
+            total_insertions: 13,
+            total_deletions: 2,
+        };
+        let json = serde_json::to_string(&summary).unwrap();
+        let parsed: DiffSummary = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.total_files, 2);
+        assert_eq!(parsed.total_insertions, 13);
+        assert_eq!(parsed.total_deletions, 2);
+        assert_eq!(parsed.files.len(), 2);
+        assert_eq!(parsed.files[0].path, "src/main.rs");
     }
 
     #[test]

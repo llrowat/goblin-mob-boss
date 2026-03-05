@@ -7,6 +7,7 @@ import type {
   TaskSpec,
   TaskStatus,
   VerifyResult,
+  DiffSummary,
   Preferences,
 } from "../types";
 
@@ -125,6 +126,9 @@ export function useTauri() {
       invoke<VerifyResult>("run_verification", { taskId }),
 
     deleteTask: (taskId: string) => invoke<void>("delete_task", { taskId }),
+
+    getTaskDiff: (taskId: string) =>
+      invoke<DiffSummary>("get_task_diff", { taskId }),
 
     // Feature verification & PR
     startFeatureVerification: (featureId: string) =>

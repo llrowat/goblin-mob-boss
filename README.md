@@ -20,6 +20,7 @@ A desktop app for agent-based AI development workflows. Configure agents, plan f
 - **Parallel execution** — Multiple Claude Code agents work on separate worktrees simultaneously across repos
 - **Repository management** — Register local git repos, configure validators and max parallel agents
 - **Auto-generated prompts** — Each agent gets context-aware prompts with acceptance criteria
+- **Change summary** — See files changed, lines added/removed per task before merging
 - **Live status tracking** — Dashboard polls for task completion and verification results
 - **Merge workflow** — Tasks merge to the feature branch; final verification before PR
 

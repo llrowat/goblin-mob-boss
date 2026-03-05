@@ -89,6 +89,19 @@ export interface VerifyResult {
   timestamp: string;
 }
 
+export interface FileDiff {
+  path: string;
+  insertions: number;
+  deletions: number;
+}
+
+export interface DiffSummary {
+  files: FileDiff[];
+  total_files: number;
+  total_insertions: number;
+  total_deletions: number;
+}
+
 export interface RepoInfo {
   name: string;
   base_branch: string;

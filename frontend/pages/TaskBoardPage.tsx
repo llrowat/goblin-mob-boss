@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useTauri } from "../hooks/useTauri";
 import { StatusBadge } from "../components/StatusBadge";
-import type { Task, Feature, Repository, Agent, VerifyResult } from "../types";
+import type { Task, Feature, Repository, Agent, VerifyResult, DiffSummary } from "../types";
 
 export function TaskBoardPage() {
   const { featureId } = useParams<{ featureId: string }>();
@@ -20,6 +20,8 @@ export function TaskBoardPage() {
   const [error, setError] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [prCommand, setPrCommand] = useState("");
+  const [diffSummaries, setDiffSummaries] = useState<Record<string, DiffSummary>>({});
+  const [expandedDiff, setExpandedDiff] = useState<string | null>(null);
 
   const isMultiRepo = feature ? feature.repos.length > 1 : false;
 
@@ -52,6 +54,23 @@ export function TaskBoardPage() {
     const interval = setInterval(loadTasks, 5000);
     return () => clearInterval(interval);
   }, [loadTasks]);
+
+  // Fetch diff summaries for completed/merged tasks
+  useEffect(() => {
+    for (const task of tasks) {
+      if (
+        (task.status === "completed" || task.status === "merged") &&
+        !diffSummaries[task.task_id]
+      ) {
+        tauri
+          .getTaskDiff(task.task_id)
+          .then((diff) =>
+            setDiffSummaries((prev) => ({ ...prev, [task.task_id]: diff })),
+          )
+          .catch(() => {}); // silently ignore if diff unavailable
+      }
+    }
+  }, [tasks]);
 
   const canStart = (task: Task): boolean => {
     if (task.status !== "pending") return false;
@@ -352,6 +371,28 @@ export function TaskBoardPage() {
                 </span>
               )}
               <StatusBadge status={task.status} />
+              {diffSummaries[task.task_id] && (
+                <span
+                  style={{
+                    fontSize: 11,
+                    fontFamily: "var(--font-mono)",
+                    color: "var(--text-secondary)",
+                    marginLeft: 8,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {diffSummaries[task.task_id].total_files} file
+                  {diffSummaries[task.task_id].total_files !== 1 ? "s" : ""}
+                  {" "}
+                  <span style={{ color: "var(--success)" }}>
+                    +{diffSummaries[task.task_id].total_insertions}
+                  </span>
+                  {" "}
+                  <span style={{ color: "var(--danger)" }}>
+                    -{diffSummaries[task.task_id].total_deletions}
+                  </span>
+                </span>
+              )}
             </div>
 
             {expandedTask === task.task_id && (
@@ -422,6 +463,73 @@ export function TaskBoardPage() {
                     {task.branch}
                   </div>
                 )}
+
+                {/* Changed files */}
+                {diffSummaries[task.task_id] &&
+                  diffSummaries[task.task_id].files.length > 0 && (
+                    <div style={{ marginTop: 8 }}>
+                      <div
+                        style={{
+                          fontSize: 11,
+                          color: "var(--text-secondary)",
+                          textTransform: "uppercase",
+                          marginBottom: 4,
+                          cursor: "pointer",
+                          userSelect: "none",
+                        }}
+                        onClick={() =>
+                          setExpandedDiff(
+                            expandedDiff === task.task_id
+                              ? null
+                              : task.task_id,
+                          )
+                        }
+                      >
+                        {expandedDiff === task.task_id ? "\u25BC" : "\u25B6"}{" "}
+                        Changed Files (
+                        {diffSummaries[task.task_id].total_files})
+                      </div>
+                      {expandedDiff === task.task_id && (
+                        <div
+                          style={{
+                            fontFamily: "var(--font-mono)",
+                            fontSize: 12,
+                            lineHeight: 1.6,
+                          }}
+                        >
+                          {diffSummaries[task.task_id].files.map((f) => (
+                            <div
+                              key={f.path}
+                              style={{
+                                display: "flex",
+                                gap: 8,
+                                alignItems: "center",
+                              }}
+                            >
+                              <span
+                                style={{
+                                  color: "var(--text-secondary)",
+                                  flex: 1,
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                  whiteSpace: "nowrap",
+                                }}
+                                title={f.path}
+                              >
+                                {f.path}
+                              </span>
+                              <span style={{ color: "var(--success)" }}>
+                                +{f.insertions}
+                              </span>
+                              <span style={{ color: "var(--danger)" }}>
+                                -{f.deletions}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                 <div className="actions-bar">
                   {task.status === "pending" && canStart(task) && (

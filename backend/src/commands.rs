@@ -738,6 +738,63 @@ pub fn delete_task(state: State<AppState>, task_id: String) -> Result<(), String
     Ok(())
 }
 
+// ── Diff Commands ──
+
+#[tauri::command]
+pub fn get_task_diff(state: State<AppState>, task_id: String) -> Result<DiffSummary, String> {
+    let tasks = state.tasks.lock().unwrap();
+    let task = tasks.get(&task_id).ok_or("Task not found")?.clone();
+    drop(tasks);
+
+    let repos = state.repositories.lock().unwrap();
+    let repo = repos
+        .get(&task.repo_id)
+        .ok_or("Repository not found")?
+        .clone();
+    drop(repos);
+
+    let features = state.features.lock().unwrap();
+    let feature = features
+        .get(&task.feature_id)
+        .ok_or("Feature not found")?
+        .clone();
+    drop(features);
+
+    let feature_branch = feature
+        .branch_for_repo(&task.repo_id)
+        .unwrap_or(&feature.branch);
+
+    // Run diff from the worktree if it exists, otherwise from the main repo
+    let diff_path = if std::path::Path::new(&task.worktree_path).exists() {
+        &task.worktree_path
+    } else {
+        &repo.path
+    };
+
+    let file_diffs = git::diff_stat(diff_path, feature_branch, &task.branch)
+        .map_err(|e| e.to_string())?;
+
+    let total_files = file_diffs.len() as u32;
+    let total_insertions: u32 = file_diffs.iter().map(|(_, ins, _)| ins).sum();
+    let total_deletions: u32 = file_diffs.iter().map(|(_, _, del)| del).sum();
+
+    let files = file_diffs
+        .into_iter()
+        .map(|(path, insertions, deletions)| FileDiff {
+            path,
+            insertions,
+            deletions,
+        })
+        .collect();
+
+    Ok(DiffSummary {
+        files,
+        total_files,
+        total_insertions,
+        total_deletions,
+    })
+}
+
 // ── Verification Commands ──
 
 #[tauri::command]

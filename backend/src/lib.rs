@@ -60,6 +60,7 @@ pub fn run() {
             commands::merge_task,
             commands::update_task_status,
             commands::delete_task,
+            commands::get_task_diff,
             commands::run_verification,
             // Feature verification & PR
             commands::start_feature_verification,
