@@ -96,6 +96,34 @@ pub fn default_agents() -> Vec<Agent> {
             system_prompt: "You are a code reviewer. Review the changes for correctness, security, performance, and style. Fix any issues you find. Run all validators and ensure they pass.".to_string(),
             is_builtin: true,
         },
+        Agent {
+            id: "builtin-architect".to_string(),
+            name: "Software Architect".to_string(),
+            role: "planning".to_string(),
+            system_prompt: "You are a software architect. Focus on system design, component boundaries, data flow, and technical trade-offs. Break features into well-scoped tasks that can be worked in parallel with minimal merge conflicts. Consider scalability, maintainability, and existing architectural patterns.".to_string(),
+            is_builtin: true,
+        },
+        Agent {
+            id: "builtin-product-owner".to_string(),
+            name: "Product Owner".to_string(),
+            role: "planning".to_string(),
+            system_prompt: "You are a product owner. Focus on user stories, acceptance criteria, edge cases, and feature completeness. Ensure tasks cover the full user experience including error states, accessibility, and documentation. Ask clarifying questions about requirements and prioritize work effectively.".to_string(),
+            is_builtin: true,
+        },
+        Agent {
+            id: "builtin-security-reviewer".to_string(),
+            name: "Security Reviewer".to_string(),
+            role: "reviewer".to_string(),
+            system_prompt: "You are a security specialist. Review code for vulnerabilities including injection attacks, authentication flaws, insecure data handling, and OWASP Top 10 issues. Check for secrets in code, improper access controls, and unsafe dependencies. Fix any security issues you find.".to_string(),
+            is_builtin: true,
+        },
+        Agent {
+            id: "builtin-integration-tester".to_string(),
+            name: "Integration Tester".to_string(),
+            role: "testing".to_string(),
+            system_prompt: "You are an integration testing specialist. Verify that merged changes work together correctly. Focus on cross-component interactions, API contracts, data flow between modules, and end-to-end scenarios. Write integration tests for critical paths and fix any issues found.".to_string(),
+            is_builtin: true,
+        },
     ]
 }
 
@@ -106,7 +134,6 @@ pub fn default_agents() -> Vec<Agent> {
 pub enum FeatureStatus {
     Ideation,
     InProgress,
-    Verifying,
     Ready,
 }
 
@@ -184,6 +211,7 @@ impl Feature {
 pub enum TaskStatus {
     Pending,
     Running,
+    Verifying,
     Completed,
     Merged,
     Failed,
@@ -200,6 +228,8 @@ pub struct Task {
     pub dependencies: Vec<String>,
     pub agent_id: String,
     pub subagent_ids: Vec<String>,
+    #[serde(default)]
+    pub verification_agent_ids: Vec<String>,
     pub status: TaskStatus,
     pub branch: String,
     pub worktree_path: String,
@@ -219,9 +249,20 @@ pub struct TaskSpec {
     pub agent: String,
     #[serde(default)]
     pub subagents: Vec<String>,
+    #[serde(default)]
+    pub verification_agents: Vec<String>,
     /// Target repo name or ID (for multi-repo features). Empty = first/primary repo.
     #[serde(default)]
     pub repo: String,
+}
+
+/// Status written by the agent to `.gmb/status.json` inside the worktree.
+/// The app polls this file to detect task progress.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TaskDotStatus {
+    pub phase: String, // "implementing", "verifying", "done", "failed"
+    #[serde(default)]
+    pub message: String,
 }
 
 // ── Validator Results ──
@@ -267,6 +308,24 @@ pub struct Preferences {
     pub shell: String,
     #[serde(default)]
     pub verification_agent_ids: Vec<String>,
+    #[serde(default = "Preferences::default_planning_agent_ids")]
+    pub planning_agent_ids: Vec<String>,
+}
+
+impl Preferences {
+    fn default_planning_agent_ids() -> Vec<String> {
+        vec![
+            "builtin-fullstack".to_string(),
+            "builtin-frontend".to_string(),
+            "builtin-backend".to_string(),
+            "builtin-test-writer".to_string(),
+            "builtin-reviewer".to_string(),
+            "builtin-architect".to_string(),
+            "builtin-product-owner".to_string(),
+            "builtin-security-reviewer".to_string(),
+            "builtin-integration-tester".to_string(),
+        ]
+    }
 }
 
 impl Default for Preferences {
@@ -279,9 +338,11 @@ impl Default for Preferences {
         Self {
             shell,
             verification_agent_ids: vec![
-                "builtin-test-writer".to_string(),
                 "builtin-reviewer".to_string(),
+                "builtin-security-reviewer".to_string(),
+                "builtin-integration-tester".to_string(),
             ],
+            planning_agent_ids: Self::default_planning_agent_ids(),
         }
     }
 }
@@ -419,5 +480,82 @@ mod tests {
         assert!(parsed["repos"].is_array());
         assert_eq!(parsed["repos"].as_array().unwrap().len(), 2);
         assert_eq!(parsed["repo_id"], "r1");
+    }
+
+    #[test]
+    fn preferences_default_includes_planning_agents() {
+        let prefs = Preferences::default();
+        assert!(!prefs.planning_agent_ids.is_empty());
+        assert!(prefs.planning_agent_ids.contains(&"builtin-fullstack".to_string()));
+        assert!(prefs.planning_agent_ids.contains(&"builtin-frontend".to_string()));
+        assert!(prefs.planning_agent_ids.contains(&"builtin-backend".to_string()));
+        assert!(prefs.planning_agent_ids.contains(&"builtin-test-writer".to_string()));
+        assert!(prefs.planning_agent_ids.contains(&"builtin-reviewer".to_string()));
+        assert!(prefs.planning_agent_ids.contains(&"builtin-architect".to_string()));
+        assert!(prefs.planning_agent_ids.contains(&"builtin-product-owner".to_string()));
+        assert!(prefs.planning_agent_ids.contains(&"builtin-security-reviewer".to_string()));
+        assert!(prefs.planning_agent_ids.contains(&"builtin-integration-tester".to_string()));
+    }
+
+    #[test]
+    fn default_agents_includes_planning_roles() {
+        let agents = default_agents();
+        let architect = agents.iter().find(|a| a.id == "builtin-architect").unwrap();
+        assert_eq!(architect.name, "Software Architect");
+        assert_eq!(architect.role, "planning");
+        assert!(architect.is_builtin);
+
+        let po = agents.iter().find(|a| a.id == "builtin-product-owner").unwrap();
+        assert_eq!(po.name, "Product Owner");
+        assert_eq!(po.role, "planning");
+        assert!(po.is_builtin);
+    }
+
+    #[test]
+    fn default_agents_includes_verification_roles() {
+        let agents = default_agents();
+        let security = agents.iter().find(|a| a.id == "builtin-security-reviewer").unwrap();
+        assert_eq!(security.name, "Security Reviewer");
+        assert_eq!(security.role, "reviewer");
+        assert!(security.is_builtin);
+
+        let integration = agents.iter().find(|a| a.id == "builtin-integration-tester").unwrap();
+        assert_eq!(integration.name, "Integration Tester");
+        assert_eq!(integration.role, "testing");
+        assert!(integration.is_builtin);
+    }
+
+    #[test]
+    fn default_verification_agent_ids_includes_new_agents() {
+        let prefs = Preferences::default();
+        assert!(prefs.verification_agent_ids.contains(&"builtin-security-reviewer".to_string()));
+        assert!(prefs.verification_agent_ids.contains(&"builtin-integration-tester".to_string()));
+    }
+
+    #[test]
+    fn preferences_backwards_compat_deserialize() {
+        // Old preferences without planning_agent_ids should get defaults
+        let json = r#"{
+            "shell": "bash",
+            "verification_agent_ids": ["builtin-reviewer"]
+        }"#;
+        let prefs: Preferences = serde_json::from_str(json).unwrap();
+        assert_eq!(prefs.shell, "bash");
+        assert_eq!(prefs.verification_agent_ids, vec!["builtin-reviewer"]);
+        // planning_agent_ids should fall back to defaults
+        assert!(!prefs.planning_agent_ids.is_empty());
+        assert!(prefs.planning_agent_ids.contains(&"builtin-fullstack".to_string()));
+    }
+
+    #[test]
+    fn preferences_serializes_planning_agents() {
+        let prefs = Preferences {
+            shell: "zsh".to_string(),
+            verification_agent_ids: vec!["builtin-reviewer".to_string()],
+            planning_agent_ids: vec!["builtin-frontend".to_string()],
+        };
+        let json = serde_json::to_string(&prefs).unwrap();
+        let parsed: Preferences = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.planning_agent_ids, vec!["builtin-frontend"]);
     }
 }

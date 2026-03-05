@@ -17,7 +17,7 @@ export interface Agent {
   is_builtin: boolean;
 }
 
-export type FeatureStatus = "ideation" | "in_progress" | "verifying" | "ready";
+export type FeatureStatus = "ideation" | "in_progress" | "ready";
 
 export interface FeatureRepo {
   repo_id: string;
@@ -42,6 +42,7 @@ export interface Feature {
 export type TaskStatus =
   | "pending"
   | "running"
+  | "verifying"
   | "completed"
   | "merged"
   | "failed";
@@ -56,6 +57,7 @@ export interface Task {
   dependencies: string[];
   agent_id: string;
   subagent_ids: string[];
+  verification_agent_ids: string[];
   status: TaskStatus;
   branch: string;
   worktree_path: string;
@@ -70,23 +72,9 @@ export interface TaskSpec {
   dependencies: string[];
   agent: string;
   subagents: string[];
+  verification_agents: string[];
   /** Target repo name or ID (for multi-repo features). */
   repo: string;
-}
-
-export interface ValidatorResult {
-  command: string;
-  exit_code: number;
-  stdout: string;
-  stderr: string;
-  success: boolean;
-}
-
-export interface VerifyResult {
-  attempt: number;
-  all_passed: boolean;
-  results: ValidatorResult[];
-  timestamp: string;
 }
 
 export interface FileDiff {
@@ -110,4 +98,5 @@ export interface RepoInfo {
 export interface Preferences {
   shell: string;
   verification_agent_ids: string[];
+  planning_agent_ids: string[];
 }

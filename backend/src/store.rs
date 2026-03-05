@@ -363,6 +363,7 @@ mod tests {
             dependencies: vec![],
             agent_id: "builtin-fullstack".to_string(),
             subagent_ids: vec![],
+            verification_agent_ids: vec![],
             status: crate::models::TaskStatus::Pending,
             branch: "feature/test/task-1".to_string(),
             worktree_path: "/tmp/wt".to_string(),

@@ -291,6 +291,7 @@ function AgentEditForm({
           <option value="developer">Developer</option>
           <option value="testing">Testing</option>
           <option value="reviewer">Reviewer</option>
+          <option value="planning">Planning</option>
           <option value="devops">DevOps</option>
         </select>
       </div>

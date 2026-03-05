@@ -61,12 +61,8 @@ pub fn run() {
             commands::update_task_status,
             commands::delete_task,
             commands::get_task_diff,
-            commands::run_verification,
-            // Feature verification & PR
-            commands::start_feature_verification,
-            commands::get_verification_terminal_command,
-            commands::launch_verification,
-            commands::mark_feature_ready,
+            commands::poll_task_statuses,
+            // Feature PR
             commands::push_feature,
             commands::get_pr_command,
             // Preferences

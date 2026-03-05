@@ -96,10 +96,20 @@ describe("useTauri", () => {
   it("setPreferences passes shell and agent IDs", async () => {
     vi.mocked(invoke).mockResolvedValueOnce({});
     const { result } = renderHook(() => useTauri());
-    await result.current.setPreferences("zsh", ["agent-1"]);
+    await result.current.setPreferences("zsh", ["agent-1"], ["agent-2"]);
     expect(invoke).toHaveBeenCalledWith("set_preferences", {
       shell: "zsh",
       verificationAgentIds: ["agent-1"],
+      planningAgentIds: ["agent-2"],
+    });
+  });
+
+  it("pollTaskStatuses calls invoke correctly", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce([]);
+    const { result } = renderHook(() => useTauri());
+    await result.current.pollTaskStatuses("feature-1");
+    expect(invoke).toHaveBeenCalledWith("poll_task_statuses", {
+      featureId: "feature-1",
     });
   });
 });
