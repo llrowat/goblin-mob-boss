@@ -59,3 +59,55 @@ Commit your changes here. Do not modify files outside this worktree.
     fs::write(gmb_dir.join("CLAUDE.md"), content)
         .map_err(|e| format!("Failed to write .gmb/CLAUDE.md: {}", e))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn generates_claude_md_with_criteria_and_validators() {
+        let dir = TempDir::new().unwrap();
+        let worktree = dir.path().to_string_lossy().to_string();
+
+        let result = generate_task_claude_md(
+            &worktree,
+            "Add login page",
+            "Create a login page with form validation",
+            &["Form validates email".to_string(), "Shows error on failure".to_string()],
+            &["npm test".to_string(), "npm run lint".to_string()],
+        );
+        assert!(result.is_ok());
+
+        let content = fs::read_to_string(dir.path().join(".gmb").join("CLAUDE.md")).unwrap();
+        assert!(content.contains("# Current Task: Add login page"));
+        assert!(content.contains("Create a login page with form validation"));
+        assert!(content.contains("- Form validates email"));
+        assert!(content.contains("- Shows error on failure"));
+        assert!(content.contains("- `npm test`"));
+        assert!(content.contains("- `npm run lint`"));
+        assert!(content.contains("git worktree managed by Goblin Mob Boss"));
+    }
+
+    #[test]
+    fn generates_default_criteria_when_empty() {
+        let dir = TempDir::new().unwrap();
+        let worktree = dir.path().to_string_lossy().to_string();
+
+        generate_task_claude_md(&worktree, "Task", "Do something", &[], &[]).unwrap();
+
+        let content = fs::read_to_string(dir.path().join(".gmb").join("CLAUDE.md")).unwrap();
+        assert!(content.contains("- Complete the task as described above"));
+        assert!(content.contains("No validators configured."));
+    }
+
+    #[test]
+    fn creates_gmb_directory_if_missing() {
+        let dir = TempDir::new().unwrap();
+        let worktree = dir.path().to_string_lossy().to_string();
+
+        assert!(!dir.path().join(".gmb").exists());
+        generate_task_claude_md(&worktree, "T", "D", &[], &[]).unwrap();
+        assert!(dir.path().join(".gmb").join("CLAUDE.md").exists());
+    }
+}

@@ -1175,3 +1175,43 @@ fn launch_terminal_cmd(shell: &str, cwd: &str, cmd: &str) -> Result<(), String> 
         .map(|_| ())
         .map_err(|e| format!("Failed to launch terminal: {}", e))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn generate_context_pack_string_detects_languages() {
+        let dir = TempDir::new().unwrap();
+        std::fs::write(dir.path().join("package.json"), "{}").unwrap();
+        std::fs::write(dir.path().join("Cargo.toml"), "[package]").unwrap();
+
+        let result = generate_context_pack_string(&dir.path().to_string_lossy());
+        assert!(result.contains("JavaScript/TypeScript (Node.js)"));
+        assert!(result.contains("Rust"));
+    }
+
+    #[test]
+    fn generate_context_pack_string_lists_structure() {
+        let dir = TempDir::new().unwrap();
+        std::fs::create_dir(dir.path().join("src")).unwrap();
+        std::fs::write(dir.path().join("README.md"), "# Hi").unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        std::fs::create_dir(dir.path().join("node_modules")).unwrap();
+
+        let result = generate_context_pack_string(&dir.path().to_string_lossy());
+        assert!(result.contains("`src/`"));
+        assert!(result.contains("`README.md`"));
+        assert!(!result.contains(".git"));
+        assert!(!result.contains("node_modules"));
+    }
+
+    #[test]
+    fn generate_context_pack_string_empty_dir() {
+        let dir = TempDir::new().unwrap();
+        let result = generate_context_pack_string(&dir.path().to_string_lossy());
+        assert!(result.contains("**Languages:**"));
+        assert!(result.contains("**Structure:**"));
+    }
+}
