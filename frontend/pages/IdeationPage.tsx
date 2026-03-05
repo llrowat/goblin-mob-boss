@@ -8,10 +8,10 @@ export function IdeationPage() {
   const tauri = useTauri();
   const navigate = useNavigate();
   const [ideation, setIdeation] = useState<Ideation | null>(null);
-  const [prompt, setPrompt] = useState("");
+  const [systemPrompt, setSystemPrompt] = useState("");
   const [terminalCmd, setTerminalCmd] = useState("");
   const [discoveredTasks, setDiscoveredTasks] = useState<TaskSpec[]>([]);
-  const [showPrompt, setShowPrompt] = useState(false);
+  const [showSystemPrompt, setShowSystemPrompt] = useState(false);
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
@@ -19,16 +19,12 @@ export function IdeationPage() {
   useEffect(() => {
     if (!ideationId) return;
 
-    // Load ideation details
     tauri.listIdeations("").then((ideations) => {
       const found = ideations.find((i) => i.id === ideationId);
       if (found) setIdeation(found);
     });
 
-    // Load prompt
-    tauri.getIdeationPrompt(ideationId).then(setPrompt).catch(() => {});
-
-    // Load terminal command
+    tauri.getIdeationPrompt(ideationId).then(setSystemPrompt).catch(() => {});
     tauri
       .getIdeationTerminalCommand(ideationId)
       .then(setTerminalCmd)
@@ -72,7 +68,6 @@ export function IdeationPage() {
     try {
       await tauri.importTasks(ideationId, discoveredTasks);
       await tauri.completeIdeation(ideationId);
-      // Navigate to task board
       if (ideation) {
         navigate(`/tasks/${ideation.repo_id}`);
       }
@@ -94,46 +89,48 @@ export function IdeationPage() {
   return (
     <div>
       <div className="page-header">
-        <h2>Ideation</h2>
+        <h2>Planning Session</h2>
         <p>{ideation.description}</p>
       </div>
 
       {error && <div className="error-banner">{error}</div>}
 
-      {/* Step 1: Launch Claude Code */}
+      {/* Step 1: Interactive planning conversation */}
       <div className="panel" style={{ marginBottom: 16 }}>
         <div className="panel-title" style={{ marginBottom: 12 }}>
-          Step 1: Run Claude Code to create tasks
+          Step 1: Plan with Claude
         </div>
         <p
           style={{
             fontSize: 13,
             color: "var(--text-secondary)",
             marginBottom: 16,
+            lineHeight: 1.6,
           }}
         >
-          Launch Claude Code in your repo. It will analyze the codebase and
-          create task files for parallel execution.
+          This opens Claude Code in plan mode for an interactive conversation.
+          Discuss your goals, ask questions, refine the approach — then when
+          you agree on the plan, ask Claude to create the task files.
         </p>
 
         <div className="actions-bar" style={{ marginTop: 0 }}>
           <button className="btn btn-primary" onClick={handleLaunch}>
-            Launch Claude Code
+            Open Planning Session
           </button>
           <button className="btn btn-secondary" onClick={handleCopyCommand}>
             {copied ? "Copied!" : "Copy Command"}
           </button>
           <button
             className="btn btn-secondary"
-            onClick={() => setShowPrompt(!showPrompt)}
+            onClick={() => setShowSystemPrompt(!showSystemPrompt)}
           >
-            {showPrompt ? "Hide Prompt" : "View Prompt"}
+            {showSystemPrompt ? "Hide Context" : "View Context"}
           </button>
         </div>
 
-        {showPrompt && (
+        {showSystemPrompt && (
           <div className="code-block" style={{ marginTop: 12 }}>
-            {prompt}
+            {systemPrompt}
           </div>
         )}
       </div>
@@ -142,12 +139,9 @@ export function IdeationPage() {
       <div className="panel">
         <div className="panel-header">
           <div className="panel-title">
-            Step 2: Review discovered tasks ({discoveredTasks.length})
+            Step 2: Review tasks ({discoveredTasks.length})
           </div>
-          <button
-            className="btn btn-secondary btn-sm"
-            onClick={pollTasks}
-          >
+          <button className="btn btn-secondary btn-sm" onClick={pollTasks}>
             Refresh
           </button>
         </div>
@@ -160,15 +154,17 @@ export function IdeationPage() {
               fontStyle: "italic",
             }}
           >
-            No tasks discovered yet. Run Claude Code first, then tasks will
-            appear here automatically.
+            No tasks yet. Once you and Claude agree on a plan, Claude will
+            create task files that appear here automatically.
           </p>
         ) : (
           <>
             <div className="task-spec-list">
               {discoveredTasks.map((spec, i) => (
                 <div key={i} className="task-spec-card">
-                  <div className="task-spec-number">{String(i + 1).padStart(2, "0")}</div>
+                  <div className="task-spec-number">
+                    {String(i + 1).padStart(2, "0")}
+                  </div>
                   <div className="task-spec-content">
                     <div className="task-spec-title">{spec.title}</div>
                     <div className="task-spec-description">
@@ -200,7 +196,7 @@ export function IdeationPage() {
             >
               {importing
                 ? "Importing..."
-                : `Import ${discoveredTasks.length} Tasks & Start`}
+                : `Import ${discoveredTasks.length} Tasks & Go`}
             </button>
           </>
         )}

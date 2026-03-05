@@ -110,28 +110,24 @@ pub fn start_ideation(
 
     let ideation = Ideation::new(repo_id.clone(), description.clone());
 
-    // Create .gmb/tasks directory in the repo for this ideation
-    let tasks_dir = Path::new(&repo.path)
+    // Create ideation directory with tasks subdirectory
+    let ideation_dir = Path::new(&repo.path)
         .join(".gmb")
         .join("ideations")
-        .join(&ideation.id)
-        .join("tasks");
+        .join(&ideation.id);
+    let tasks_dir = ideation_dir.join("tasks");
     std::fs::create_dir_all(&tasks_dir)
         .map_err(|e| format!("Failed to create tasks dir: {}", e))?;
 
     // Generate repo map for context
     let repo_map = generate_context_pack_string(&repo.path);
 
-    // Generate the ideation prompt
-    let prompt = prompts::ideation_prompt(&description, &repo_map);
-
-    // Write prompt to file so the user can see it
-    let ideation_dir = Path::new(&repo.path)
-        .join(".gmb")
-        .join("ideations")
-        .join(&ideation.id);
-    std::fs::write(ideation_dir.join("prompt.md"), &prompt)
-        .map_err(|e| format!("Failed to write prompt: {}", e))?;
+    // Write system prompt file for Claude Code's --append-system-prompt-file flag.
+    // This gives Claude the context about the repo and instructions for task creation,
+    // while the user's description becomes the initial interactive message.
+    let system_prompt = prompts::ideation_system_prompt(&tasks_dir.to_string_lossy(), &repo_map);
+    std::fs::write(ideation_dir.join("system-prompt.md"), &system_prompt)
+        .map_err(|e| format!("Failed to write system prompt: {}", e))?;
 
     // Store ideation
     let mut ideations = state.ideations.lock().unwrap();
@@ -162,9 +158,10 @@ pub fn get_ideation_prompt(state: State<AppState>, ideation_id: String) -> Resul
         .join(".gmb")
         .join("ideations")
         .join(&ideation.id)
-        .join("prompt.md");
+        .join("system-prompt.md");
 
-    std::fs::read_to_string(&prompt_path).map_err(|e| format!("Failed to read prompt: {}", e))
+    std::fs::read_to_string(&prompt_path)
+        .map_err(|e| format!("Failed to read system prompt: {}", e))
 }
 
 #[tauri::command]
@@ -185,17 +182,18 @@ pub fn launch_ideation(state: State<AppState>, ideation_id: String) -> Result<()
 
     let prefs = state.preferences.lock().unwrap().clone();
 
-    let prompt_path = Path::new(&repo.path)
+    let system_prompt_path = Path::new(&repo.path)
         .join(".gmb")
         .join("ideations")
         .join(&ideation.id)
-        .join("prompt.md");
+        .join("system-prompt.md");
 
-    let prompt_content = std::fs::read_to_string(&prompt_path)
-        .map_err(|e| format!("Failed to read prompt: {}", e))?;
+    // Launch Claude Code in interactive plan mode with the system prompt appended.
+    // The user's description becomes the initial message for a back-and-forth conversation.
+    let escaped_desc = ideation.description.replace('\'', "'\\''");
+    let escaped_path = system_prompt_path.to_string_lossy().replace('\'', "'\\''");
 
-    let escaped = prompt_content.replace('\'', "'\\''");
-    launch_terminal(&prefs.shell, &repo.path, &escaped)
+    launch_terminal_claude_interactive(&prefs.shell, &repo.path, &escaped_path, &escaped_desc)
 }
 
 #[tauri::command]
@@ -217,16 +215,19 @@ pub fn get_ideation_terminal_command(
         .clone();
     drop(repos);
 
-    let prompt_path = Path::new(&repo.path)
+    let system_prompt_path = Path::new(&repo.path)
         .join(".gmb")
         .join("ideations")
         .join(&ideation.id)
-        .join("prompt.md");
+        .join("system-prompt.md");
+
+    let escaped_desc = ideation.description.replace('\'', "'\\''");
 
     Ok(format!(
-        "cd {} && claude \"$(cat {})\"",
+        "cd {} && claude --permission-mode plan --append-system-prompt-file '{}' '{}'",
         repo.path,
-        prompt_path.display()
+        system_prompt_path.display(),
+        escaped_desc
     ))
 }
 
@@ -698,7 +699,27 @@ fn generate_context_pack_string(repo_path: &str) -> String {
     map
 }
 
+/// Launch Claude Code in interactive plan mode with a system prompt file and initial message.
+/// This gives the user a back-and-forth conversation for ideation.
+fn launch_terminal_claude_interactive(
+    shell: &str,
+    cwd: &str,
+    system_prompt_file: &str,
+    initial_message: &str,
+) -> Result<(), String> {
+    let claude_cmd = format!(
+        "claude --permission-mode plan --append-system-prompt-file '{}' '{}'",
+        system_prompt_file, initial_message
+    );
+    launch_terminal_cmd(shell, cwd, &claude_cmd)
+}
+
 fn launch_terminal(shell: &str, cwd: &str, prompt: &str) -> Result<(), String> {
+    let claude_cmd = format!("claude '{}'", prompt);
+    launch_terminal_cmd(shell, cwd, &claude_cmd)
+}
+
+fn launch_terminal_cmd(shell: &str, cwd: &str, cmd: &str) -> Result<(), String> {
     use std::process::Command;
 
     let result = if cfg!(target_os = "windows") {
@@ -710,7 +731,7 @@ fn launch_terminal(shell: &str, cwd: &str, prompt: &str) -> Result<(), String> {
                     "powershell",
                     "-NoExit",
                     "-Command",
-                    &format!("cd '{}'; claude '{}'", cwd, prompt),
+                    &format!("cd '{}'; {}", cwd, cmd),
                 ])
                 .spawn(),
             "cmd" => Command::new("cmd")
@@ -719,7 +740,7 @@ fn launch_terminal(shell: &str, cwd: &str, prompt: &str) -> Result<(), String> {
                     "start",
                     "cmd",
                     "/k",
-                    &format!("cd /d \"{}\" && claude \"{}\"", cwd, prompt),
+                    &format!("cd /d \"{}\" && {}", cwd, cmd),
                 ])
                 .spawn(),
             _ => Command::new("cmd")
@@ -729,12 +750,12 @@ fn launch_terminal(shell: &str, cwd: &str, prompt: &str) -> Result<(), String> {
                     shell,
                     "-NoExit",
                     "-Command",
-                    &format!("cd '{}'; claude '{}'", cwd, prompt),
+                    &format!("cd '{}'; {}", cwd, cmd),
                 ])
                 .spawn(),
         }
     } else if cfg!(target_os = "macos") {
-        let script = format!("cd '{}' && claude '{}'\n", cwd, prompt);
+        let script = format!("cd '{}' && {}\n", cwd, cmd);
         let tmp = format!("/tmp/gmb-launch-{}.sh", uuid::Uuid::new_v4());
         std::fs::write(&tmp, &script)
             .map_err(|e| format!("Failed to write launch script: {}", e))?;
@@ -747,10 +768,7 @@ fn launch_terminal(shell: &str, cwd: &str, prompt: &str) -> Result<(), String> {
             other => other,
         };
         Command::new(terminal)
-            .args([
-                "-e",
-                &format!("cd '{}' && claude '{}'; exec {}", cwd, prompt, shell),
-            ])
+            .args(["-e", &format!("cd '{}' && {}; exec {}", cwd, cmd, shell)])
             .spawn()
     };
 

@@ -1,46 +1,50 @@
-/// Generate the ideation prompt that tells Claude to analyze the codebase
-/// and produce structured task specs.
-pub fn ideation_prompt(description: &str, repo_map: &str) -> String {
+/// Generate the system prompt file for ideation.
+/// This is appended to Claude Code's default system prompt via --append-system-prompt-file,
+/// so the user gets an interactive planning conversation (not a one-shot dump).
+pub fn ideation_system_prompt(tasks_dir: &str, repo_map: &str) -> String {
     format!(
-        r#"# Ideation: Plan and Create Tasks
-
-## What the user wants
-
-{description}
+        r#"You are helping the user plan a development project and break it into parallelizable tasks.
 
 ## Repository Overview
 
 {repo_map}
 
-## Your Job
+## How This Works
 
-Analyze this codebase and break the user's request into concrete, parallelizable tasks.
+This is an interactive planning session. Have a back-and-forth conversation with the user:
 
-**Output format:** Write each task as a separate JSON file in `.gmb/tasks/`. Each file should be named `01.json`, `02.json`, etc. and contain:
+1. **Understand** — Ask clarifying questions about what they want to build. Don't assume.
+2. **Explore** — Read the codebase to understand the architecture, patterns, and conventions.
+3. **Plan** — Propose a high-level approach. Discuss trade-offs. Let the user refine it.
+4. **Break down** — Once the plan is agreed on, break it into concrete, parallel tasks.
+
+## Creating Tasks
+
+When you and the user have agreed on a plan, write each task as a JSON file in `{tasks_dir}`.
+
+Name files `01.json`, `02.json`, etc. Each file should contain:
 
 ```json
-{{
+{{{{
   "title": "Short task title",
-  "description": "Detailed description of what to implement",
+  "description": "Detailed description of what to implement, including specific files and approach",
   "acceptance_criteria": [
-    "Criterion 1",
-    "Criterion 2"
+    "Specific, verifiable criterion"
   ],
   "dependencies": []
-}}
+}}}}
 ```
 
-**Rules:**
-1. Each task should be independently workable by a separate agent in its own worktree.
-2. Use the `dependencies` array to list task numbers (e.g., `["01"]`) that must complete before this task can start.
-3. Keep tasks focused — one concern per task.
-4. Include clear acceptance criteria so an agent knows when it's done.
-5. Create the `.gmb/tasks/` directory first, then write each task file.
-6. After writing all task files, provide a brief summary of the plan.
+Rules for tasks:
+- Each task must be independently workable by a separate agent in its own git worktree
+- Use `dependencies` to list task numbers (e.g. `["01"]`) that must complete first
+- Keep tasks focused — one concern per task
+- Include enough detail in the description that an agent can work without asking questions
+- Acceptance criteria should be specific and testable
 
-**Important:** Do NOT implement any code. Only create the task files.
+**Do NOT create task files until the user confirms the plan.** Discuss first, then write.
 "#,
-        description = description,
+        tasks_dir = tasks_dir,
         repo_map = repo_map,
     )
 }
