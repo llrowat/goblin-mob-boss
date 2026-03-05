@@ -279,8 +279,10 @@ pub struct Feature {
     pub repo_id: String,          // Single repo
     pub branch: String,           // Feature branch
     pub status: FeatureStatus,    // ideation | executing | ready | failed
-    pub execution_mode: Option<ExecutionMode>,  // Set after ideation
-    pub execution_rationale: Option<String>,     // Why this mode
+    pub execution_mode: Option<ExecutionMode>,  // Set at launch config
+    pub execution_rationale: Option<String>,     // Why this mode (or "User override")
+    pub selected_agents: Vec<String>,            // Agent filenames chosen at launch config
+    pub task_specs: Vec<TaskSpec>,               // Possibly user-edited task specs
     pub pty_session_id: Option<String>,          // Active terminal session
     pub created_at: String,
 }
@@ -381,19 +383,83 @@ Include a rationale explaining your reasoning and a confidence score (0.0-1.0).
 Low confidence means the feature could go either way — the user should review.
 ```
 
-#### 4.2 Execution Mode UI (IdeationPage update)
+#### 4.2 Launch Configuration Page (NEW page — between Ideation and Execution)
 
-After task discovery, the IdeationPage shows:
+After ideation discovers tasks and recommends an execution mode, the user lands on a **Launch Configuration** page. Everything ideation produced is a starting point — the user can change anything before hitting "Launch".
 
-1. **Discovered tasks** (existing)
-2. **Recommended execution mode** (NEW):
-   - Mode badge: "Teams" or "Subagents"
-   - Rationale text from Claude
-   - Confidence indicator (high/medium/low)
-   - **Override toggle**: User can switch to the other mode
-   - If confidence < 0.6, the override option is prominently displayed
+**New file: `frontend/pages/LaunchConfigPage.tsx`**
 
-User clicks "Import Tasks & Start Working" → stores both task specs AND execution mode on the Feature.
+**Layout**:
+
+```
+┌─────────────────────────────────────────────────────┐
+│  Launch Configuration: "Add dark mode support"      │
+│                                                     │
+│  ┌─ Execution Mode ──────────────────────────────┐  │
+│  │  ● Teams (recommended)    ○ Subagents         │  │
+│  │  "4 independent tasks, separate directories,   │  │
+│  │   high parallelism potential"     [85% conf]   │  │
+│  └────────────────────────────────────────────────┘  │
+│                                                     │
+│  ┌─ Agents ──────────────────────────────────────┐  │
+│  │  ☑ full-stack-dev    ☑ frontend-dev           │  │
+│  │  ☑ test-writer       ☐ reviewer               │  │
+│  │  ☐ security-reviewer ☐ architect              │  │
+│  │                          [Edit agents...]      │  │
+│  └────────────────────────────────────────────────┘  │
+│                                                     │
+│  ┌─ Tasks ───────────────────────────────────────┐  │
+│  │  1. Add theme context     Agent: [frontend ▼] │  │
+│  │     ✏️ edit  🗑️ remove                         │  │
+│  │  2. Update components     Agent: [frontend ▼] │  │
+│  │     ✏️ edit  🗑️ remove                         │  │
+│  │  3. Add toggle setting    Agent: [full-stk ▼] │  │
+│  │     ✏️ edit  🗑️ remove                         │  │
+│  │  4. Write tests           Agent: [tester  ▼]  │  │
+│  │     ✏️ edit  🗑️ remove                         │  │
+│  │                          [+ Add task]          │  │
+│  └────────────────────────────────────────────────┘  │
+│                                                     │
+│         [ Launch ]                                   │
+└─────────────────────────────────────────────────────┘
+```
+
+**Capabilities**:
+
+1. **Execution mode override** — Toggle between Teams and Subagents. Shows Claude's rationale and confidence, but the user has final say.
+
+2. **Agent selection** — Checkboxes for all available agents (from `.claude/agents/`). Ideation pre-selects the agents it assigned to tasks. User can:
+   - Add agents not originally selected (e.g., add `reviewer` for an extra review pass)
+   - Remove agents (tasks assigned to removed agents get reassigned or flagged)
+   - Link to Agent Editor page to create/modify agents before launch
+
+3. **Task editing** — Each task card is editable:
+   - **Reassign agent**: Dropdown of selected agents
+   - **Edit details**: Inline edit title, description, acceptance criteria
+   - **Remove task**: Delete a task Claude suggested
+   - **Add task**: Manually add a task with agent assignment
+   - **Reorder**: Drag or arrow buttons to change task order/priority
+
+4. **Validation** — Before launch is enabled:
+   - Every task must have an assigned agent that's in the selected agents list
+   - At least one task must exist
+   - Warns if Teams mode is selected with < 3 tasks (subagents might be better)
+   - Warns if Subagents mode is selected with 5+ independent tasks (teams might be better)
+
+**Flow**:
+- IdeationPage "Import Tasks" → navigates to LaunchConfigPage with pre-filled data
+- LaunchConfigPage "Launch" → stores final config on Feature, spawns PTY, navigates to TaskBoardPage
+- User can also reach LaunchConfigPage from TaskBoardPage before first launch (feature.status === Ideation)
+
+**State stored on Feature after launch**:
+```typescript
+{
+  execution_mode: "teams" | "subagents",
+  selected_agents: string[],       // Agent filenames
+  task_specs: TaskSpec[],          // Possibly edited by user
+  execution_rationale: string,     // Original or "User override"
+}
+```
 
 #### 4.3 Mode-Aware Prompt Builder
 
@@ -496,7 +562,7 @@ Mode badge shown prominently. Task specs from ideation in collapsible sidebar.
 
 - **Rust**: Test both prompt builder paths (teams + subagents), env setup per mode
 - **Frontend**: Test StatusSummary in both modes with mock PTY events
-- **Frontend**: Test execution mode selector in IdeationPage
+- **Frontend**: Test LaunchConfigPage: mode toggle, agent selection, task editing, validation warnings
 - **Frontend**: Test TaskBoardPage adapts layout to execution mode
 
 ---
@@ -570,8 +636,8 @@ Unchanged from current implementation:
 | `frontend/components/Terminal/Terminal.test.tsx` | Terminal tests |
 | `frontend/components/StatusSummary/StatusSummary.tsx` | Mode-aware live agent/task status |
 | `frontend/components/StatusSummary/StatusSummary.test.tsx` | Status summary tests |
-| `frontend/components/ExecutionModeSelector/ExecutionModeSelector.tsx` | Mode recommendation display + override toggle |
-| `frontend/components/ExecutionModeSelector/ExecutionModeSelector.test.tsx` | Mode selector tests |
+| `frontend/pages/LaunchConfigPage.tsx` | Pre-launch review: override mode, agents, tasks |
+| `frontend/pages/LaunchConfigPage.test.tsx` | Launch config page tests |
 
 ### Files to SIGNIFICANTLY REWRITE
 | File | Changes |
