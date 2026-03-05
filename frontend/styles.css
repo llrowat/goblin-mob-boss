@@ -660,3 +660,44 @@ body {
   color: var(--accent);
   margin-bottom: 4px;
 }
+
+/* Agent/subagent section in expanded task cards */
+.task-agents-section {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.task-agent-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.task-agent-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  color: var(--text-secondary);
+  min-width: 64px;
+}
+
+.task-agent-role {
+  font-size: 11px;
+  color: var(--muted);
+  margin-left: 2px;
+}
+
+.task-agent-tags {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.agent-tag-sub {
+  background: rgba(184, 148, 74, 0.12);
+  color: var(--accent-brass);
+}

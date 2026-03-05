@@ -330,6 +330,38 @@ export function TaskBoardPage() {
               <div className="task-card-body">
                 <p className="task-card-description">{task.description}</p>
 
+                {/* Agent & Subagents */}
+                <div className="task-agents-section">
+                  {agents[task.agent_id] && (
+                    <div className="task-agent-row">
+                      <span className="task-agent-label">Agent</span>
+                      <span className="agent-tag">
+                        {agents[task.agent_id].name}
+                      </span>
+                      <span className="task-agent-role">
+                        {agents[task.agent_id].role}
+                      </span>
+                    </div>
+                  )}
+                  {task.subagent_ids.length > 0 && (
+                    <div className="task-agent-row">
+                      <span className="task-agent-label">Subagents</span>
+                      <div className="task-agent-tags">
+                        {task.subagent_ids.map((id) =>
+                          agents[id] ? (
+                            <span key={id} className="agent-tag agent-tag-sub">
+                              {agents[id].name}
+                              <span className="task-agent-role">
+                                {agents[id].role}
+                              </span>
+                            </span>
+                          ) : null,
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 {task.acceptance_criteria.length > 0 && (
                   <div style={{ marginTop: 8 }}>
                     <div
