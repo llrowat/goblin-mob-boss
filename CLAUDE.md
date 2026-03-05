@@ -86,6 +86,7 @@ npm run test:watch
 - **Frontend**: Use Vitest + React Testing Library. Test files live next to the source files they test (e.g., `Foo.test.tsx` next to `Foo.tsx`). Mock Tauri `invoke` calls via the setup in `frontend/test/setup.ts`.
 - **Test naming**: Use descriptive names that explain what is being tested.
 - **Verify before committing**: Run `cd backend && cargo test --lib` and `npm test` to ensure all tests pass before committing.
+- **CI**: Tests run automatically on every push to `main` and on pull requests via GitHub Actions (`.github/workflows/tests.yml`). Both Rust and frontend test jobs must pass.
 
 ## Documentation
 
