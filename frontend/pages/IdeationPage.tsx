@@ -163,6 +163,9 @@ export function IdeationPage() {
                     <div className="task-spec-description">
                       {spec.description}
                     </div>
+                    {spec.repo && (
+                      <div className="task-spec-agent">Repo: {spec.repo}</div>
+                    )}
                     {spec.agent && (
                       <div className="task-spec-agent">Agent: {spec.agent}</div>
                     )}

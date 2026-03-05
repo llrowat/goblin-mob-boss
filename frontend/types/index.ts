@@ -19,11 +19,20 @@ export interface Agent {
 
 export type FeatureStatus = "ideation" | "in_progress" | "verifying" | "ready";
 
+export interface FeatureRepo {
+  repo_id: string;
+  branch: string;
+}
+
 export interface Feature {
   id: string;
+  /** Primary repo (first in the list). Kept for backwards compatibility. */
   repo_id: string;
+  /** All repos this feature spans, with per-repo branch info. */
+  repos: FeatureRepo[];
   name: string;
   description: string;
+  /** Primary branch name. Kept for backwards compat. */
   branch: string;
   status: FeatureStatus;
   created_at: string;
@@ -61,6 +70,8 @@ export interface TaskSpec {
   dependencies: string[];
   agent: string;
   subagents: string[];
+  /** Target repo name or ID (for multi-repo features). */
+  repo: string;
 }
 
 export interface ValidatorResult {
@@ -76,6 +87,19 @@ export interface VerifyResult {
   all_passed: boolean;
   results: ValidatorResult[];
   timestamp: string;
+}
+
+export interface FileDiff {
+  path: string;
+  insertions: number;
+  deletions: number;
+}
+
+export interface DiffSummary {
+  files: FileDiff[];
+  total_files: number;
+  total_insertions: number;
+  total_deletions: number;
 }
 
 export interface RepoInfo {

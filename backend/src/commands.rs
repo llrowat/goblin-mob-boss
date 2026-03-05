@@ -154,25 +154,44 @@ pub fn remove_agent(state: State<AppState>, id: String) -> Result<(), String> {
 #[tauri::command]
 pub fn start_feature(
     state: State<AppState>,
-    repo_id: String,
+    repo_ids: Vec<String>,
     name: String,
     description: String,
 ) -> Result<Feature, String> {
+    if repo_ids.is_empty() {
+        return Err("At least one repository is required".to_string());
+    }
+
     let repos = state.repositories.lock().unwrap();
-    let repo = repos.get(&repo_id).ok_or("Repository not found")?.clone();
+
+    // Validate all repos exist
+    let mut repo_list = Vec::new();
+    for rid in &repo_ids {
+        let repo = repos.get(rid).ok_or(format!("Repository not found: {}", rid))?.clone();
+        repo_list.push(repo);
+    }
     drop(repos);
 
-    // Create feature branch
+    // Create feature branch in each repo
     let feature_slug = slug::slugify(&name);
     let short_id = &uuid::Uuid::new_v4().to_string()[..4];
-    let branch = format!("feature/{}-{}", feature_slug, short_id);
+    let branch_name = format!("feature/{}-{}", feature_slug, short_id);
 
-    git::create_branch(&repo.path, &branch, &repo.base_branch).map_err(|e| e.to_string())?;
+    let mut feature_repos = Vec::new();
+    for repo in &repo_list {
+        git::create_branch(&repo.path, &branch_name, &repo.base_branch)
+            .map_err(|e| format!("Failed to create branch in {}: {}", repo.name, e))?;
+        feature_repos.push(FeatureRepo {
+            repo_id: repo.id.clone(),
+            branch: branch_name.clone(),
+        });
+    }
 
-    let feature = Feature::new(repo_id, name, description, branch);
+    let feature = Feature::new(feature_repos, name, description);
 
-    // Create ideation directory
-    let ideation_dir = Path::new(&repo.path)
+    // Create ideation directory in the primary repo
+    let primary_repo = &repo_list[0];
+    let ideation_dir = Path::new(&primary_repo.path)
         .join(".gmb")
         .join("features")
         .join(&feature.id);
@@ -180,8 +199,13 @@ pub fn start_feature(
     std::fs::create_dir_all(&tasks_dir)
         .map_err(|e| format!("Failed to create feature dir: {}", e))?;
 
-    // Generate system prompt for ideation
-    let repo_map = generate_context_pack_string(&repo.path);
+    // Generate system prompt for ideation with all repo contexts
+    let repo_map = repo_list
+        .iter()
+        .map(|r| format!("### {}\n\n{}", r.name, generate_context_pack_string(&r.path)))
+        .collect::<Vec<_>>()
+        .join("\n\n");
+
     let agents = state.agents.lock().unwrap();
     let agent_list = agents
         .values()
@@ -190,8 +214,15 @@ pub fn start_feature(
         .join("\n");
     drop(agents);
 
-    let system_prompt =
-        prompts::ideation_system_prompt(&tasks_dir.to_string_lossy(), &repo_map, &agent_list);
+    // Build repo names list for the prompt
+    let repo_names: Vec<&str> = repo_list.iter().map(|r| r.name.as_str()).collect();
+
+    let system_prompt = prompts::ideation_system_prompt(
+        &tasks_dir.to_string_lossy(),
+        &repo_map,
+        &agent_list,
+        &repo_names,
+    );
     std::fs::write(ideation_dir.join("system-prompt.md"), &system_prompt)
         .map_err(|e| format!("Failed to write system prompt: {}", e))?;
 
@@ -204,15 +235,16 @@ pub fn start_feature(
 }
 
 #[tauri::command]
-pub fn list_features(state: State<AppState>, repo_id: String) -> Vec<Feature> {
-    state
-        .features
-        .lock()
-        .unwrap()
-        .values()
-        .filter(|f| f.repo_id == repo_id)
-        .cloned()
-        .collect()
+pub fn list_features(state: State<AppState>, repo_id: Option<String>) -> Vec<Feature> {
+    let features = state.features.lock().unwrap();
+    match repo_id {
+        Some(rid) => features
+            .values()
+            .filter(|f| f.repo_ids().contains(&rid.as_str()))
+            .cloned()
+            .collect(),
+        None => features.values().cloned().collect(),
+    }
 }
 
 #[tauri::command]
@@ -237,14 +269,9 @@ pub fn get_ideation_prompt(state: State<AppState>, feature_id: String) -> Result
         .clone();
     drop(features);
 
-    let repos = state.repositories.lock().unwrap();
-    let repo = repos
-        .get(&feature.repo_id)
-        .ok_or("Repository not found")?
-        .clone();
-    drop(repos);
+    let primary_repo = get_primary_repo(&state, &feature)?;
 
-    let path = Path::new(&repo.path)
+    let path = Path::new(&primary_repo.path)
         .join(".gmb")
         .join("features")
         .join(&feature.id)
@@ -261,16 +288,10 @@ pub fn launch_ideation(state: State<AppState>, feature_id: String) -> Result<(),
         .clone();
     drop(features);
 
-    let repos = state.repositories.lock().unwrap();
-    let repo = repos
-        .get(&feature.repo_id)
-        .ok_or("Repository not found")?
-        .clone();
-    drop(repos);
-
+    let primary_repo = get_primary_repo(&state, &feature)?;
     let prefs = state.preferences.lock().unwrap().clone();
 
-    let system_prompt_path = Path::new(&repo.path)
+    let system_prompt_path = Path::new(&primary_repo.path)
         .join(".gmb")
         .join("features")
         .join(&feature.id)
@@ -279,7 +300,7 @@ pub fn launch_ideation(state: State<AppState>, feature_id: String) -> Result<(),
     let escaped_desc = feature.description.replace('\'', "'\\''");
     let escaped_path = system_prompt_path.to_string_lossy().replace('\'', "'\\''");
 
-    launch_terminal_claude_interactive(&prefs.shell, &repo.path, &escaped_path, &escaped_desc)
+    launch_terminal_claude_interactive(&prefs.shell, &primary_repo.path, &escaped_path, &escaped_desc)
 }
 
 #[tauri::command]
@@ -294,14 +315,9 @@ pub fn get_ideation_terminal_command(
         .clone();
     drop(features);
 
-    let repos = state.repositories.lock().unwrap();
-    let repo = repos
-        .get(&feature.repo_id)
-        .ok_or("Repository not found")?
-        .clone();
-    drop(repos);
+    let primary_repo = get_primary_repo(&state, &feature)?;
 
-    let system_prompt_path = Path::new(&repo.path)
+    let system_prompt_path = Path::new(&primary_repo.path)
         .join(".gmb")
         .join("features")
         .join(&feature.id)
@@ -311,7 +327,7 @@ pub fn get_ideation_terminal_command(
 
     Ok(format!(
         "cd {} && claude --permission-mode plan --append-system-prompt-file '{}' '{}'",
-        repo.path,
+        primary_repo.path,
         system_prompt_path.display(),
         escaped_desc
     ))
@@ -329,14 +345,9 @@ pub fn poll_ideation_tasks(
         .clone();
     drop(features);
 
-    let repos = state.repositories.lock().unwrap();
-    let repo = repos
-        .get(&feature.repo_id)
-        .ok_or("Repository not found")?
-        .clone();
-    drop(repos);
+    let primary_repo = get_primary_repo(&state, &feature)?;
 
-    let tasks_dir = Path::new(&repo.path)
+    let tasks_dir = Path::new(&primary_repo.path)
         .join(".gmb")
         .join("features")
         .join(&feature.id)
@@ -385,11 +396,14 @@ pub fn import_tasks(
         .clone();
     drop(features);
 
+    // Build a map of all repos for this feature
     let repos = state.repositories.lock().unwrap();
-    let repo = repos
-        .get(&feature.repo_id)
-        .ok_or("Repository not found")?
-        .clone();
+    let feature_repo_ids = feature.repo_ids();
+    let mut repo_map: Vec<Repository> = Vec::new();
+    for rid in &feature_repo_ids {
+        let repo = repos.get(*rid).ok_or(format!("Repository not found: {}", rid))?.clone();
+        repo_map.push(repo);
+    }
     drop(repos);
 
     // Resolve agent names to IDs
@@ -398,11 +412,9 @@ pub fn import_tasks(
         if name.is_empty() {
             return "builtin-fullstack".to_string();
         }
-        // Try exact ID match first
         if agents.contains_key(name) {
             return name.to_string();
         }
-        // Try name match (case-insensitive)
         agents
             .values()
             .find(|a| a.name.to_lowercase() == name.to_lowercase())
@@ -410,13 +422,34 @@ pub fn import_tasks(
             .unwrap_or_else(|| "builtin-fullstack".to_string())
     };
 
+    // Helper to resolve a repo spec string to a repo
+    let resolve_repo = |repo_spec: &str| -> &Repository {
+        if repo_spec.is_empty() {
+            return &repo_map[0]; // default to primary repo
+        }
+        // Try ID match
+        if let Some(r) = repo_map.iter().find(|r| r.id == repo_spec) {
+            return r;
+        }
+        // Try name match (case-insensitive)
+        if let Some(r) = repo_map.iter().find(|r| r.name.to_lowercase() == repo_spec.to_lowercase()) {
+            return r;
+        }
+        &repo_map[0] // fallback to primary
+    };
+
     let now = Utc::now();
     let mut created_tasks = Vec::new();
 
     for spec in specs {
+        let repo = resolve_repo(&spec.repo);
+        let feature_branch = feature
+            .branch_for_repo(&repo.id)
+            .unwrap_or(&feature.branch);
+
         let task_slug = slug::slugify(&spec.title);
         let short_id = &uuid::Uuid::new_v4().to_string()[..4];
-        let branch = format!("{}/{}-{}", feature.branch, task_slug, short_id);
+        let branch = format!("{}/{}-{}", feature_branch, task_slug, short_id);
         let worktree_path = format!("{}/.gmb/worktrees/{}-{}", repo.path, task_slug, short_id);
 
         let agent_id = resolve_agent(&spec.agent);
@@ -705,6 +738,63 @@ pub fn delete_task(state: State<AppState>, task_id: String) -> Result<(), String
     Ok(())
 }
 
+// ── Diff Commands ──
+
+#[tauri::command]
+pub fn get_task_diff(state: State<AppState>, task_id: String) -> Result<DiffSummary, String> {
+    let tasks = state.tasks.lock().unwrap();
+    let task = tasks.get(&task_id).ok_or("Task not found")?.clone();
+    drop(tasks);
+
+    let repos = state.repositories.lock().unwrap();
+    let repo = repos
+        .get(&task.repo_id)
+        .ok_or("Repository not found")?
+        .clone();
+    drop(repos);
+
+    let features = state.features.lock().unwrap();
+    let feature = features
+        .get(&task.feature_id)
+        .ok_or("Feature not found")?
+        .clone();
+    drop(features);
+
+    let feature_branch = feature
+        .branch_for_repo(&task.repo_id)
+        .unwrap_or(&feature.branch);
+
+    // Run diff from the worktree if it exists, otherwise from the main repo
+    let diff_path = if std::path::Path::new(&task.worktree_path).exists() {
+        &task.worktree_path
+    } else {
+        &repo.path
+    };
+
+    let file_diffs = git::diff_stat(diff_path, feature_branch, &task.branch)
+        .map_err(|e| e.to_string())?;
+
+    let total_files = file_diffs.len() as u32;
+    let total_insertions: u32 = file_diffs.iter().map(|(_, ins, _)| ins).sum();
+    let total_deletions: u32 = file_diffs.iter().map(|(_, _, del)| del).sum();
+
+    let files = file_diffs
+        .into_iter()
+        .map(|(path, insertions, deletions)| FileDiff {
+            path,
+            insertions,
+            deletions,
+        })
+        .collect();
+
+    Ok(DiffSummary {
+        files,
+        total_files,
+        total_insertions,
+        total_deletions,
+    })
+}
+
 // ── Verification Commands ──
 
 #[tauri::command]
@@ -751,6 +841,7 @@ pub fn run_verification(state: State<AppState>, task_id: String) -> Result<Verif
 }
 
 /// Start final verification on the feature branch after all tasks are merged.
+/// For multi-repo features, creates verification worktrees in each repo.
 #[tauri::command]
 pub fn start_feature_verification(
     state: State<AppState>,
@@ -763,23 +854,7 @@ pub fn start_feature_verification(
         .clone();
     drop(features);
 
-    let repos = state.repositories.lock().unwrap();
-    let repo = repos
-        .get(&feature.repo_id)
-        .ok_or("Repository not found")?
-        .clone();
-    drop(repos);
-
-    // Create a worktree for verification on the feature branch
-    let verify_slug = format!("verify-{}", &feature.id[..4]);
-    let worktree_path = format!("{}/.gmb/worktrees/{}", repo.path, verify_slug);
-
-    if !Path::new(&worktree_path).exists() {
-        // Checkout feature branch in a worktree (no new branch needed)
-        let verify_branch = format!("{}/verify", feature.branch);
-        git::create_worktree(&repo.path, &verify_branch, &worktree_path, &feature.branch)
-            .map_err(|e| e.to_string())?;
-    }
+    let feature_repos = get_feature_repos(&state, &feature)?;
 
     // Build verification agent context
     let prefs = state.preferences.lock().unwrap().clone();
@@ -793,12 +868,24 @@ pub fn start_feature_verification(
         .join("\n");
     drop(agents);
 
-    // Write verification prompt
-    let prompt = prompts::verification_prompt(&feature.name, &repo.validators, &agent_context);
-    let gmb_dir = Path::new(&worktree_path).join(".gmb").join("prompts");
-    std::fs::create_dir_all(&gmb_dir).map_err(|e| format!("Failed to create dir: {}", e))?;
-    std::fs::write(gmb_dir.join("verify.md"), &prompt)
-        .map_err(|e| format!("Failed to write verify prompt: {}", e))?;
+    // Create verification worktree in each repo
+    for (repo, feature_branch) in &feature_repos {
+        let verify_slug = format!("verify-{}", &feature.id[..4]);
+        let worktree_path = format!("{}/.gmb/worktrees/{}", repo.path, verify_slug);
+
+        if !Path::new(&worktree_path).exists() {
+            let verify_branch = format!("{}/verify", feature_branch);
+            git::create_worktree(&repo.path, &verify_branch, &worktree_path, feature_branch)
+                .map_err(|e| format!("Failed in {}: {}", repo.name, e))?;
+        }
+
+        // Write verification prompt
+        let prompt = prompts::verification_prompt(&feature.name, &repo.validators, &agent_context);
+        let gmb_dir = Path::new(&worktree_path).join(".gmb").join("prompts");
+        std::fs::create_dir_all(&gmb_dir).map_err(|e| format!("Failed to create dir: {}", e))?;
+        std::fs::write(gmb_dir.join("verify.md"), &prompt)
+            .map_err(|e| format!("Failed to write verify prompt: {}", e))?;
+    }
 
     // Update feature status
     let mut features = state.features.lock().unwrap();
@@ -813,10 +900,13 @@ pub fn start_feature_verification(
     Ok(updated)
 }
 
+/// Returns verification commands for all repos in the feature.
+/// For multi-repo features, returns one command per repo separated by newlines.
 #[tauri::command]
 pub fn get_verification_terminal_command(
     state: State<AppState>,
     feature_id: String,
+    repo_id: Option<String>,
 ) -> Result<String, String> {
     let features = state.features.lock().unwrap();
     let feature = features
@@ -825,32 +915,38 @@ pub fn get_verification_terminal_command(
         .clone();
     drop(features);
 
-    let repos = state.repositories.lock().unwrap();
-    let repo = repos
-        .get(&feature.repo_id)
-        .ok_or("Repository not found")?
-        .clone();
-    drop(repos);
+    let feature_repos = get_feature_repos(&state, &feature)?;
 
-    let verify_slug = format!("verify-{}", &feature.id[..4]);
-    let worktree_path = format!("{}/.gmb/worktrees/{}", repo.path, verify_slug);
-    let prompt_path = format!("{}/.gmb/prompts/verify.md", worktree_path);
+    let commands: Vec<String> = feature_repos
+        .iter()
+        .filter(|(r, _)| repo_id.as_ref().map_or(true, |rid| &r.id == rid))
+        .map(|(repo, _)| {
+            let verify_slug = format!("verify-{}", &feature.id[..4]);
+            let worktree_path = format!("{}/.gmb/worktrees/{}", repo.path, verify_slug);
+            let prompt_path = format!("{}/.gmb/prompts/verify.md", worktree_path);
+            format!("cd {} && claude \"$(cat '{}')\"", worktree_path, prompt_path)
+        })
+        .collect();
 
-    Ok(format!(
-        "cd {} && claude \"$(cat '{}')\"",
-        worktree_path, prompt_path
-    ))
+    Ok(commands.join("\n"))
 }
 
 #[tauri::command]
-pub fn launch_verification(state: State<AppState>, feature_id: String) -> Result<(), String> {
-    let cmd = get_verification_terminal_command(state.clone(), feature_id)?;
+pub fn launch_verification(
+    state: State<AppState>,
+    feature_id: String,
+    repo_id: Option<String>,
+) -> Result<(), String> {
+    let cmd = get_verification_terminal_command(state.clone(), feature_id, repo_id)?;
     let prefs = state.preferences.lock().unwrap().clone();
-    // Parse the cd target from the command
-    let parts: Vec<&str> = cmd.splitn(2, " && ").collect();
-    let cwd = parts[0].strip_prefix("cd ").unwrap_or(".");
-    let claude_cmd = parts.get(1).unwrap_or(&"");
-    launch_terminal_cmd(&prefs.shell, cwd, claude_cmd)
+    // Launch a terminal for each command line (one per repo)
+    for line in cmd.lines() {
+        let parts: Vec<&str> = line.splitn(2, " && ").collect();
+        let cwd = parts[0].strip_prefix("cd ").unwrap_or(".");
+        let claude_cmd = parts.get(1).unwrap_or(&"");
+        launch_terminal_cmd(&prefs.shell, cwd, claude_cmd)?;
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -874,14 +970,16 @@ pub fn push_feature(state: State<AppState>, feature_id: String) -> Result<String
         .clone();
     drop(features);
 
-    let repos = state.repositories.lock().unwrap();
-    let repo = repos
-        .get(&feature.repo_id)
-        .ok_or("Repository not found")?
-        .clone();
-    drop(repos);
+    let feature_repos = get_feature_repos(&state, &feature)?;
+    let mut results = Vec::new();
 
-    git::push_branch(&repo.path, &feature.branch).map_err(|e| e.to_string())
+    for (repo, branch) in &feature_repos {
+        git::push_branch(&repo.path, branch)
+            .map_err(|e| format!("Failed to push in {}: {}", repo.name, e))?;
+        results.push(format!("{}: pushed {}", repo.name, branch));
+    }
+
+    Ok(results.join("\n"))
 }
 
 #[tauri::command]
@@ -893,21 +991,22 @@ pub fn get_pr_command(state: State<AppState>, feature_id: String) -> Result<Stri
         .clone();
     drop(features);
 
-    let repos = state.repositories.lock().unwrap();
-    let repo = repos
-        .get(&feature.repo_id)
-        .ok_or("Repository not found")?
-        .clone();
-    drop(repos);
+    let feature_repos = get_feature_repos(&state, &feature)?;
+    let mut commands = Vec::new();
 
-    if let Some(pr_cmd) = &repo.pr_command {
-        Ok(pr_cmd.replace("{branch}", &feature.branch))
-    } else {
-        Ok(format!(
-            "gh pr create --head {} --title '{}' --body '{}'",
-            feature.branch, feature.name, feature.description
-        ))
+    for (repo, branch) in &feature_repos {
+        let cmd = if let Some(pr_cmd) = &repo.pr_command {
+            pr_cmd.replace("{branch}", branch)
+        } else {
+            format!(
+                "cd {} && gh pr create --head {} --title '{}' --body '{}'",
+                repo.path, branch, feature.name, feature.description
+            )
+        };
+        commands.push(format!("# {}\n{}", repo.name, cmd));
     }
+
+    Ok(commands.join("\n\n"))
 }
 
 // ── Preferences Commands ──
@@ -933,6 +1032,34 @@ pub fn set_preferences(
 }
 
 // ── Helpers ──
+
+/// Get the primary (first) repo for a feature.
+fn get_primary_repo(state: &State<AppState>, feature: &Feature) -> Result<Repository, String> {
+    let primary_id = feature.repos.first()
+        .map(|r| r.repo_id.as_str())
+        .unwrap_or(&feature.repo_id);
+    let repos = state.repositories.lock().unwrap();
+    repos.get(primary_id).cloned().ok_or("Primary repository not found".to_string())
+}
+
+/// Get all (repo, branch) pairs for a feature.
+fn get_feature_repos(state: &State<AppState>, feature: &Feature) -> Result<Vec<(Repository, String)>, String> {
+    let repos = state.repositories.lock().unwrap();
+    if feature.repos.is_empty() {
+        // Backwards compat: single repo
+        let repo = repos.get(&feature.repo_id).ok_or("Repository not found")?.clone();
+        Ok(vec![(repo, feature.branch.clone())])
+    } else {
+        let mut result = Vec::new();
+        for fr in &feature.repos {
+            let repo = repos.get(&fr.repo_id)
+                .ok_or(format!("Repository not found: {}", fr.repo_id))?
+                .clone();
+            result.push((repo, fr.branch.clone()));
+        }
+        Ok(result)
+    }
+}
 
 fn generate_context_pack_string(repo_path: &str) -> String {
     let mut map = String::new();

@@ -122,6 +122,27 @@ pub fn has_commits_beyond_base(worktree_path: &str, base_branch: &str) -> bool {
     .unwrap_or(false)
 }
 
+/// Get diff stats between two branches.
+/// Returns a list of `(file_path, insertions, deletions)` tuples.
+pub fn diff_stat(repo_path: &str, base: &str, head: &str) -> GitResult<Vec<(String, u32, u32)>> {
+    let output = run_git(repo_path, &["diff", "--numstat", &format!("{}...{}", base, head)])?;
+    Ok(parse_numstat(&output))
+}
+
+/// Parse `git diff --numstat` output into `(file, insertions, deletions)` tuples.
+pub fn parse_numstat(output: &str) -> Vec<(String, u32, u32)> {
+    let mut files = Vec::new();
+    for line in output.lines() {
+        let parts: Vec<&str> = line.split('\t').collect();
+        if parts.len() == 3 {
+            let ins = parts[0].parse::<u32>().unwrap_or(0);
+            let del = parts[1].parse::<u32>().unwrap_or(0);
+            files.push((parts[2].to_string(), ins, del));
+        }
+    }
+    files
+}
+
 pub fn get_default_branch(repo_path: &str) -> GitResult<String> {
     for branch in &["main", "master"] {
         if run_git(repo_path, &["rev-parse", "--verify", branch]).is_ok() {
@@ -129,4 +150,33 @@ pub fn get_default_branch(repo_path: &str) -> GitResult<String> {
         }
     }
     get_current_branch(repo_path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_numstat_basic() {
+        let output = "10\t2\tsrc/main.rs\n5\t0\tsrc/lib.rs\n";
+        let result = parse_numstat(output);
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0], ("src/main.rs".to_string(), 10, 2));
+        assert_eq!(result[1], ("src/lib.rs".to_string(), 5, 0));
+    }
+
+    #[test]
+    fn parse_numstat_binary_files() {
+        let output = "-\t-\timage.png\n3\t1\tREADME.md\n";
+        let result = parse_numstat(output);
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0], ("image.png".to_string(), 0, 0));
+        assert_eq!(result[1], ("README.md".to_string(), 3, 1));
+    }
+
+    #[test]
+    fn parse_numstat_empty() {
+        let result = parse_numstat("");
+        assert!(result.is_empty());
+    }
 }

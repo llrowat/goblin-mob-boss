@@ -1,24 +1,26 @@
 # Goblin Mob Boss
 
-A desktop app for agent-based AI development workflows. Configure agents, plan features interactively with Claude, then launch parallel agents to execute tasks on isolated git worktrees.
+A desktop app for agent-based AI development workflows. Configure agents, plan features interactively with Claude, then launch parallel agents to execute tasks on isolated git worktrees. Features can span multiple repositories simultaneously.
 
 ## How It Works
 
 1. **Configure Agents** — Set up AI agents with specialized roles (Full-Stack, Frontend, Backend, Test Writer, Reviewer). 5 built-in agents are provided; create custom agents for your workflow.
-2. **Start a Feature** — Describe what you want to build. A feature branch is created from your repo's base branch.
-3. **Plan with Claude** — An interactive Claude Code session in plan mode helps you refine the approach and break it into tasks with assigned agents.
-4. **Execute in Parallel** — Each task gets its own git worktree branched from the feature branch. Claude Code agents work on tasks simultaneously with tailored prompts.
-5. **Merge & Verify** — Completed tasks merge back to the feature branch. A final verification pass runs validators with test/reviewer agents.
-6. **Push & PR** — Push the feature branch and create a pull request when everything passes.
+2. **Start a Feature** — Describe what you want to build and select one or more repositories. Feature branches are created in all selected repos.
+3. **Plan with Claude** — An interactive Claude Code session in plan mode helps you refine the approach and break it into tasks with assigned agents. For multi-repo features, Claude sees context from all repos and tasks specify their target repo.
+4. **Execute in Parallel** — Each task gets its own git worktree branched from the feature branch in its target repo. Claude Code agents work on tasks simultaneously with tailored prompts.
+5. **Merge & Verify** — Completed tasks merge back to the feature branch in their respective repo. A final verification pass runs validators with test/reviewer agents across all repos.
+6. **Push & PR** — Push feature branches and create pull requests across all repos when everything passes.
 
 ## Features
 
 - **Agent-based workflow** — Configurable AI agents with roles and system prompts; 5 built-in defaults
 - **Interactive planning** — Back-and-forth conversation with Claude in plan mode during ideation
-- **Feature branch flow** — Base → feature branch → task work branches → merge back → verify → PR
-- **Parallel execution** — Multiple Claude Code agents work on separate worktrees simultaneously
+- **Multi-repo features** — A single feature can span multiple repositories with coordinated branches, tasks, verification, and PRs
+- **Feature branch flow** — Base → feature branch → task work branches → merge back → verify → PR (per repo)
+- **Parallel execution** — Multiple Claude Code agents work on separate worktrees simultaneously across repos
 - **Repository management** — Register local git repos, configure validators and max parallel agents
 - **Auto-generated prompts** — Each agent gets context-aware prompts with acceptance criteria
+- **Change summary** — See files changed, lines added/removed per task before merging
 - **Live status tracking** — Dashboard polls for task completion and verification results
 - **Merge workflow** — Tasks merge to the feature branch; final verification before PR
 
