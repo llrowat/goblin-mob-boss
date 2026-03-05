@@ -16,10 +16,6 @@
   --danger-hover: #d4755a;
   --success: #5a8a5c;
   --warning: #b8944a;
-  --phase-plan: #6a8ab8;
-  --phase-code: #5a8a5c;
-  --phase-verify: #b8944a;
-  --phase-ready: #5a8a5c;
 
   --radius-sm: 4px;
   --radius: 8px;
@@ -285,45 +281,6 @@ body {
   margin-top: 4px;
 }
 
-/* Phase Pipeline */
-.phase-pipeline {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin: 16px 0;
-}
-
-.phase-step {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 6px 14px;
-  border-radius: 20px;
-  font-size: 12px;
-  font-weight: 500;
-  background: var(--bg);
-  color: var(--muted);
-  border: 1px solid var(--border);
-  transition: all 0.2s;
-}
-
-.phase-step.active {
-  border-color: var(--accent);
-  color: var(--accent);
-  background: rgba(90, 138, 92, 0.1);
-}
-
-.phase-step.completed {
-  border-color: var(--success);
-  color: var(--success);
-  background: rgba(90, 138, 92, 0.08);
-}
-
-.phase-arrow {
-  color: var(--muted);
-  font-size: 12px;
-}
-
 /* Status Badge */
 .status-badge {
   display: inline-flex;
@@ -342,11 +299,6 @@ body {
   color: var(--accent);
 }
 
-.status-badge.paused {
-  background: rgba(184, 148, 74, 0.15);
-  color: var(--warning);
-}
-
 .status-badge.completed {
   background: rgba(90, 138, 92, 0.15);
   color: var(--success);
@@ -362,6 +314,11 @@ body {
   color: var(--muted);
 }
 
+.status-badge.merged {
+  background: rgba(184, 148, 74, 0.15);
+  color: var(--accent-brass);
+}
+
 .status-dot {
   width: 6px;
   height: 6px;
@@ -369,73 +326,179 @@ body {
   background: currentColor;
 }
 
-/* Task List */
-.task-list {
+/* Task Board */
+.task-board {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.task-row {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 12px 16px;
+.task-card {
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
+  overflow: hidden;
+  transition: border-color 0.15s;
 }
 
-.task-row:hover {
-  background: var(--panel-hover);
+.task-card:hover {
   border-color: var(--text-secondary);
 }
 
-.task-row-title {
-  flex: 1;
-  font-weight: 500;
+.task-card.running {
+  border-left: 3px solid var(--accent);
 }
 
-.task-row-phase {
-  font-size: 12px;
-  color: var(--text-secondary);
-  text-transform: capitalize;
+.task-card.completed {
+  border-left: 3px solid var(--success);
+  opacity: 0.8;
 }
 
-.task-row-time {
+.task-card.failed {
+  border-left: 3px solid var(--danger);
+}
+
+.task-card.pending {
+  border-left: 3px solid var(--muted);
+}
+
+.task-card.merged {
+  border-left: 3px solid var(--accent-brass);
+  opacity: 0.7;
+}
+
+.task-card-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.task-card-header:hover {
+  background: var(--panel-hover);
+}
+
+.task-card-number {
+  font-family: var(--font-mono);
   font-size: 12px;
   color: var(--muted);
+  min-width: 24px;
 }
 
-/* Status card on Task Detail */
-.status-card {
-  background: var(--bg-raised);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: 24px;
-  text-align: center;
-  margin: 20px 0;
+.task-card-title {
+  flex: 1;
+  font-weight: 500;
+  font-size: 14px;
 }
 
-.status-card-label {
+.task-card-body {
+  padding: 0 16px 16px;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
+.task-card-description {
   font-size: 13px;
   color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+/* Task Spec (ideation discovered tasks) */
+.task-spec-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.task-spec-card {
+  display: flex;
+  gap: 12px;
+  padding: 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.task-spec-number {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--muted);
+  min-width: 24px;
+  padding-top: 2px;
+}
+
+.task-spec-content {
+  flex: 1;
+}
+
+.task-spec-title {
+  font-weight: 600;
+  font-size: 14px;
   margin-bottom: 4px;
 }
 
-.status-card-value {
-  font-size: 20px;
-  font-weight: 600;
-  text-transform: capitalize;
-  margin-bottom: 16px;
+.task-spec-description {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
 }
 
-.status-card-subtitle {
+.task-spec-criteria {
+  list-style: none;
+  padding: 0;
   font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.task-spec-criteria li {
+  padding: 2px 0;
+  padding-left: 16px;
+  position: relative;
+}
+
+.task-spec-criteria li::before {
+  content: "\2713";
+  position: absolute;
+  left: 0;
   color: var(--muted);
-  font-style: italic;
+}
+
+.task-spec-deps {
+  font-size: 11px;
+  color: var(--warning);
+  margin-top: 4px;
+}
+
+/* Progress bar */
+.progress-bar-container {
+  width: 100%;
+}
+
+.progress-bar {
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+/* Error banner */
+.error-banner {
+  color: var(--danger);
+  font-size: 13px;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  background: rgba(196, 101, 74, 0.1);
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(196, 101, 74, 0.2);
 }
 
 /* Actions bar */
@@ -525,13 +588,6 @@ body {
   font-size: 12px;
 }
 
-/* Toast / flavor text */
-.flavor-text {
-  font-size: 12px;
-  color: var(--muted);
-  font-style: italic;
-}
-
 /* Responsive scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
@@ -583,4 +639,109 @@ body {
   justify-content: flex-end;
   gap: 8px;
   margin-top: 20px;
+}
+
+/* Agent tag in task cards */
+.agent-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 500;
+  background: rgba(90, 138, 92, 0.12);
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+/* Agent label in task spec cards */
+.task-spec-agent {
+  font-size: 11px;
+  color: var(--accent);
+  margin-bottom: 4px;
+}
+
+/* Agent/subagent section in expanded task cards */
+.task-agents-section {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.task-agent-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.task-agent-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  color: var(--text-secondary);
+  min-width: 64px;
+}
+
+.task-agent-role {
+  font-size: 11px;
+  color: var(--muted);
+  margin-left: 2px;
+}
+
+.task-agent-tags {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.agent-tag-sub {
+  background: rgba(184, 148, 74, 0.12);
+  color: var(--accent-brass);
+}
+
+/* Verification agent checklist in settings */
+.verification-agent-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.verification-agent-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.verification-agent-item:hover {
+  background: var(--panel-hover);
+}
+
+.verification-agent-item input[type="checkbox"] {
+  accent-color: var(--accent);
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.verification-agent-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.verification-agent-name {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.verification-agent-role {
+  font-size: 12px;
+  color: var(--muted);
 }

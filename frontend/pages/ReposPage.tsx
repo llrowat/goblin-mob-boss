@@ -12,6 +12,7 @@ export function ReposPage() {
   const [editBranch, setEditBranch] = useState("");
   const [editValidators, setEditValidators] = useState("");
   const [editPrCommand, setEditPrCommand] = useState("");
+  const [editMaxParallel, setEditMaxParallel] = useState(4);
 
   const loadRepos = () => {
     tauri.listRepositories().then(setRepos);
@@ -25,6 +26,7 @@ export function ReposPage() {
     setEditBranch(repo.base_branch);
     setEditValidators(repo.validators.join("\n"));
     setEditPrCommand(repo.pr_command || "");
+    setEditMaxParallel(repo.max_parallel_agents);
   };
 
   const handleSave = async () => {
@@ -38,6 +40,7 @@ export function ReposPage() {
         .map((v) => v.trim())
         .filter(Boolean),
       prCommand: editPrCommand.trim() || null,
+      maxParallelAgents: editMaxParallel,
     });
     setEditingId(null);
     loadRepos();
@@ -103,6 +106,23 @@ export function ReposPage() {
                     onChange={(e) => setEditPrCommand(e.target.value)}
                   />
                 </div>
+                <div className="form-group">
+                  <label className="form-label">Max Parallel Agents</label>
+                  <input
+                    className="form-input"
+                    type="number"
+                    min={1}
+                    max={16}
+                    value={editMaxParallel}
+                    onChange={(e) =>
+                      setEditMaxParallel(parseInt(e.target.value) || 4)
+                    }
+                    style={{ maxWidth: 100 }}
+                  />
+                  <div className="form-help">
+                    How many agents can work in parallel on tasks.
+                  </div>
+                </div>
                 <div className="actions-bar">
                   <button className="btn btn-primary" onClick={handleSave}>
                     Save
@@ -120,7 +140,10 @@ export function ReposPage() {
                 <div className="panel-header">
                   <div>
                     <div className="panel-title">{repo.name}</div>
-                    <div className="form-help" style={{ fontFamily: "var(--font-mono)" }}>
+                    <div
+                      className="form-help"
+                      style={{ fontFamily: "var(--font-mono)" }}
+                    >
                       {repo.path}
                     </div>
                   </div>
@@ -146,6 +169,9 @@ export function ReposPage() {
                       Validators: {repo.validators.length}
                     </span>
                   )}
+                  <span style={{ marginLeft: 16 }}>
+                    Max agents: {repo.max_parallel_agents}
+                  </span>
                 </div>
               </>
             )}

@@ -29,26 +29,48 @@ pub fn run() {
         })
         .manage(state)
         .invoke_handler(tauri::generate_handler![
+            // Repository
             commands::list_repositories,
             commands::add_repository,
             commands::update_repository,
             commands::remove_repository,
             commands::detect_repo_info,
-            commands::create_task,
+            // Agents
+            commands::list_agents,
+            commands::add_agent,
+            commands::update_agent,
+            commands::remove_agent,
+            // Features
+            commands::start_feature,
+            commands::list_features,
+            commands::get_feature,
+            // Ideation
+            commands::get_ideation_prompt,
+            commands::launch_ideation,
+            commands::get_ideation_terminal_command,
+            commands::poll_ideation_tasks,
+            // Tasks
+            commands::import_tasks,
             commands::list_tasks,
             commands::get_task,
-            commands::advance_phase,
-            commands::set_task_phase,
+            commands::start_task,
+            commands::get_task_terminal_command,
+            commands::launch_task,
+            commands::complete_task,
+            commands::merge_task,
             commands::update_task_status,
-            commands::run_verification,
-            commands::get_prompt,
-            commands::get_terminal_command,
-            commands::get_events,
             commands::delete_task,
-            commands::detect_phase,
+            commands::run_verification,
+            // Feature verification & PR
+            commands::start_feature_verification,
+            commands::get_verification_terminal_command,
+            commands::launch_verification,
+            commands::mark_feature_ready,
+            commands::push_feature,
+            commands::get_pr_command,
+            // Preferences
             commands::get_preferences,
             commands::set_preferences,
-            commands::launch_claude,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -64,7 +86,6 @@ fn dirs_config_path() -> String {
 }
 
 fn dirs_next() -> Option<String> {
-    // Simple cross-platform config dir detection
     if let Ok(home) = std::env::var("HOME") {
         return Some(format!("{}/.config", home));
     }

@@ -5,26 +5,62 @@ export interface Repository {
   base_branch: string;
   validators: string[];
   pr_command: string | null;
+  max_parallel_agents: number;
   created_at: string;
 }
 
-export type TaskPhase = "plan" | "code" | "verify" | "ready";
-export type TaskStatus = "pending" | "running" | "paused" | "completed" | "failed";
+export interface Agent {
+  id: string;
+  name: string;
+  role: string;
+  system_prompt: string;
+  is_builtin: boolean;
+}
+
+export type FeatureStatus = "ideation" | "in_progress" | "verifying" | "ready";
+
+export interface Feature {
+  id: string;
+  repo_id: string;
+  name: string;
+  description: string;
+  branch: string;
+  status: FeatureStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+export type TaskStatus =
+  | "pending"
+  | "running"
+  | "completed"
+  | "merged"
+  | "failed";
 
 export interface Task {
-  schema: string;
   task_id: string;
+  feature_id: string;
   repo_id: string;
   title: string;
   description: string;
-  phase: TaskPhase;
+  acceptance_criteria: string[];
+  dependencies: string[];
+  agent_id: string;
+  subagent_ids: string[];
   status: TaskStatus;
-  base_branch: string;
   branch: string;
   worktree_path: string;
-  acceptance_criteria: string[];
   created_at: string;
   updated_at: string;
+}
+
+export interface TaskSpec {
+  title: string;
+  description: string;
+  acceptance_criteria: string[];
+  dependencies: string[];
+  agent: string;
+  subagents: string[];
 }
 
 export interface ValidatorResult {
@@ -42,12 +78,6 @@ export interface VerifyResult {
   timestamp: string;
 }
 
-export interface TaskEvent {
-  type: string;
-  timestamp: string;
-  [key: string]: unknown;
-}
-
 export interface RepoInfo {
   name: string;
   base_branch: string;
@@ -55,4 +85,5 @@ export interface RepoInfo {
 
 export interface Preferences {
   shell: string;
+  verification_agent_ids: string[];
 }

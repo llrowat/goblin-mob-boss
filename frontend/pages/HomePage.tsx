@@ -1,16 +1,18 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTauri } from "../hooks/useTauri";
-import type { Repository } from "../types";
+import type { Repository, Feature } from "../types";
 
 export function HomePage() {
   const tauri = useTauri();
   const navigate = useNavigate();
   const [repos, setRepos] = useState<Repository[]>([]);
   const [selectedRepoId, setSelectedRepoId] = useState("");
-  const [taskInput, setTaskInput] = useState("");
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [features, setFeatures] = useState<Feature[]>([]);
 
   useEffect(() => {
     tauri.listRepositories().then((r) => {
@@ -21,17 +23,22 @@ export function HomePage() {
     });
   }, []);
 
-  const handleStart = async () => {
-    if (!selectedRepoId || !taskInput.trim()) return;
+  useEffect(() => {
+    if (!selectedRepoId) return;
+    tauri.listFeatures(selectedRepoId).then(setFeatures).catch(() => {});
+  }, [selectedRepoId]);
+
+  const handleStartFeature = async () => {
+    if (!selectedRepoId || !name.trim() || !description.trim()) return;
     setLoading(true);
     setError("");
     try {
-      const task = await tauri.createTask({
-        repoId: selectedRepoId,
-        title: taskInput.trim(),
-        description: taskInput.trim(),
-      });
-      navigate(`/task/${task.task_id}`);
+      const feature = await tauri.startFeature(
+        selectedRepoId,
+        name.trim(),
+        description.trim(),
+      );
+      navigate(`/feature/${feature.id}/ideation`);
     } catch (e) {
       setError(String(e));
     } finally {
@@ -43,7 +50,7 @@ export function HomePage() {
     return (
       <div className="empty-state">
         <h3>No repositories yet</h3>
-        <p>Add a repository to get started with your first task.</p>
+        <p>Add a repository to get started.</p>
         <button
           className="btn btn-primary btn-lg"
           onClick={() => navigate("/repos")}
@@ -54,27 +61,24 @@ export function HomePage() {
     );
   }
 
+  const statusLabel: Record<string, string> = {
+    ideation: "Planning",
+    in_progress: "In Progress",
+    verifying: "Verifying",
+    ready: "Ready",
+  };
+
   return (
     <div>
       <div className="page-header">
-        <h2>New Task</h2>
-        <p>Describe what you want to build or fix.</p>
+        <h2>Start a Feature</h2>
+        <p>
+          Describe what you want to build. Claude will help you plan the work
+          and break it into tasks that agents execute in parallel.
+        </p>
       </div>
 
-      {error && (
-        <div
-          style={{
-            color: "var(--danger)",
-            fontSize: 13,
-            marginBottom: 12,
-            padding: "8px 12px",
-            background: "rgba(196,101,74,0.1)",
-            borderRadius: 4,
-          }}
-        >
-          {error}
-        </div>
-      )}
+      {error && <div className="error-banner">{error}</div>}
 
       <div className="panel">
         <div className="form-group">
@@ -93,28 +97,80 @@ export function HomePage() {
         </div>
 
         <div className="form-group">
-          <label className="form-label">What do you want to build or fix?</label>
+          <label className="form-label">Feature Name</label>
+          <input
+            className="form-input"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="User Authentication"
+          />
+          <div className="form-help">
+            Short name for the feature branch.
+          </div>
+        </div>
+
+        <div className="form-group">
+          <label className="form-label">What do you want to build?</label>
           <textarea
             className="form-textarea"
-            value={taskInput}
-            onChange={(e) => setTaskInput(e.target.value)}
-            placeholder="Fix login redirect loop when session expires"
-            style={{ minHeight: 100 }}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Add user authentication with OAuth2, including login page, callback handler, and session management..."
+            style={{ minHeight: 120 }}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && e.metaKey) handleStart();
+              if (e.key === "Enter" && e.metaKey) handleStartFeature();
             }}
           />
+          <div className="form-help">
+            Be specific. Claude will plan the work interactively with you.
+          </div>
         </div>
 
         <button
           className="btn btn-primary btn-lg"
-          onClick={handleStart}
-          disabled={loading || !taskInput.trim()}
+          onClick={handleStartFeature}
+          disabled={loading || !name.trim() || !description.trim()}
           style={{ width: "100%" }}
         >
-          {loading ? "Gathering context..." : "Start"}
+          {loading ? "Creating feature branch..." : "Start Feature"}
         </button>
       </div>
+
+      {/* Active features */}
+      {features.length > 0 && (
+        <div style={{ marginTop: 24 }}>
+          <div className="sidebar-section-label" style={{ padding: "0 0 8px" }}>
+            Active Features
+          </div>
+          {features.map((f) => (
+            <div
+              key={f.id}
+              className="panel"
+              style={{ marginBottom: 8, cursor: "pointer" }}
+              onClick={() => {
+                if (f.status === "ideation") {
+                  navigate(`/feature/${f.id}/ideation`);
+                } else {
+                  navigate(`/feature/${f.id}/tasks`);
+                }
+              }}
+            >
+              <div className="panel-header" style={{ marginBottom: 0 }}>
+                <div>
+                  <div className="panel-title">{f.name}</div>
+                  <div className="form-help">{f.description}</div>
+                </div>
+                <span
+                  className={`status-badge ${f.status === "in_progress" ? "running" : f.status}`}
+                >
+                  <span className="status-dot" />
+                  {statusLabel[f.status] ?? f.status}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

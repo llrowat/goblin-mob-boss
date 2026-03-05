@@ -1,7 +1,11 @@
 use std::fs;
 use std::path::Path;
 
-pub fn generate_context_pack(worktree_path: &str, repo_path: &str, keywords: &[&str]) -> Result<(), String> {
+pub fn generate_context_pack(
+    worktree_path: &str,
+    repo_path: &str,
+    keywords: &[&str],
+) -> Result<(), String> {
     let context_dir = Path::new(worktree_path).join(".gmb").join("context");
     fs::create_dir_all(&context_dir).map_err(|e| format!("Failed to create context dir: {}", e))?;
 
@@ -48,7 +52,11 @@ fn generate_repo_map(repo_path: &str) -> Result<String, String> {
         let mut files: Vec<String> = Vec::new();
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().to_string();
-            if name.starts_with('.') || name == "node_modules" || name == "target" || name == "__pycache__" {
+            if name.starts_with('.')
+                || name == "node_modules"
+                || name == "target"
+                || name == "__pycache__"
+            {
                 continue;
             }
             if entry.path().is_dir() {

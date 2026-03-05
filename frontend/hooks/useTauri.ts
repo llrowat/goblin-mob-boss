@@ -1,12 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   Repository,
+  Agent,
+  Feature,
   Task,
-  VerifyResult,
-  TaskEvent,
-  RepoInfo,
-  TaskPhase,
+  TaskSpec,
   TaskStatus,
+  VerifyResult,
   Preferences,
 } from "../types";
 
@@ -36,6 +36,7 @@ export function useTauri() {
       baseBranch: string;
       validators: string[];
       prCommand: string | null;
+      maxParallelAgents?: number;
     }) =>
       invoke<Repository>("update_repository", {
         id: args.id,
@@ -43,71 +44,111 @@ export function useTauri() {
         baseBranch: args.baseBranch,
         validators: args.validators,
         prCommand: args.prCommand,
+        maxParallelAgents: args.maxParallelAgents,
       }),
 
     removeRepository: (id: string) =>
       invoke<void>("remove_repository", { id }),
 
     detectRepoInfo: (path: string) =>
-      invoke<RepoInfo>("detect_repo_info", { path }),
-
-    // Tasks
-    createTask: (args: {
-      repoId: string;
-      title: string;
-      description: string;
-    }) =>
-      invoke<Task>("create_task", {
-        repoId: args.repoId,
-        title: args.title,
-        description: args.description,
+      invoke<{ name: string; base_branch: string }>("detect_repo_info", {
+        path,
       }),
 
-    listTasks: (repoId: string) =>
-      invoke<Task[]>("list_tasks", { repoId }),
+    // Agents
+    listAgents: () => invoke<Agent[]>("list_agents"),
+
+    addAgent: (name: string, role: string, systemPrompt: string) =>
+      invoke<Agent>("add_agent", { name, role, systemPrompt }),
+
+    updateAgent: (
+      id: string,
+      name: string,
+      role: string,
+      systemPrompt: string,
+    ) => invoke<Agent>("update_agent", { id, name, role, systemPrompt }),
+
+    removeAgent: (id: string) => invoke<void>("remove_agent", { id }),
+
+    // Features
+    startFeature: (repoId: string, name: string, description: string) =>
+      invoke<Feature>("start_feature", { repoId, name, description }),
+
+    listFeatures: (repoId: string) =>
+      invoke<Feature[]>("list_features", { repoId }),
+
+    getFeature: (featureId: string) =>
+      invoke<Feature>("get_feature", { featureId }),
+
+    // Ideation (on a feature)
+    getIdeationPrompt: (featureId: string) =>
+      invoke<string>("get_ideation_prompt", { featureId }),
+
+    launchIdeation: (featureId: string) =>
+      invoke<void>("launch_ideation", { featureId }),
+
+    getIdeationTerminalCommand: (featureId: string) =>
+      invoke<string>("get_ideation_terminal_command", { featureId }),
+
+    pollIdeationTasks: (featureId: string) =>
+      invoke<TaskSpec[]>("poll_ideation_tasks", { featureId }),
+
+    // Tasks
+    importTasks: (featureId: string, specs: TaskSpec[]) =>
+      invoke<Task[]>("import_tasks", { featureId, specs }),
+
+    listTasks: (featureId: string) =>
+      invoke<Task[]>("list_tasks", { featureId }),
 
     getTask: (taskId: string) => invoke<Task>("get_task", { taskId }),
 
-    advancePhase: (taskId: string) =>
-      invoke<Task>("advance_phase", { taskId }),
+    startTask: (taskId: string) => invoke<Task>("start_task", { taskId }),
 
-    setTaskPhase: (taskId: string, phase: TaskPhase) =>
-      invoke<Task>("set_task_phase", { taskId, phase }),
+    getTaskTerminalCommand: (taskId: string) =>
+      invoke<string>("get_task_terminal_command", { taskId }),
+
+    launchTask: (taskId: string) =>
+      invoke<void>("launch_task", { taskId }),
+
+    completeTask: (taskId: string) =>
+      invoke<Task>("complete_task", { taskId }),
+
+    mergeTask: (taskId: string) => invoke<Task>("merge_task", { taskId }),
 
     updateTaskStatus: (taskId: string, status: TaskStatus) =>
       invoke<Task>("update_task_status", { taskId, status }),
 
-    // Verification
     runVerification: (taskId: string) =>
       invoke<VerifyResult>("run_verification", { taskId }),
 
-    // Prompts
-    getPrompt: (taskId: string) =>
-      invoke<string>("get_prompt", { taskId }),
+    deleteTask: (taskId: string) => invoke<void>("delete_task", { taskId }),
 
-    getTerminalCommand: (taskId: string) =>
-      invoke<string>("get_terminal_command", { taskId }),
+    // Feature verification & PR
+    startFeatureVerification: (featureId: string) =>
+      invoke<Feature>("start_feature_verification", { featureId }),
 
-    // Events
-    getEvents: (taskId: string) =>
-      invoke<TaskEvent[]>("get_events", { taskId }),
+    getVerificationTerminalCommand: (featureId: string) =>
+      invoke<string>("get_verification_terminal_command", { featureId }),
 
-    // Phase detection
-    detectPhase: (taskId: string) =>
-      invoke<Task>("detect_phase", { taskId }),
+    launchVerification: (featureId: string) =>
+      invoke<void>("launch_verification", { featureId }),
 
-    // Cleanup
-    deleteTask: (taskId: string) =>
-      invoke<void>("delete_task", { taskId }),
+    markFeatureReady: (featureId: string) =>
+      invoke<Feature>("mark_feature_ready", { featureId }),
+
+    pushFeature: (featureId: string) =>
+      invoke<string>("push_feature", { featureId }),
+
+    getPrCommand: (featureId: string) =>
+      invoke<string>("get_pr_command", { featureId }),
 
     // Preferences
     getPreferences: () => invoke<Preferences>("get_preferences"),
 
-    setPreferences: (shell: string) =>
-      invoke<Preferences>("set_preferences", { shell }),
-
-    // Launch
-    launchClaude: (taskId: string) =>
-      invoke<void>("launch_claude", { taskId }),
+    setPreferences: (shell: string, verificationAgentIds: string[]) =>
+      invoke<Preferences>("set_preferences", {
+        shell,
+        verificationAgentIds,
+      }),
   };
 }
