@@ -2,33 +2,33 @@
 
 ## Project Structure
 
-This is a Tauri v2 + React (TypeScript) desktop application with a Rust backend. The app provides agent-based AI development workflows — configure agents, plan features interactively, execute tasks in parallel via Claude Code, merge, verify, and create PRs.
+This is a Tauri v2 + React (TypeScript) desktop application with a Rust backend. The app provides a GUI/UX layer on top of Claude Code's multi-agent capabilities — configure agents, plan features interactively, choose an execution mode (Agent Teams or Subagents), then launch Claude Code to execute.
 
 ```
 goblin-mob-boss/
 ├── backend/            # Rust backend (Tauri app)
 │   ├── src/
-│   │   ├── lib.rs              # App entry, state management
-│   │   ├── main.rs             # Binary entry
-│   │   ├── commands.rs         # Tauri IPC command handlers (agents, features, tasks, verification, PR)
-│   │   ├── models.rs           # Data models (Agent, Feature, Task, Repository, Preferences)
-│   │   ├── store.rs            # JSON file-based persistence (repos, agents, features, tasks, preferences)
-│   │   ├── context.rs          # Repo map and related files generation
-│   │   ├── claude_md.rs        # CLAUDE.md file management for worktrees
-│   │   ├── git.rs              # Git operations (worktrees, branches, merge, push)
-│   │   ├── prompts.rs          # Ideation, agent, and verification prompt templates
-│   │   └── validators.rs       # Validator execution
+│   │   ├── lib.rs              # App entry, state management, plugin setup
+│   │   ├── main.rs             # Binary entry point
+│   │   ├── commands.rs         # Tauri IPC command handlers (repos, agents, features, ideation, launch, validation, PR)
+│   │   ├── models.rs           # Data models (AgentFile, Feature, TaskSpec, Repository, Preferences, ExecutionMode)
+│   │   ├── store.rs            # JSON file-based persistence (repos, features, agents, preferences)
+│   │   ├── launch.rs           # Launch command builder (Teams/Subagents mode)
+│   │   ├── git.rs              # Git operations (branches, merge, push, diff)
+│   │   ├── prompts.rs          # Ideation prompt templates with execution mode heuristics
+│   │   └── validators.rs       # Validator execution and result aggregation
 │   └── tauri.conf.json
 ├── frontend/           # React frontend
 │   ├── components/     # Shared UI components
 │   │   ├── AddRepoModal        # Repository addition dialog (with folder picker)
-│   │   └── StatusBadge         # Task/feature status indicator
+│   │   └── StatusBadge         # Feature status indicator
 │   ├── pages/          # Page components
 │   │   ├── HomePage            # Feature launcher (describe what to build, list active features)
-│   │   ├── IdeationPage        # Interactive Claude Code planning + task discovery
-│   │   ├── TaskBoardPage       # Agent dashboard (task cards, merge, verification, PR)
-│   │   ├── AgentsPage          # Agent CRUD (built-in + custom agents)
-│   │   ├── ReposPage           # Repository management (validators, max agents)
+│   │   ├── IdeationPage        # Interactive Claude Code planning + task discovery (polls plan.json)
+│   │   ├── LaunchConfigPage    # Execution mode selection, agent picker, launch command generation
+│   │   ├── FeatureStatusPage   # Execution monitor (diff summary, validators, status transitions)
+│   │   ├── AgentsPage          # Agent CRUD (form-based editor for .claude/agents/*.md files)
+│   │   ├── ReposPage           # Repository management (validators, base branch, PR command)
 │   │   └── SettingsPage        # App preferences (shell selection)
 │   ├── hooks/          # React hooks
 │   │   └── useTauri            # Tauri IPC wrapper
@@ -43,12 +43,12 @@ goblin-mob-boss/
 
 ## Core Workflow
 
-1. **Agents** — 5 built-in agents (Full-Stack, Frontend, Backend, Test Writer, Reviewer) + custom agents
-2. **Feature** — User starts a feature → creates feature branch from repo base
-3. **Ideation** — Interactive Claude Code session in plan mode; results in task specs with assigned agents
-4. **Tasks** — Each task gets a worktree branched from the feature branch; Claude Code executes with agent config
-5. **Merge** — Completed tasks merge back to the feature branch
-6. **Verification** — Final verification pass with test/reviewer agents on the feature branch
+1. **Agents** — Defined as `.claude/agents/*.md` files with YAML frontmatter (name, description, tools, model, system_prompt, color). Per-repo and global agents supported.
+2. **Feature** — User starts a feature → creates feature branch from repo base branch
+3. **Ideation** — Interactive Claude Code session in plan mode; discovers task specs with assigned agents and recommends an execution mode (Teams vs Subagents)
+4. **Launch Config** — User reviews tasks and execution mode recommendation, selects agents, generates launch command
+5. **Execution** — User runs the generated Claude Code command; GMB tracks feature status
+6. **Validation** — Run repository validators (tests, linters) against the feature branch; review diff summary
 7. **PR** — Push feature branch and create PR
 
 ## Development

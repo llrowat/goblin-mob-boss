@@ -177,7 +177,6 @@ pub struct ExecutionRecommendation {
 fn default_confidence() -> f32 {
     0.5
 }
-}
 
 // ── Feature ──
 
@@ -422,6 +421,7 @@ You are a frontend specialist. Focus on UI components, styling, and accessibilit
             model: None,
             system_prompt: "You are a testing specialist.".to_string(),
             is_global: false,
+            color: default_agent_color(),
         };
         let md = agent.to_markdown();
         let parsed = AgentFile::parse("test-writer.md", &md).unwrap();
@@ -543,13 +543,13 @@ Review code for issues."#;
 
     #[test]
     fn agent_file_parse_with_color() {
-        let content = r#"---
+        let content = r##"---
 name: "Frontend Developer"
 description: "React specialist"
 color: "#5b8abd"
 ---
 
-You are a frontend specialist."#;
+You are a frontend specialist."##;
 
         let agent = AgentFile::parse("frontend-dev.md", content).unwrap();
         assert_eq!(agent.color, "#5b8abd");

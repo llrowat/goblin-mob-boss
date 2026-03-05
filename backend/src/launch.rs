@@ -44,7 +44,7 @@ pub fn build_launch(
 fn build_prompt(feature: &Feature, mode: &ExecutionMode) -> String {
     let tasks_section = build_tasks_section(&feature.task_specs);
     let agents_section = build_agents_section(&feature.selected_agents);
-    let validators_note = String::new(); // Validators are in the repo config, injected separately
+    let _validators_note = String::new(); // Validators are in the repo config, injected separately
 
     match mode {
         ExecutionMode::Teams => {
@@ -142,7 +142,6 @@ fn build_agents_section(agent_filenames: &[String]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::FeatureStatus;
 
     fn make_feature(mode: ExecutionMode) -> Feature {
         let mut f = Feature::new(
