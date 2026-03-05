@@ -1,34 +1,56 @@
 import { useState, useEffect } from "react";
 import { useTauri } from "../hooks/useTauri";
-import type { Agent } from "../types";
+import type { AgentFile, Repository } from "../types";
 
 export function AgentsPage() {
   const tauri = useTauri();
-  const [agents, setAgents] = useState<Agent[]>([]);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editName, setEditName] = useState("");
-  const [editRole, setEditRole] = useState("");
-  const [editPrompt, setEditPrompt] = useState("");
+  const [repos, setRepos] = useState<Repository[]>([]);
+  const [selectedRepoId, setSelectedRepoId] = useState<string>("");
+  const [agents, setAgents] = useState<AgentFile[]>([]);
   const [showAdd, setShowAdd] = useState(false);
+  const [newFilename, setNewFilename] = useState("");
   const [newName, setNewName] = useState("");
-  const [newRole, setNewRole] = useState("developer");
+  const [newDescription, setNewDescription] = useState("");
   const [newPrompt, setNewPrompt] = useState("");
   const [error, setError] = useState("");
 
+  useEffect(() => {
+    tauri.listRepositories().then((r) => {
+      setRepos(r);
+      if (r.length > 0) {
+        setSelectedRepoId(r[0].id);
+      }
+    });
+  }, []);
+
+  const selectedRepo = repos.find((r) => r.id === selectedRepoId);
+
   const loadAgents = () => {
-    tauri.listAgents().then(setAgents);
+    if (!selectedRepo) return;
+    tauri.listAgents(selectedRepo.path).then(setAgents).catch(() => setAgents([]));
   };
 
-  useEffect(loadAgents, []);
+  useEffect(loadAgents, [selectedRepoId, repos]);
 
   const handleAdd = async () => {
-    if (!newName.trim() || !newPrompt.trim()) return;
+    if (!selectedRepo || !newName.trim() || !newPrompt.trim()) return;
     setError("");
+    const filename = newFilename.trim() || `${newName.trim().toLowerCase().replace(/\s+/g, "-")}.md`;
+    const agent: AgentFile = {
+      filename: filename.endsWith(".md") ? filename : `${filename}.md`,
+      name: newName.trim(),
+      description: newDescription.trim(),
+      tools: null,
+      model: null,
+      system_prompt: newPrompt.trim(),
+      is_global: false,
+    };
     try {
-      await tauri.addAgent(newName.trim(), newRole.trim(), newPrompt.trim());
+      await tauri.saveAgent(selectedRepo.path, agent);
       setShowAdd(false);
+      setNewFilename("");
       setNewName("");
-      setNewRole("developer");
+      setNewDescription("");
       setNewPrompt("");
       loadAgents();
     } catch (e) {
@@ -36,51 +58,49 @@ export function AgentsPage() {
     }
   };
 
-  const handleEdit = (agent: Agent) => {
-    setEditingId(agent.id);
-    setEditName(agent.name);
-    setEditRole(agent.role);
-    setEditPrompt(agent.system_prompt);
-  };
-
-  const handleSave = async () => {
-    if (!editingId) return;
+  const handleRemove = async (filename: string) => {
+    if (!selectedRepo) return;
     setError("");
     try {
-      await tauri.updateAgent(
-        editingId,
-        editName.trim(),
-        editRole.trim(),
-        editPrompt.trim(),
-      );
-      setEditingId(null);
+      await tauri.deleteAgent(selectedRepo.path, filename);
       loadAgents();
     } catch (e) {
       setError(String(e));
     }
   };
 
-  const handleRemove = async (id: string) => {
-    setError("");
-    try {
-      await tauri.removeAgent(id);
-      loadAgents();
-    } catch (e) {
-      setError(String(e));
-    }
-  };
-
-  const builtinAgents = agents.filter((a) => a.is_builtin);
-  const customAgents = agents.filter((a) => !a.is_builtin);
+  const repoAgents = agents.filter((a) => !a.is_global);
+  const globalAgents = agents.filter((a) => a.is_global);
 
   return (
     <div>
       <div className="page-header">
         <h2>Agents</h2>
-        <p>Configure AI agents for task execution.</p>
+        <p>
+          Manage .claude/agents/*.md files. These define the agents available
+          for task execution.
+        </p>
       </div>
 
       {error && <div className="error-banner">{error}</div>}
+
+      {repos.length > 1 && (
+        <div className="form-group" style={{ marginBottom: 16 }}>
+          <label className="form-label">Repository</label>
+          <select
+            className="form-select"
+            value={selectedRepoId}
+            onChange={(e) => setSelectedRepoId(e.target.value)}
+            style={{ maxWidth: 300 }}
+          >
+            {repos.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       <div style={{ marginBottom: 16 }}>
         <button
@@ -102,22 +122,29 @@ export function AgentsPage() {
               className="form-input"
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
-              placeholder="My Custom Agent"
+              placeholder="Frontend Developer"
             />
           </div>
           <div className="form-group">
-            <label className="form-label">Role</label>
-            <select
-              className="form-select"
-              value={newRole}
-              onChange={(e) => setNewRole(e.target.value)}
-              style={{ maxWidth: 200 }}
-            >
-              <option value="developer">Developer</option>
-              <option value="testing">Testing</option>
-              <option value="reviewer">Reviewer</option>
-              <option value="devops">DevOps</option>
-            </select>
+            <label className="form-label">Filename</label>
+            <input
+              className="form-input"
+              value={newFilename}
+              onChange={(e) => setNewFilename(e.target.value)}
+              placeholder="frontend-dev.md (auto-generated from name)"
+            />
+            <div className="form-help">
+              Optional. Will be auto-generated from the name if left blank.
+            </div>
+          </div>
+          <div className="form-group">
+            <label className="form-label">Description</label>
+            <input
+              className="form-input"
+              value={newDescription}
+              onChange={(e) => setNewDescription(e.target.value)}
+              placeholder="Specializes in React and CSS"
+            />
           </div>
           <div className="form-group">
             <label className="form-label">System Prompt</label>
@@ -125,7 +152,7 @@ export function AgentsPage() {
               className="form-textarea"
               value={newPrompt}
               onChange={(e) => setNewPrompt(e.target.value)}
-              placeholder="You are a specialist in..."
+              placeholder="You are a frontend specialist. Focus on UI components, styling, and accessibility."
               style={{ minHeight: 100 }}
             />
           </div>
@@ -143,175 +170,87 @@ export function AgentsPage() {
         </div>
       )}
 
-      {/* Built-in agents */}
-      {builtinAgents.length > 0 && (
+      {/* Repo agents */}
+      {repoAgents.length > 0 && (
         <>
           <div className="sidebar-section-label" style={{ padding: "0 0 8px" }}>
-            Built-in Agents
+            Repository Agents
           </div>
-          {builtinAgents.map((agent) => (
-            <div key={agent.id} className="panel" style={{ marginBottom: 8 }}>
-              {editingId === agent.id ? (
-                <AgentEditForm
-                  name={editName}
-                  role={editRole}
-                  prompt={editPrompt}
-                  onNameChange={setEditName}
-                  onRoleChange={setEditRole}
-                  onPromptChange={setEditPrompt}
-                  onSave={handleSave}
-                  onCancel={() => setEditingId(null)}
-                />
-              ) : (
-                <AgentCard
-                  agent={agent}
-                  onEdit={() => handleEdit(agent)}
-                  onRemove={undefined}
-                />
-              )}
+          {repoAgents.map((agent) => (
+            <div key={agent.filename} className="panel" style={{ marginBottom: 8 }}>
+              <div className="panel-header">
+                <div>
+                  <div className="panel-title">{agent.name}</div>
+                  <div className="form-help">
+                    {agent.filename}
+                    {agent.description && ` — ${agent.description}`}
+                  </div>
+                </div>
+                <div className="actions-bar" style={{ marginTop: 0 }}>
+                  <button
+                    className="btn btn-danger btn-sm"
+                    onClick={() => handleRemove(agent.filename)}
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+              <div
+                style={{
+                  fontSize: 13,
+                  color: "var(--text-secondary)",
+                  lineHeight: 1.5,
+                }}
+              >
+                {agent.system_prompt}
+              </div>
             </div>
           ))}
         </>
       )}
 
-      {/* Custom agents */}
-      {customAgents.length > 0 && (
+      {/* Global agents */}
+      {globalAgents.length > 0 && (
         <>
           <div
             className="sidebar-section-label"
             style={{ padding: "16px 0 8px" }}
           >
-            Custom Agents
+            Global Agents (~/.claude/agents/)
           </div>
-          {customAgents.map((agent) => (
-            <div key={agent.id} className="panel" style={{ marginBottom: 8 }}>
-              {editingId === agent.id ? (
-                <AgentEditForm
-                  name={editName}
-                  role={editRole}
-                  prompt={editPrompt}
-                  onNameChange={setEditName}
-                  onRoleChange={setEditRole}
-                  onPromptChange={setEditPrompt}
-                  onSave={handleSave}
-                  onCancel={() => setEditingId(null)}
-                />
-              ) : (
-                <AgentCard
-                  agent={agent}
-                  onEdit={() => handleEdit(agent)}
-                  onRemove={() => handleRemove(agent.id)}
-                />
-              )}
+          {globalAgents.map((agent) => (
+            <div key={agent.filename} className="panel" style={{ marginBottom: 8 }}>
+              <div className="panel-header">
+                <div>
+                  <div className="panel-title">{agent.name}</div>
+                  <div className="form-help">
+                    {agent.filename}
+                    {agent.description && ` — ${agent.description}`}
+                  </div>
+                </div>
+              </div>
+              <div
+                style={{
+                  fontSize: 13,
+                  color: "var(--text-secondary)",
+                  lineHeight: 1.5,
+                }}
+              >
+                {agent.system_prompt}
+              </div>
             </div>
           ))}
         </>
       )}
+
+      {agents.length === 0 && (
+        <div className="empty-state">
+          <p>
+            No agents found. Create .md files in your repo's .claude/agents/
+            directory, or add one above.
+          </p>
+        </div>
+      )}
     </div>
-  );
-}
-
-function AgentCard({
-  agent,
-  onEdit,
-  onRemove,
-}: {
-  agent: Agent;
-  onEdit: () => void;
-  onRemove: (() => void) | undefined;
-}) {
-  return (
-    <>
-      <div className="panel-header">
-        <div>
-          <div className="panel-title">{agent.name}</div>
-          <div className="form-help">{agent.role}</div>
-        </div>
-        <div className="actions-bar" style={{ marginTop: 0 }}>
-          <button className="btn btn-secondary btn-sm" onClick={onEdit}>
-            Edit
-          </button>
-          {onRemove && (
-            <button className="btn btn-danger btn-sm" onClick={onRemove}>
-              Remove
-            </button>
-          )}
-        </div>
-      </div>
-      <div
-        style={{
-          fontSize: 13,
-          color: "var(--text-secondary)",
-          lineHeight: 1.5,
-        }}
-      >
-        {agent.system_prompt}
-      </div>
-    </>
-  );
-}
-
-function AgentEditForm({
-  name,
-  role,
-  prompt,
-  onNameChange,
-  onRoleChange,
-  onPromptChange,
-  onSave,
-  onCancel,
-}: {
-  name: string;
-  role: string;
-  prompt: string;
-  onNameChange: (v: string) => void;
-  onRoleChange: (v: string) => void;
-  onPromptChange: (v: string) => void;
-  onSave: () => void;
-  onCancel: () => void;
-}) {
-  return (
-    <>
-      <div className="form-group">
-        <label className="form-label">Name</label>
-        <input
-          className="form-input"
-          value={name}
-          onChange={(e) => onNameChange(e.target.value)}
-        />
-      </div>
-      <div className="form-group">
-        <label className="form-label">Role</label>
-        <select
-          className="form-select"
-          value={role}
-          onChange={(e) => onRoleChange(e.target.value)}
-          style={{ maxWidth: 200 }}
-        >
-          <option value="developer">Developer</option>
-          <option value="testing">Testing</option>
-          <option value="reviewer">Reviewer</option>
-          <option value="planning">Planning</option>
-          <option value="devops">DevOps</option>
-        </select>
-      </div>
-      <div className="form-group">
-        <label className="form-label">System Prompt</label>
-        <textarea
-          className="form-textarea"
-          value={prompt}
-          onChange={(e) => onPromptChange(e.target.value)}
-          style={{ minHeight: 100 }}
-        />
-      </div>
-      <div className="actions-bar" style={{ marginTop: 0 }}>
-        <button className="btn btn-primary" onClick={onSave}>
-          Save
-        </button>
-        <button className="btn btn-secondary" onClick={onCancel}>
-          Cancel
-        </button>
-      </div>
-    </>
   );
 }

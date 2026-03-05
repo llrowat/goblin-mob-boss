@@ -1,7 +1,6 @@
-mod claude_md;
 mod commands;
-mod context;
 mod git;
+mod launch;
 mod models;
 mod prompts;
 mod store;
@@ -35,33 +34,27 @@ pub fn run() {
             commands::update_repository,
             commands::remove_repository,
             commands::detect_repo_info,
-            // Agents
+            // Agents (file-based)
             commands::list_agents,
-            commands::add_agent,
-            commands::update_agent,
-            commands::remove_agent,
+            commands::save_agent,
+            commands::delete_agent,
             // Features
             commands::start_feature,
             commands::list_features,
             commands::get_feature,
             // Ideation
             commands::get_ideation_prompt,
-            commands::launch_ideation,
             commands::get_ideation_terminal_command,
-            commands::poll_ideation_tasks,
-            // Tasks
-            commands::import_tasks,
-            commands::list_tasks,
-            commands::get_task,
-            commands::start_task,
-            commands::get_task_terminal_command,
-            commands::launch_task,
-            commands::complete_task,
-            commands::merge_task,
-            commands::update_task_status,
-            commands::delete_task,
-            commands::get_task_diff,
-            commands::poll_task_statuses,
+            commands::poll_ideation_result,
+            // Launch Configuration
+            commands::configure_launch,
+            commands::get_launch_command,
+            commands::mark_feature_executing,
+            commands::mark_feature_ready,
+            // Validation
+            commands::run_feature_validators,
+            // Diff
+            commands::get_feature_diff,
             // Feature PR
             commands::push_feature,
             commands::get_pr_command,

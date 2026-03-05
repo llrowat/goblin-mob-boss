@@ -7,49 +7,76 @@ describe("AgentsPage", () => {
     vi.clearAllMocks();
   });
 
+  const mockRepos = [
+    {
+      id: "r1",
+      name: "my-app",
+      path: "/app",
+      base_branch: "main",
+      validators: [],
+      pr_command: null,
+      created_at: "2025-01-01T00:00:00Z",
+    },
+  ];
+
   const mockAgents = [
     {
-      id: "builtin-fullstack",
+      filename: "full-stack-dev.md",
       name: "Full-Stack Developer",
-      role: "developer",
+      description: "Senior full-stack developer",
+      tools: null,
+      model: null,
       system_prompt: "You are a senior full-stack developer.",
-      is_builtin: true,
+      is_global: false,
     },
     {
-      id: "custom-1",
+      filename: "my-agent.md",
       name: "My Agent",
-      role: "testing",
+      description: "",
+      tools: null,
+      model: null,
       system_prompt: "You are a test writer.",
-      is_builtin: false,
+      is_global: false,
     },
   ];
 
   it("renders page header", async () => {
-    vi.mocked(invoke).mockResolvedValue([]);
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "list_repositories") return Promise.resolve(mockRepos);
+      if (cmd === "list_agents") return Promise.resolve([]);
+      return Promise.resolve({});
+    });
 
     render(<AgentsPage />);
 
     expect(screen.getByText("Agents")).toBeInTheDocument();
     expect(
-      screen.getByText("Configure AI agents for task execution."),
+      screen.getByText(/Manage .claude\/agents\/\*\.md files/),
     ).toBeInTheDocument();
   });
 
-  it("displays built-in and custom agents", async () => {
-    vi.mocked(invoke).mockResolvedValue(mockAgents);
+  it("displays repo agents", async () => {
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "list_repositories") return Promise.resolve(mockRepos);
+      if (cmd === "list_agents") return Promise.resolve(mockAgents);
+      return Promise.resolve({});
+    });
 
     render(<AgentsPage />);
 
     await waitFor(() => {
       expect(screen.getByText("Full-Stack Developer")).toBeInTheDocument();
       expect(screen.getByText("My Agent")).toBeInTheDocument();
-      expect(screen.getByText("Built-in Agents")).toBeInTheDocument();
-      expect(screen.getByText("Custom Agents")).toBeInTheDocument();
+      expect(screen.getByText("Repository Agents")).toBeInTheDocument();
     });
   });
 
-  it("shows Remove button only for custom agents", async () => {
-    vi.mocked(invoke).mockResolvedValue(mockAgents);
+  it("shows Remove button for repo agents", async () => {
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "list_repositories") return Promise.resolve(mockRepos);
+      if (cmd === "list_agents") return Promise.resolve(mockAgents);
+      return Promise.resolve({});
+    });
 
     render(<AgentsPage />);
 
@@ -57,13 +84,16 @@ describe("AgentsPage", () => {
       expect(screen.getByText("My Agent")).toBeInTheDocument();
     });
 
-    // Only one Remove button for the custom agent
     const removeButtons = screen.getAllByText("Remove");
-    expect(removeButtons).toHaveLength(1);
+    expect(removeButtons).toHaveLength(2);
   });
 
   it("toggles add agent form", async () => {
-    vi.mocked(invoke).mockResolvedValue([]);
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "list_repositories") return Promise.resolve(mockRepos);
+      if (cmd === "list_agents") return Promise.resolve([]);
+      return Promise.resolve({});
+    });
 
     render(<AgentsPage />);
 
@@ -72,27 +102,24 @@ describe("AgentsPage", () => {
     fireEvent.click(screen.getByText("+ Add Agent"));
 
     expect(screen.getByText("New Agent")).toBeInTheDocument();
-    expect(screen.getByPlaceholderText("My Custom Agent")).toBeInTheDocument();
     expect(
-      screen.getByPlaceholderText("You are a specialist in..."),
+      screen.getByPlaceholderText("Frontend Developer"),
     ).toBeInTheDocument();
   });
 
-  it("shows edit form when Edit is clicked", async () => {
-    vi.mocked(invoke).mockResolvedValue(mockAgents);
+  it("shows empty state when no agents", async () => {
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "list_repositories") return Promise.resolve(mockRepos);
+      if (cmd === "list_agents") return Promise.resolve([]);
+      return Promise.resolve({});
+    });
 
     render(<AgentsPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("Full-Stack Developer")).toBeInTheDocument();
-    });
-
-    const editButtons = screen.getAllByText("Edit");
-    fireEvent.click(editButtons[0]);
-
-    await waitFor(() => {
-      expect(screen.getByDisplayValue("Full-Stack Developer")).toBeInTheDocument();
-      expect(screen.getByText("Save")).toBeInTheDocument();
+      expect(
+        screen.getByText(/No agents found/),
+      ).toBeInTheDocument();
     });
   });
 });

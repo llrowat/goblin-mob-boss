@@ -39,7 +39,6 @@ describe("HomePage", () => {
             base_branch: "main",
             validators: [],
             pr_command: null,
-            max_parallel_agents: 4,
             created_at: "2025-01-01T00:00:00Z",
           },
         ]);
@@ -56,7 +55,6 @@ describe("HomePage", () => {
     await waitFor(() => {
       expect(screen.getByText("Start a Feature")).toBeInTheDocument();
     });
-    // Once the page header is visible, the repo data should also be rendered
     expect(screen.getByPlaceholderText("User Authentication")).toBeInTheDocument();
   });
 
@@ -71,7 +69,6 @@ describe("HomePage", () => {
             base_branch: "main",
             validators: [],
             pr_command: null,
-            max_parallel_agents: 4,
             created_at: "2025-01-01T00:00:00Z",
           },
         ]);
@@ -121,7 +118,6 @@ describe("HomePage", () => {
             base_branch: "main",
             validators: [],
             pr_command: null,
-            max_parallel_agents: 4,
             created_at: "2025-01-01T00:00:00Z",
           },
         ]);
@@ -131,11 +127,15 @@ describe("HomePage", () => {
           {
             id: "f1",
             repo_id: "r1",
-            repos: [{ repo_id: "r1", branch: "feature/auth" }],
             name: "Auth Feature",
             description: "Add authentication",
             branch: "feature/auth",
-            status: "in_progress",
+            status: "executing",
+            execution_mode: null,
+            execution_rationale: null,
+            selected_agents: [],
+            task_specs: [],
+            pty_session_id: null,
             created_at: "2025-01-01T00:00:00Z",
             updated_at: "2025-01-01T00:00:00Z",
           },
@@ -152,7 +152,7 @@ describe("HomePage", () => {
 
     await waitFor(() => {
       expect(screen.getByText("Auth Feature")).toBeInTheDocument();
-      expect(screen.getByText("In Progress")).toBeInTheDocument();
+      expect(screen.getByText("Executing")).toBeInTheDocument();
     });
   });
 });

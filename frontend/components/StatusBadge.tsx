@@ -1,12 +1,13 @@
-import type { TaskStatus } from "../types";
+import type { FeatureStatus } from "../types";
 
 interface Props {
-  status: TaskStatus;
+  status: FeatureStatus;
 }
 
 export function StatusBadge({ status }: Props) {
+  const displayStatus = status === "executing" ? "running" : status;
   return (
-    <span className={`status-badge ${status}`}>
+    <span className={`status-badge ${displayStatus}`}>
       <span className="status-dot" />
       {status}
     </span>

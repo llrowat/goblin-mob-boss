@@ -5,62 +5,46 @@ export interface Repository {
   base_branch: string;
   validators: string[];
   pr_command: string | null;
-  max_parallel_agents: number;
   created_at: string;
 }
 
-export interface Agent {
-  id: string;
+export interface AgentFile {
+  filename: string;
   name: string;
-  role: string;
+  description: string;
+  tools: string | null;
+  model: string | null;
   system_prompt: string;
-  is_builtin: boolean;
+  is_global: boolean;
 }
 
-export type FeatureStatus = "ideation" | "in_progress" | "ready";
+export type ExecutionMode = "teams" | "subagents";
 
-export interface FeatureRepo {
-  repo_id: string;
-  branch: string;
+export interface ExecutionRecommendation {
+  recommended: ExecutionMode;
+  rationale: string;
+  confidence: number;
 }
+
+export type FeatureStatus =
+  | "ideation"
+  | "configuring"
+  | "executing"
+  | "ready"
+  | "failed";
 
 export interface Feature {
   id: string;
-  /** Primary repo (first in the list). Kept for backwards compatibility. */
   repo_id: string;
-  /** All repos this feature spans, with per-repo branch info. */
-  repos: FeatureRepo[];
   name: string;
   description: string;
-  /** Primary branch name. Kept for backwards compat. */
   branch: string;
   status: FeatureStatus;
-  created_at: string;
-  updated_at: string;
-}
-
-export type TaskStatus =
-  | "pending"
-  | "running"
-  | "verifying"
-  | "completed"
-  | "merged"
-  | "failed";
-
-export interface Task {
-  task_id: string;
-  feature_id: string;
-  repo_id: string;
-  title: string;
-  description: string;
-  acceptance_criteria: string[];
-  dependencies: string[];
-  agent_id: string;
-  subagent_ids: string[];
-  verification_agent_ids: string[];
-  status: TaskStatus;
-  branch: string;
-  worktree_path: string;
+  execution_mode: ExecutionMode | null;
+  execution_rationale: string | null;
+  selected_agents: string[];
+  task_specs: TaskSpec[];
+  pty_session_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -71,10 +55,26 @@ export interface TaskSpec {
   acceptance_criteria: string[];
   dependencies: string[];
   agent: string;
-  subagents: string[];
-  verification_agents: string[];
-  /** Target repo name or ID (for multi-repo features). */
-  repo: string;
+}
+
+export interface IdeationResult {
+  tasks: TaskSpec[];
+  execution_mode: ExecutionRecommendation | null;
+}
+
+export interface ValidatorResult {
+  command: string;
+  exit_code: number;
+  stdout: string;
+  stderr: string;
+  success: boolean;
+}
+
+export interface VerifyResult {
+  attempt: number;
+  all_passed: boolean;
+  results: ValidatorResult[];
+  timestamp: string;
 }
 
 export interface FileDiff {
@@ -97,6 +97,4 @@ export interface RepoInfo {
 
 export interface Preferences {
   shell: string;
-  verification_agent_ids: string[];
-  planning_agent_ids: string[];
 }
