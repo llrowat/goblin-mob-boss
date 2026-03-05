@@ -1,18 +1,51 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useTauri } from "../hooks/useTauri";
 import type { AgentFile, Repository } from "../types";
+
+const PRESET_COLORS = [
+  "#5a8a5c",
+  "#5b8abd",
+  "#7a6abf",
+  "#b8944a",
+  "#c4654a",
+  "#4a9e8e",
+  "#9a6bb5",
+  "#c45a6a",
+  "#8a7a4a",
+  "#6a8a8a",
+  "#aa6a3a",
+  "#5a7a9a",
+];
+
+interface AgentFormData {
+  filename: string;
+  name: string;
+  description: string;
+  tools: string;
+  model: string;
+  system_prompt: string;
+  color: string;
+}
+
+const emptyForm: AgentFormData = {
+  filename: "",
+  name: "",
+  description: "",
+  tools: "",
+  model: "",
+  system_prompt: "",
+  color: "#5a8a5c",
+};
 
 export function AgentsPage() {
   const tauri = useTauri();
   const [repos, setRepos] = useState<Repository[]>([]);
   const [selectedRepoId, setSelectedRepoId] = useState<string>("");
   const [agents, setAgents] = useState<AgentFile[]>([]);
-  const [showAdd, setShowAdd] = useState(false);
-  const [newFilename, setNewFilename] = useState("");
-  const [newName, setNewName] = useState("");
-  const [newDescription, setNewDescription] = useState("");
-  const [newPrompt, setNewPrompt] = useState("");
   const [error, setError] = useState("");
+  const [modalAgent, setModalAgent] = useState<AgentFile | null>(null);
+  const [modalMode, setModalMode] = useState<"create" | "edit" | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
   useEffect(() => {
     tauri.listRepositories().then((r) => {
@@ -27,31 +60,55 @@ export function AgentsPage() {
 
   const loadAgents = () => {
     if (!selectedRepo) return;
-    tauri.listAgents(selectedRepo.path).then(setAgents).catch(() => setAgents([]));
+    tauri
+      .listAgents(selectedRepo.path)
+      .then(setAgents)
+      .catch(() => setAgents([]));
   };
 
   useEffect(loadAgents, [selectedRepoId, repos]);
 
-  const handleAdd = async () => {
-    if (!selectedRepo || !newName.trim() || !newPrompt.trim()) return;
+  const openCreate = () => {
+    setModalAgent(null);
+    setModalMode("create");
     setError("");
-    const filename = newFilename.trim() || `${newName.trim().toLowerCase().replace(/\s+/g, "-")}.md`;
+  };
+
+  const openEdit = (agent: AgentFile) => {
+    setModalAgent(agent);
+    setModalMode("edit");
+    setError("");
+  };
+
+  const closeModal = () => {
+    setModalMode(null);
+    setModalAgent(null);
+    setError("");
+  };
+
+  const handleSave = async (data: AgentFormData) => {
+    if (!selectedRepo || !data.name.trim() || !data.system_prompt.trim())
+      return;
+    setError("");
+
+    const filename =
+      data.filename.trim() ||
+      `${data.name.trim().toLowerCase().replace(/\s+/g, "-")}.md`;
+
     const agent: AgentFile = {
       filename: filename.endsWith(".md") ? filename : `${filename}.md`,
-      name: newName.trim(),
-      description: newDescription.trim(),
-      tools: null,
-      model: null,
-      system_prompt: newPrompt.trim(),
+      name: data.name.trim(),
+      description: data.description.trim(),
+      tools: data.tools.trim() || null,
+      model: data.model.trim() || null,
+      system_prompt: data.system_prompt.trim(),
       is_global: false,
+      color: data.color,
     };
+
     try {
       await tauri.saveAgent(selectedRepo.path, agent);
-      setShowAdd(false);
-      setNewFilename("");
-      setNewName("");
-      setNewDescription("");
-      setNewPrompt("");
+      closeModal();
       loadAgents();
     } catch (e) {
       setError(String(e));
@@ -63,6 +120,7 @@ export function AgentsPage() {
     setError("");
     try {
       await tauri.deleteAgent(selectedRepo.path, filename);
+      setDeleteConfirm(null);
       loadAgents();
     } catch (e) {
       setError(String(e));
@@ -77,12 +135,12 @@ export function AgentsPage() {
       <div className="page-header">
         <h2>Agents</h2>
         <p>
-          Manage .claude/agents/*.md files. These define the agents available
-          for task execution.
+          Manage .claude/agents/*.md files. These define the agents available for
+          task execution.
         </p>
       </div>
 
-      {error && <div className="error-banner">{error}</div>}
+      {error && !modalMode && <div className="error-banner">{error}</div>}
 
       {repos.length > 1 && (
         <div className="form-group" style={{ marginBottom: 16 }}>
@@ -102,110 +160,34 @@ export function AgentsPage() {
         </div>
       )}
 
-      <div style={{ marginBottom: 16 }}>
-        <button
-          className="btn btn-primary"
-          onClick={() => setShowAdd(!showAdd)}
-        >
+      <div style={{ marginBottom: 20 }}>
+        <button className="btn btn-primary" onClick={openCreate}>
           + Add Agent
         </button>
       </div>
 
-      {showAdd && (
-        <div className="panel" style={{ marginBottom: 16 }}>
-          <div className="panel-title" style={{ marginBottom: 12 }}>
-            New Agent
-          </div>
-          <div className="form-group">
-            <label className="form-label">Name</label>
-            <input
-              className="form-input"
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              placeholder="Frontend Developer"
-            />
-          </div>
-          <div className="form-group">
-            <label className="form-label">Filename</label>
-            <input
-              className="form-input"
-              value={newFilename}
-              onChange={(e) => setNewFilename(e.target.value)}
-              placeholder="frontend-dev.md (auto-generated from name)"
-            />
-            <div className="form-help">
-              Optional. Will be auto-generated from the name if left blank.
-            </div>
-          </div>
-          <div className="form-group">
-            <label className="form-label">Description</label>
-            <input
-              className="form-input"
-              value={newDescription}
-              onChange={(e) => setNewDescription(e.target.value)}
-              placeholder="Specializes in React and CSS"
-            />
-          </div>
-          <div className="form-group">
-            <label className="form-label">System Prompt</label>
-            <textarea
-              className="form-textarea"
-              value={newPrompt}
-              onChange={(e) => setNewPrompt(e.target.value)}
-              placeholder="You are a frontend specialist. Focus on UI components, styling, and accessibility."
-              style={{ minHeight: 100 }}
-            />
-          </div>
-          <div className="actions-bar" style={{ marginTop: 0 }}>
-            <button className="btn btn-primary" onClick={handleAdd}>
-              Add
-            </button>
-            <button
-              className="btn btn-secondary"
-              onClick={() => setShowAdd(false)}
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* Repo agents */}
       {repoAgents.length > 0 && (
         <>
-          <div className="sidebar-section-label" style={{ padding: "0 0 8px" }}>
+          <div
+            className="sidebar-section-label"
+            style={{ padding: "0 0 8px" }}
+          >
             Repository Agents
           </div>
-          {repoAgents.map((agent) => (
-            <div key={agent.filename} className="panel" style={{ marginBottom: 8 }}>
-              <div className="panel-header">
-                <div>
-                  <div className="panel-title">{agent.name}</div>
-                  <div className="form-help">
-                    {agent.filename}
-                    {agent.description && ` — ${agent.description}`}
-                  </div>
-                </div>
-                <div className="actions-bar" style={{ marginTop: 0 }}>
-                  <button
-                    className="btn btn-danger btn-sm"
-                    onClick={() => handleRemove(agent.filename)}
-                  >
-                    Remove
-                  </button>
-                </div>
-              </div>
-              <div
-                style={{
-                  fontSize: 13,
-                  color: "var(--text-secondary)",
-                  lineHeight: 1.5,
-                }}
-              >
-                {agent.system_prompt}
-              </div>
-            </div>
-          ))}
+          <div className="agent-grid">
+            {repoAgents.map((agent) => (
+              <AgentCard
+                key={agent.filename}
+                agent={agent}
+                onEdit={() => openEdit(agent)}
+                onRemove={() => setDeleteConfirm(agent.filename)}
+                onConfirmDelete={() => handleRemove(agent.filename)}
+                deleteConfirm={deleteConfirm === agent.filename}
+                onCancelDelete={() => setDeleteConfirm(null)}
+              />
+            ))}
+          </div>
         </>
       )}
 
@@ -214,43 +196,375 @@ export function AgentsPage() {
         <>
           <div
             className="sidebar-section-label"
-            style={{ padding: "16px 0 8px" }}
+            style={{ padding: "20px 0 8px" }}
           >
             Global Agents (~/.claude/agents/)
           </div>
-          {globalAgents.map((agent) => (
-            <div key={agent.filename} className="panel" style={{ marginBottom: 8 }}>
-              <div className="panel-header">
-                <div>
-                  <div className="panel-title">{agent.name}</div>
-                  <div className="form-help">
-                    {agent.filename}
-                    {agent.description && ` — ${agent.description}`}
-                  </div>
-                </div>
-              </div>
-              <div
-                style={{
-                  fontSize: 13,
-                  color: "var(--text-secondary)",
-                  lineHeight: 1.5,
-                }}
-              >
-                {agent.system_prompt}
-              </div>
-            </div>
-          ))}
+          <div className="agent-grid">
+            {globalAgents.map((agent) => (
+              <AgentCard
+                key={agent.filename}
+                agent={agent}
+                onEdit={() => openEdit(agent)}
+                onRemove={undefined}
+                onConfirmDelete={undefined}
+                deleteConfirm={false}
+                onCancelDelete={undefined}
+              />
+            ))}
+          </div>
         </>
       )}
 
       {agents.length === 0 && (
         <div className="empty-state">
+          <h3>No Agents</h3>
           <p>
-            No agents found. Create .md files in your repo's .claude/agents/
-            directory, or add one above.
+            Create .md files in your repo&apos;s .claude/agents/ directory, or
+            add one above.
           </p>
         </div>
       )}
+
+      {/* Create / Edit Modal */}
+      {modalMode && (
+        <AgentFormModal
+          mode={modalMode}
+          agent={modalAgent}
+          error={error}
+          onSave={handleSave}
+          onClose={closeModal}
+        />
+      )}
+    </div>
+  );
+}
+
+function AgentCard({
+  agent,
+  onEdit,
+  onRemove,
+  onConfirmDelete,
+  deleteConfirm,
+  onCancelDelete,
+}: {
+  agent: AgentFile;
+  onEdit: () => void;
+  onRemove: (() => void) | undefined;
+  onConfirmDelete: (() => void) | undefined;
+  deleteConfirm: boolean;
+  onCancelDelete: (() => void) | undefined;
+}) {
+  return (
+    <div className="agent-card">
+      <div
+        className="agent-card-color-bar"
+        style={{ background: agent.color || "#5a8a5c" }}
+      />
+      <div className="agent-card-body">
+        <div className="agent-card-top">
+          <div
+            className="agent-card-avatar"
+            style={{ background: agent.color || "#5a8a5c" }}
+          >
+            {agent.name.charAt(0).toUpperCase()}
+          </div>
+          <div className="agent-card-info">
+            <div className="agent-card-name">{agent.name}</div>
+            <div className="agent-card-role">
+              {agent.filename}
+              {agent.is_global && (
+                <span className="agent-card-builtin-badge">global</span>
+              )}
+            </div>
+          </div>
+        </div>
+        {agent.description && (
+          <div
+            style={{
+              fontSize: 12,
+              color: "var(--text-secondary)",
+              marginBottom: 8,
+            }}
+          >
+            {agent.description}
+          </div>
+        )}
+        <div className="agent-card-prompt">{agent.system_prompt}</div>
+        {(agent.tools || agent.model) && (
+          <div
+            style={{
+              display: "flex",
+              gap: 8,
+              flexWrap: "wrap",
+              marginBottom: 8,
+            }}
+          >
+            {agent.tools && (
+              <span className="agent-tag" style={{ fontSize: 10 }}>
+                Tools: {agent.tools}
+              </span>
+            )}
+            {agent.model && (
+              <span
+                className="agent-tag agent-tag-sub"
+                style={{ fontSize: 10 }}
+              >
+                Model: {agent.model}
+              </span>
+            )}
+          </div>
+        )}
+        <div className="agent-card-actions">
+          <button className="btn btn-secondary btn-sm" onClick={onEdit}>
+            Edit
+          </button>
+          {onRemove && !deleteConfirm && (
+            <button className="btn btn-danger btn-sm" onClick={onRemove}>
+              Remove
+            </button>
+          )}
+          {deleteConfirm && (
+            <div className="agent-card-confirm">
+              <span style={{ fontSize: 12, color: "var(--danger)" }}>
+                Delete?
+              </span>
+              <button
+                className="btn btn-danger btn-sm"
+                onClick={onConfirmDelete}
+              >
+                Yes
+              </button>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={onCancelDelete}
+              >
+                No
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AgentFormModal({
+  mode,
+  agent,
+  error,
+  onSave,
+  onClose,
+}: {
+  mode: "create" | "edit";
+  agent: AgentFile | null;
+  error: string;
+  onSave: (data: AgentFormData) => void;
+  onClose: () => void;
+}) {
+  const [form, setForm] = useState<AgentFormData>(() => {
+    if (agent) {
+      return {
+        filename: agent.filename,
+        name: agent.name,
+        description: agent.description,
+        tools: agent.tools || "",
+        model: agent.model || "",
+        system_prompt: agent.system_prompt,
+        color: agent.color || "#5a8a5c",
+      };
+    }
+    return { ...emptyForm };
+  });
+
+  const [showCustomColor, setShowCustomColor] = useState(false);
+  const overlayRef = useRef<HTMLDivElement>(null);
+
+  const update = (field: keyof AgentFormData, value: string) => {
+    setForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleOverlayClick = (e: React.MouseEvent) => {
+    if (e.target === overlayRef.current) {
+      onClose();
+    }
+  };
+
+  const isValid = form.name.trim() !== "" && form.system_prompt.trim() !== "";
+
+  return (
+    <div
+      className="modal-overlay"
+      ref={overlayRef}
+      onClick={handleOverlayClick}
+    >
+      <div className="modal agent-form-modal">
+        {/* Color preview header */}
+        <div className="agent-form-header" style={{ background: form.color }}>
+          <div className="agent-form-avatar">
+            {form.name ? form.name.charAt(0).toUpperCase() : "?"}
+          </div>
+          <div className="agent-form-header-text">
+            <div className="agent-form-header-title">
+              {mode === "create" ? "Create Agent" : "Edit Agent"}
+            </div>
+            <div className="agent-form-header-subtitle">
+              {form.name || "Unnamed Agent"}
+            </div>
+          </div>
+        </div>
+
+        <div className="agent-form-body">
+          {error && <div className="error-banner">{error}</div>}
+
+          {/* Name */}
+          <div className="form-group">
+            <label className="form-label">Name</label>
+            <input
+              className="form-input"
+              value={form.name}
+              onChange={(e) => update("name", e.target.value)}
+              placeholder="My Custom Agent"
+              autoFocus
+            />
+          </div>
+
+          {/* Filename */}
+          <div className="form-group">
+            <label className="form-label">Filename</label>
+            <input
+              className="form-input"
+              value={form.filename}
+              onChange={(e) => update("filename", e.target.value)}
+              placeholder="auto-generated-from-name.md"
+              disabled={mode === "edit"}
+            />
+            <div className="form-help">
+              {mode === "edit"
+                ? "Filename cannot be changed after creation."
+                : "Optional. Auto-generated from name if left blank."}
+            </div>
+          </div>
+
+          {/* Description */}
+          <div className="form-group">
+            <label className="form-label">Description</label>
+            <input
+              className="form-input"
+              value={form.description}
+              onChange={(e) => update("description", e.target.value)}
+              placeholder="Specializes in React and CSS"
+            />
+          </div>
+
+          {/* Color */}
+          <div className="form-group">
+            <label className="form-label">Color</label>
+            <div className="agent-color-picker">
+              {PRESET_COLORS.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  className={`agent-color-swatch ${form.color === c ? "selected" : ""}`}
+                  style={{ background: c }}
+                  onClick={() => {
+                    update("color", c);
+                    setShowCustomColor(false);
+                  }}
+                  title={c}
+                />
+              ))}
+              <button
+                type="button"
+                className={`agent-color-swatch agent-color-custom-btn ${showCustomColor ? "selected" : ""}`}
+                onClick={() => setShowCustomColor(!showCustomColor)}
+                title="Custom color"
+              >
+                <span style={{ fontSize: 14, lineHeight: 1 }}>...</span>
+              </button>
+            </div>
+            {showCustomColor && (
+              <div className="agent-color-custom-row">
+                <input
+                  type="color"
+                  value={form.color}
+                  onChange={(e) => update("color", e.target.value)}
+                  className="agent-color-native-picker"
+                />
+                <input
+                  className="form-input"
+                  value={form.color}
+                  onChange={(e) => update("color", e.target.value)}
+                  placeholder="#5a8a5c"
+                  style={{
+                    maxWidth: 120,
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 13,
+                  }}
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Tools */}
+          <div className="form-group">
+            <label className="form-label">Tools</label>
+            <input
+              className="form-input"
+              value={form.tools}
+              onChange={(e) => update("tools", e.target.value)}
+              placeholder="Read, Edit, Write, Bash"
+            />
+            <div className="form-help">
+              Comma-separated list of allowed tools. Leave blank for all.
+            </div>
+          </div>
+
+          {/* Model */}
+          <div className="form-group">
+            <label className="form-label">Model</label>
+            <input
+              className="form-input"
+              value={form.model}
+              onChange={(e) => update("model", e.target.value)}
+              placeholder="claude-sonnet-4-5-20250514"
+            />
+            <div className="form-help">
+              Optional model override. Leave blank for default.
+            </div>
+          </div>
+
+          {/* System Prompt */}
+          <div className="form-group">
+            <label className="form-label">System Prompt</label>
+            <textarea
+              className="form-textarea"
+              value={form.system_prompt}
+              onChange={(e) => update("system_prompt", e.target.value)}
+              placeholder="You are a specialist in..."
+              style={{ minHeight: 120 }}
+            />
+            <div className="form-help">
+              Instructions defining this agent&apos;s behavior during task
+              execution.
+            </div>
+          </div>
+        </div>
+
+        {/* Footer actions */}
+        <div className="agent-form-footer">
+          <button className="btn btn-secondary" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            className="btn btn-primary"
+            onClick={() => onSave(form)}
+            disabled={!isValid}
+          >
+            {mode === "create" ? "Create Agent" : "Save Changes"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

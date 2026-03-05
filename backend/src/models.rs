@@ -50,6 +50,13 @@ pub struct AgentFile {
     /// Whether this agent comes from ~/.claude/agents/ (global) vs repo-level.
     #[serde(default)]
     pub is_global: bool,
+    /// UI display color (hex string, e.g. "#5a8a5c"). Stored in frontmatter.
+    #[serde(default = "default_agent_color")]
+    pub color: String,
+}
+
+fn default_agent_color() -> String {
+    "#5a8a5c".to_string()
 }
 
 impl AgentFile {
@@ -70,6 +77,7 @@ impl AgentFile {
                 model: None,
                 system_prompt: content.to_string(),
                 is_global: false,
+                color: default_agent_color(),
             });
         }
 
@@ -86,6 +94,7 @@ impl AgentFile {
         let mut description = String::new();
         let mut tools = None;
         let mut model = None;
+        let mut color = default_agent_color();
 
         for line in frontmatter.lines() {
             let line = line.trim();
@@ -100,6 +109,7 @@ impl AgentFile {
                     "description" => description = value.to_string(),
                     "tools" => tools = Some(value.to_string()),
                     "model" => model = Some(value.to_string()),
+                    "color" => color = value.to_string(),
                     _ => {}
                 }
             }
@@ -120,6 +130,7 @@ impl AgentFile {
             model,
             system_prompt: body.to_string(),
             is_global: false,
+            color,
         })
     }
 
@@ -135,6 +146,9 @@ impl AgentFile {
         }
         if let Some(ref model) = self.model {
             fm.push_str(&format!("model: \"{}\"\n", model));
+        }
+        if self.color != default_agent_color() {
+            fm.push_str(&format!("color: \"{}\"\n", self.color));
         }
         fm.push_str("---\n\n");
         fm.push_str(&self.system_prompt);
@@ -162,6 +176,7 @@ pub struct ExecutionRecommendation {
 
 fn default_confidence() -> f32 {
     0.5
+}
 }
 
 // ── Feature ──
@@ -524,5 +539,71 @@ Review code for issues."#;
         let json = r#""configuring""#;
         let status: FeatureStatus = serde_json::from_str(json).unwrap();
         assert_eq!(status, FeatureStatus::Configuring);
+    }
+
+    #[test]
+    fn agent_file_parse_with_color() {
+        let content = r#"---
+name: "Frontend Developer"
+description: "React specialist"
+color: "#5b8abd"
+---
+
+You are a frontend specialist."#;
+
+        let agent = AgentFile::parse("frontend-dev.md", content).unwrap();
+        assert_eq!(agent.color, "#5b8abd");
+    }
+
+    #[test]
+    fn agent_file_parse_without_color_gets_default() {
+        let content = r#"---
+name: "Backend Dev"
+---
+
+You are a backend developer."#;
+
+        let agent = AgentFile::parse("backend-dev.md", content).unwrap();
+        assert_eq!(agent.color, "#5a8a5c");
+    }
+
+    #[test]
+    fn agent_file_no_frontmatter_gets_default_color() {
+        let agent = AgentFile::parse("test.md", "Just a prompt.").unwrap();
+        assert_eq!(agent.color, "#5a8a5c");
+    }
+
+    #[test]
+    fn agent_file_roundtrip_with_color() {
+        let agent = AgentFile {
+            filename: "colorful.md".to_string(),
+            name: "Colorful Agent".to_string(),
+            description: String::new(),
+            tools: None,
+            model: None,
+            system_prompt: "You are colorful.".to_string(),
+            is_global: false,
+            color: "#c45a6a".to_string(),
+        };
+        let md = agent.to_markdown();
+        assert!(md.contains("color: \"#c45a6a\""));
+        let parsed = AgentFile::parse("colorful.md", &md).unwrap();
+        assert_eq!(parsed.color, "#c45a6a");
+    }
+
+    #[test]
+    fn agent_file_default_color_not_written_to_markdown() {
+        let agent = AgentFile {
+            filename: "default.md".to_string(),
+            name: "Default".to_string(),
+            description: String::new(),
+            tools: None,
+            model: None,
+            system_prompt: "prompt".to_string(),
+            is_global: false,
+            color: "#5a8a5c".to_string(),
+        };
+        let md = agent.to_markdown();
+        assert!(!md.contains("color:"));
     }
 }

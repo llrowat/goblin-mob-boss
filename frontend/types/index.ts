@@ -16,6 +16,7 @@ export interface AgentFile {
   model: string | null;
   system_prompt: string;
   is_global: boolean;
+  color: string;
 }
 
 export type ExecutionMode = "teams" | "subagents";

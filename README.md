@@ -4,7 +4,7 @@ A desktop app for agent-based AI development workflows. Configure agents, plan f
 
 ## How It Works
 
-1. **Configure Agents** — Set up AI agents with specialized roles (Full-Stack, Frontend, Backend, Test Writer, Reviewer, Architect, Product Owner, Security Reviewer, Integration Tester). 9 built-in agents are provided; create custom agents for your workflow.
+1. **Configure Agents** — Set up AI agents with specialized roles (Full-Stack, Frontend, Backend, Test Writer, Reviewer, Architect, Product Owner, Security Reviewer, Integration Tester). 9 built-in agents are provided; create custom agents with custom colors, roles, and system prompts via the form-based agent editor.
 2. **Start a Feature** — Describe what you want to build and select one or more repositories. Feature branches are created in all selected repos.
 3. **Plan with Claude** — An interactive Claude Code session in plan mode helps you refine the approach and break it into tasks, each with assigned implementation agents and verification agents.
 4. **Execute in Parallel** — Each task gets its own git worktree. Claude Code agents work on tasks simultaneously, implementing changes and self-verifying using the assigned verification agents' expertise. Tasks report progress via `.gmb/status.json` dot files.
@@ -13,7 +13,7 @@ A desktop app for agent-based AI development workflows. Configure agents, plan f
 
 ## Features
 
-- **Agent-based workflow** — Configurable AI agents with roles and system prompts; 5 built-in defaults
+- **Agent-based workflow** — Configurable AI agents with roles, system prompts, and custom colors; 9 built-in agents with a full form-based editor for creating and customizing agents
 - **Interactive planning** — Back-and-forth conversation with Claude in plan mode during ideation; configure which agents are available for task assignment during planning
 - **Planning & verification agents** — Choose which agents participate in planning and which handle per-task verification, independently configured in Settings
 - **Inline verification** — Each task includes verification agents whose expertise is applied as a self-review step before completion — no separate verification phase
