@@ -97,3 +97,90 @@ pub fn run_validators(
 
     Ok(verify_result)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn run_validators_all_pass() {
+        let dir = TempDir::new().unwrap();
+        let worktree = dir.path().to_string_lossy().to_string();
+
+        let result = run_validators(&worktree, &["true".to_string()], 1).unwrap();
+        assert!(result.all_passed);
+        assert_eq!(result.attempt, 1);
+        assert_eq!(result.results.len(), 1);
+        assert!(result.results[0].success);
+        assert_eq!(result.results[0].exit_code, 0);
+    }
+
+    #[test]
+    fn run_validators_with_failure() {
+        let dir = TempDir::new().unwrap();
+        let worktree = dir.path().to_string_lossy().to_string();
+
+        let result = run_validators(
+            &worktree,
+            &["true".to_string(), "false".to_string()],
+            1,
+        )
+        .unwrap();
+
+        assert!(!result.all_passed);
+        assert_eq!(result.results.len(), 2);
+        assert!(result.results[0].success);
+        assert!(!result.results[1].success);
+    }
+
+    #[test]
+    fn run_validators_captures_output() {
+        let dir = TempDir::new().unwrap();
+        let worktree = dir.path().to_string_lossy().to_string();
+
+        let result = run_validators(&worktree, &["echo hello".to_string()], 1).unwrap();
+        assert!(result.all_passed);
+        assert!(result.results[0].stdout.contains("hello"));
+    }
+
+    #[test]
+    fn run_validators_captures_stderr() {
+        let dir = TempDir::new().unwrap();
+        let worktree = dir.path().to_string_lossy().to_string();
+
+        let result = run_validators(
+            &worktree,
+            &["echo error_msg >&2 && false".to_string()],
+            1,
+        )
+        .unwrap();
+
+        assert!(!result.all_passed);
+        assert!(result.results[0].stderr.contains("error_msg"));
+    }
+
+    #[test]
+    fn run_validators_writes_result_files() {
+        let dir = TempDir::new().unwrap();
+        let worktree = dir.path().to_string_lossy().to_string();
+
+        run_validators(&worktree, &["echo ok".to_string()], 2).unwrap();
+
+        let results_dir = dir.path().join(".gmb/results/verify/2");
+        assert!(results_dir.join("validator_0_stdout.txt").exists());
+        assert!(results_dir.join("validator_0_stderr.txt").exists());
+        assert!(results_dir.join("validator_0_exit_code.json").exists());
+        assert!(results_dir.join("summary.json").exists());
+    }
+
+    #[test]
+    fn run_validators_empty_list() {
+        let dir = TempDir::new().unwrap();
+        let worktree = dir.path().to_string_lossy().to_string();
+
+        let result = run_validators(&worktree, &[], 1).unwrap();
+        assert!(result.all_passed);
+        assert!(result.results.is_empty());
+    }
+}

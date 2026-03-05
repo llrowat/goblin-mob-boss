@@ -81,9 +81,12 @@ npm run test:watch
 
 ### Testing Requirements
 
-- **Rust backend**: Add `#[cfg(test)] mod tests { ... }` blocks inline in the module being tested. Test both the happy path and error cases.
+- **Tests are mandatory** — Every code change (new feature, bug fix, refactor) must include corresponding unit tests. Do not merge or consider a task complete without tests covering the new or changed behavior.
+- **Rust backend**: Add `#[cfg(test)] mod tests { ... }` blocks inline in the module being tested. Test both the happy path and error cases. Use `tempfile` for tests that need filesystem access.
 - **Frontend**: Use Vitest + React Testing Library. Test files live next to the source files they test (e.g., `Foo.test.tsx` next to `Foo.tsx`). Mock Tauri `invoke` calls via the setup in `frontend/test/setup.ts`.
 - **Test naming**: Use descriptive names that explain what is being tested.
+- **Verify before committing**: Run `cd backend && cargo test --lib` and `npm test` to ensure all tests pass before committing.
+- **CI**: Tests run automatically on every push to `main` and on pull requests via GitHub Actions (`.github/workflows/tests.yml`). Both Rust and frontend test jobs must pass.
 
 ## Documentation
 
