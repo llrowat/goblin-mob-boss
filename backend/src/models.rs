@@ -110,6 +110,20 @@ pub fn default_agents() -> Vec<Agent> {
             system_prompt: "You are a product owner. Focus on user stories, acceptance criteria, edge cases, and feature completeness. Ensure tasks cover the full user experience including error states, accessibility, and documentation. Ask clarifying questions about requirements and prioritize work effectively.".to_string(),
             is_builtin: true,
         },
+        Agent {
+            id: "builtin-security-reviewer".to_string(),
+            name: "Security Reviewer".to_string(),
+            role: "reviewer".to_string(),
+            system_prompt: "You are a security specialist. Review code for vulnerabilities including injection attacks, authentication flaws, insecure data handling, and OWASP Top 10 issues. Check for secrets in code, improper access controls, and unsafe dependencies. Fix any security issues you find.".to_string(),
+            is_builtin: true,
+        },
+        Agent {
+            id: "builtin-integration-tester".to_string(),
+            name: "Integration Tester".to_string(),
+            role: "testing".to_string(),
+            system_prompt: "You are an integration testing specialist. Verify that merged changes work together correctly. Focus on cross-component interactions, API contracts, data flow between modules, and end-to-end scenarios. Write integration tests for critical paths and fix any issues found.".to_string(),
+            is_builtin: true,
+        },
     ]
 }
 
@@ -295,6 +309,8 @@ impl Preferences {
             "builtin-reviewer".to_string(),
             "builtin-architect".to_string(),
             "builtin-product-owner".to_string(),
+            "builtin-security-reviewer".to_string(),
+            "builtin-integration-tester".to_string(),
         ]
     }
 }
@@ -309,8 +325,9 @@ impl Default for Preferences {
         Self {
             shell,
             verification_agent_ids: vec![
-                "builtin-test-writer".to_string(),
                 "builtin-reviewer".to_string(),
+                "builtin-security-reviewer".to_string(),
+                "builtin-integration-tester".to_string(),
             ],
             planning_agent_ids: Self::default_planning_agent_ids(),
         }
@@ -463,6 +480,8 @@ mod tests {
         assert!(prefs.planning_agent_ids.contains(&"builtin-reviewer".to_string()));
         assert!(prefs.planning_agent_ids.contains(&"builtin-architect".to_string()));
         assert!(prefs.planning_agent_ids.contains(&"builtin-product-owner".to_string()));
+        assert!(prefs.planning_agent_ids.contains(&"builtin-security-reviewer".to_string()));
+        assert!(prefs.planning_agent_ids.contains(&"builtin-integration-tester".to_string()));
     }
 
     #[test]
@@ -477,6 +496,27 @@ mod tests {
         assert_eq!(po.name, "Product Owner");
         assert_eq!(po.role, "planning");
         assert!(po.is_builtin);
+    }
+
+    #[test]
+    fn default_agents_includes_verification_roles() {
+        let agents = default_agents();
+        let security = agents.iter().find(|a| a.id == "builtin-security-reviewer").unwrap();
+        assert_eq!(security.name, "Security Reviewer");
+        assert_eq!(security.role, "reviewer");
+        assert!(security.is_builtin);
+
+        let integration = agents.iter().find(|a| a.id == "builtin-integration-tester").unwrap();
+        assert_eq!(integration.name, "Integration Tester");
+        assert_eq!(integration.role, "testing");
+        assert!(integration.is_builtin);
+    }
+
+    #[test]
+    fn default_verification_agent_ids_includes_new_agents() {
+        let prefs = Preferences::default();
+        assert!(prefs.verification_agent_ids.contains(&"builtin-security-reviewer".to_string()));
+        assert!(prefs.verification_agent_ids.contains(&"builtin-integration-tester".to_string()));
     }
 
     #[test]
