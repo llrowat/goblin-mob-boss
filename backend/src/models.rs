@@ -96,6 +96,20 @@ pub fn default_agents() -> Vec<Agent> {
             system_prompt: "You are a code reviewer. Review the changes for correctness, security, performance, and style. Fix any issues you find. Run all validators and ensure they pass.".to_string(),
             is_builtin: true,
         },
+        Agent {
+            id: "builtin-architect".to_string(),
+            name: "Software Architect".to_string(),
+            role: "planning".to_string(),
+            system_prompt: "You are a software architect. Focus on system design, component boundaries, data flow, and technical trade-offs. Break features into well-scoped tasks that can be worked in parallel with minimal merge conflicts. Consider scalability, maintainability, and existing architectural patterns.".to_string(),
+            is_builtin: true,
+        },
+        Agent {
+            id: "builtin-product-owner".to_string(),
+            name: "Product Owner".to_string(),
+            role: "planning".to_string(),
+            system_prompt: "You are a product owner. Focus on user stories, acceptance criteria, edge cases, and feature completeness. Ensure tasks cover the full user experience including error states, accessibility, and documentation. Ask clarifying questions about requirements and prioritize work effectively.".to_string(),
+            is_builtin: true,
+        },
     ]
 }
 
@@ -279,6 +293,8 @@ impl Preferences {
             "builtin-backend".to_string(),
             "builtin-test-writer".to_string(),
             "builtin-reviewer".to_string(),
+            "builtin-architect".to_string(),
+            "builtin-product-owner".to_string(),
         ]
     }
 }
@@ -445,6 +461,22 @@ mod tests {
         assert!(prefs.planning_agent_ids.contains(&"builtin-backend".to_string()));
         assert!(prefs.planning_agent_ids.contains(&"builtin-test-writer".to_string()));
         assert!(prefs.planning_agent_ids.contains(&"builtin-reviewer".to_string()));
+        assert!(prefs.planning_agent_ids.contains(&"builtin-architect".to_string()));
+        assert!(prefs.planning_agent_ids.contains(&"builtin-product-owner".to_string()));
+    }
+
+    #[test]
+    fn default_agents_includes_planning_roles() {
+        let agents = default_agents();
+        let architect = agents.iter().find(|a| a.id == "builtin-architect").unwrap();
+        assert_eq!(architect.name, "Software Architect");
+        assert_eq!(architect.role, "planning");
+        assert!(architect.is_builtin);
+
+        let po = agents.iter().find(|a| a.id == "builtin-product-owner").unwrap();
+        assert_eq!(po.name, "Product Owner");
+        assert_eq!(po.role, "planning");
+        assert!(po.is_builtin);
     }
 
     #[test]
