@@ -6,7 +6,6 @@ import type {
   Task,
   TaskSpec,
   TaskStatus,
-  VerifyResult,
   DiffSummary,
   Preferences,
 } from "../types";
@@ -122,33 +121,15 @@ export function useTauri() {
     updateTaskStatus: (taskId: string, status: TaskStatus) =>
       invoke<Task>("update_task_status", { taskId, status }),
 
-    runVerification: (taskId: string) =>
-      invoke<VerifyResult>("run_verification", { taskId }),
-
     deleteTask: (taskId: string) => invoke<void>("delete_task", { taskId }),
 
     getTaskDiff: (taskId: string) =>
       invoke<DiffSummary>("get_task_diff", { taskId }),
 
-    // Feature verification & PR
-    startFeatureVerification: (featureId: string) =>
-      invoke<Feature>("start_feature_verification", { featureId }),
+    pollTaskStatuses: (featureId: string) =>
+      invoke<Task[]>("poll_task_statuses", { featureId }),
 
-    getVerificationTerminalCommand: (featureId: string, repoId?: string) =>
-      invoke<string>("get_verification_terminal_command", {
-        featureId,
-        repoId: repoId ?? null,
-      }),
-
-    launchVerification: (featureId: string, repoId?: string) =>
-      invoke<void>("launch_verification", {
-        featureId,
-        repoId: repoId ?? null,
-      }),
-
-    markFeatureReady: (featureId: string) =>
-      invoke<Feature>("mark_feature_ready", { featureId }),
-
+    // Feature PR
     pushFeature: (featureId: string) =>
       invoke<string>("push_feature", { featureId }),
 

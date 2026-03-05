@@ -166,7 +166,7 @@ describe("SettingsPage", () => {
     await waitFor(() => {
       expect(screen.getByText("Planning Agents")).toBeInTheDocument();
     });
-    expect(screen.getByText("Verification Agents")).toBeInTheDocument();
+    expect(screen.getByText("Default Verification Agents")).toBeInTheDocument();
   });
 
   it("toggles planning agent selection", async () => {

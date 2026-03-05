@@ -314,6 +314,11 @@ body {
   color: var(--muted);
 }
 
+.status-badge.verifying {
+  background: rgba(184, 148, 74, 0.15);
+  color: var(--accent-brass);
+}
+
 .status-badge.merged {
   background: rgba(184, 148, 74, 0.15);
   color: var(--accent-brass);
@@ -347,6 +352,10 @@ body {
 
 .task-card.running {
   border-left: 3px solid var(--accent);
+}
+
+.task-card.verifying {
+  border-left: 3px solid var(--accent-brass);
 }
 
 .task-card.completed {
@@ -700,6 +709,11 @@ body {
 .agent-tag-sub {
   background: rgba(184, 148, 74, 0.12);
   color: var(--accent-brass);
+}
+
+.agent-tag-verify {
+  background: rgba(90, 138, 92, 0.12);
+  color: var(--success);
 }
 
 /* Verification agent checklist in settings */

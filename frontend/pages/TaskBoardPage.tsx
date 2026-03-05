@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useTauri } from "../hooks/useTauri";
 import { StatusBadge } from "../components/StatusBadge";
-import type { Task, Feature, Repository, Agent, VerifyResult, DiffSummary } from "../types";
+import type { Task, Feature, Repository, Agent, DiffSummary } from "../types";
 
 export function TaskBoardPage() {
   const { featureId } = useParams<{ featureId: string }>();
@@ -14,9 +14,6 @@ export function TaskBoardPage() {
   const [agents, setAgents] = useState<Record<string, Agent>>({});
   const [expandedTask, setExpandedTask] = useState<string | null>(null);
   const [terminalCmds, setTerminalCmds] = useState<Record<string, string>>({});
-  const [verifyResults, setVerifyResults] = useState<
-    Record<string, VerifyResult>
-  >({});
   const [error, setError] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [prCommand, setPrCommand] = useState("");
@@ -43,10 +40,17 @@ export function TaskBoardPage() {
     });
   }, [featureId]);
 
-  // Load & poll tasks
+  // Load & poll tasks + dot file statuses
   const loadTasks = useCallback(() => {
     if (!featureId) return;
     tauri.listTasks(featureId).then(setTasks).catch(() => {});
+    // Poll dot file statuses for running tasks — updates status & auto-merges
+    tauri.pollTaskStatuses(featureId).then(() => {
+      // Re-fetch after polling to get updated statuses
+      tauri.listTasks(featureId).then(setTasks).catch(() => {});
+      // Re-fetch feature in case status changed to ready
+      tauri.getFeature(featureId).then(setFeature).catch(() => {});
+    }).catch(() => {});
   }, [featureId]);
 
   useEffect(() => {
@@ -83,7 +87,9 @@ export function TaskBoardPage() {
     });
   };
 
-  const runningCount = tasks.filter((t) => t.status === "running").length;
+  const runningCount = tasks.filter(
+    (t) => t.status === "running" || t.status === "verifying",
+  ).length;
   // Sum max parallel across all feature repos
   const maxParallel = feature
     ? feature.repos.reduce(
@@ -123,17 +129,6 @@ export function TaskBoardPage() {
     await navigator.clipboard.writeText(cmd);
     setCopiedId(taskId);
     setTimeout(() => setCopiedId(null), 2000);
-  };
-
-  const handleRunVerification = async (taskId: string) => {
-    setError("");
-    try {
-      const result = await tauri.runVerification(taskId);
-      setVerifyResults((prev) => ({ ...prev, [taskId]: result }));
-      loadTasks();
-    } catch (e) {
-      setError(String(e));
-    }
   };
 
   const handleCompleteTask = async (taskId: string) => {
@@ -178,37 +173,6 @@ export function TaskBoardPage() {
     }
   };
 
-  // Feature-level actions
-  const handleStartVerification = async () => {
-    if (!featureId) return;
-    setError("");
-    try {
-      const updated = await tauri.startFeatureVerification(featureId);
-      setFeature(updated);
-    } catch (e) {
-      setError(String(e));
-    }
-  };
-
-  const handleLaunchVerification = async () => {
-    if (!featureId) return;
-    try {
-      await tauri.launchVerification(featureId);
-    } catch (e) {
-      setError(String(e));
-    }
-  };
-
-  const handleMarkReady = async () => {
-    if (!featureId) return;
-    try {
-      const updated = await tauri.markFeatureReady(featureId);
-      setFeature(updated);
-    } catch (e) {
-      setError(String(e));
-    }
-  };
-
   const handlePushAndPR = async () => {
     if (!featureId) return;
     setError("");
@@ -224,9 +188,7 @@ export function TaskBoardPage() {
   const completedCount = tasks.filter((t) => t.status === "completed").length;
   const mergedCount = tasks.filter((t) => t.status === "merged").length;
   const pendingCount = tasks.filter((t) => t.status === "pending").length;
-  const allDone =
-    tasks.length > 0 &&
-    tasks.every((t) => t.status === "completed" || t.status === "merged");
+  const verifyingCount = tasks.filter((t) => t.status === "verifying").length;
 
   if (!feature) {
     return (
@@ -258,6 +220,7 @@ export function TaskBoardPage() {
         <p>
           {mergedCount + completedCount}/{tasks.length} done
           {runningCount > 0 && ` \u00B7 ${runningCount} running`}
+          {verifyingCount > 0 && ` \u00B7 ${verifyingCount} verifying`}
           {pendingCount > 0 && ` \u00B7 ${pendingCount} pending`}
           {isMultiRepo && (
             <span
@@ -303,26 +266,6 @@ export function TaskBoardPage() {
           <button className="btn btn-primary" onClick={handleStartAll}>
             Start Available Tasks
           </button>
-        )}
-
-        {allDone && feature.status === "in_progress" && (
-          <button className="btn btn-brass" onClick={handleStartVerification}>
-            Start Final Verification
-          </button>
-        )}
-
-        {feature.status === "verifying" && (
-          <>
-            <button
-              className="btn btn-primary"
-              onClick={handleLaunchVerification}
-            >
-              Launch Verification
-            </button>
-            <button className="btn btn-brass" onClick={handleMarkReady}>
-              Mark Ready
-            </button>
-          </>
         )}
 
         {feature.status === "ready" && (
@@ -399,7 +342,7 @@ export function TaskBoardPage() {
               <div className="task-card-body">
                 <p className="task-card-description">{task.description}</p>
 
-                {/* Agent & Subagents */}
+                {/* Agent, Subagents & Verification Agents */}
                 <div className="task-agents-section">
                   {agents[task.agent_id] && (
                     <div className="task-agent-row">
@@ -419,6 +362,23 @@ export function TaskBoardPage() {
                         {task.subagent_ids.map((id) =>
                           agents[id] ? (
                             <span key={id} className="agent-tag agent-tag-sub">
+                              {agents[id].name}
+                              <span className="task-agent-role">
+                                {agents[id].role}
+                              </span>
+                            </span>
+                          ) : null,
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  {task.verification_agent_ids.length > 0 && (
+                    <div className="task-agent-row">
+                      <span className="task-agent-label">Verification</span>
+                      <div className="task-agent-tags">
+                        {task.verification_agent_ids.map((id) =>
+                          agents[id] ? (
+                            <span key={id} className="agent-tag agent-tag-verify">
                               {agents[id].name}
                               <span className="task-agent-role">
                                 {agents[id].role}
@@ -541,7 +501,7 @@ export function TaskBoardPage() {
                     </button>
                   )}
 
-                  {task.status === "running" && (
+                  {(task.status === "running" || task.status === "verifying") && (
                     <>
                       <button
                         className="btn btn-primary btn-sm"
@@ -554,12 +514,6 @@ export function TaskBoardPage() {
                         onClick={() => handleCopyCommand(task.task_id)}
                       >
                         {copiedId === task.task_id ? "Copied!" : "Copy Cmd"}
-                      </button>
-                      <button
-                        className="btn btn-secondary btn-sm"
-                        onClick={() => handleRunVerification(task.task_id)}
-                      >
-                        Verify
                       </button>
                       <button
                         className="btn btn-secondary btn-sm"
@@ -603,50 +557,6 @@ export function TaskBoardPage() {
                     Delete
                   </button>
                 </div>
-
-                {/* Verify results */}
-                {verifyResults[task.task_id] && (
-                  <div style={{ marginTop: 12 }}>
-                    <div
-                      style={{
-                        fontSize: 11,
-                        color: "var(--text-secondary)",
-                        textTransform: "uppercase",
-                        marginBottom: 4,
-                      }}
-                    >
-                      Verification (Attempt{" "}
-                      {verifyResults[task.task_id].attempt})
-                    </div>
-                    {verifyResults[task.task_id].results.map((r, i) => (
-                      <div
-                        key={i}
-                        className={`verify-result ${r.success ? "pass" : "fail"}`}
-                      >
-                        <div className="verify-result-header">
-                          <span className="verify-result-cmd">{r.command}</span>
-                          <span
-                            style={{
-                              color: r.success
-                                ? "var(--success)"
-                                : "var(--danger)",
-                            }}
-                          >
-                            {r.success ? "PASS" : "FAIL"}
-                          </span>
-                        </div>
-                        {!r.success && (r.stderr || r.stdout) && (
-                          <div
-                            className="code-block"
-                            style={{ marginTop: 4 }}
-                          >
-                            {r.stderr || r.stdout}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
               </div>
             )}
           </div>

@@ -134,7 +134,6 @@ pub fn default_agents() -> Vec<Agent> {
 pub enum FeatureStatus {
     Ideation,
     InProgress,
-    Verifying,
     Ready,
 }
 
@@ -212,6 +211,7 @@ impl Feature {
 pub enum TaskStatus {
     Pending,
     Running,
+    Verifying,
     Completed,
     Merged,
     Failed,
@@ -228,6 +228,8 @@ pub struct Task {
     pub dependencies: Vec<String>,
     pub agent_id: String,
     pub subagent_ids: Vec<String>,
+    #[serde(default)]
+    pub verification_agent_ids: Vec<String>,
     pub status: TaskStatus,
     pub branch: String,
     pub worktree_path: String,
@@ -247,9 +249,20 @@ pub struct TaskSpec {
     pub agent: String,
     #[serde(default)]
     pub subagents: Vec<String>,
+    #[serde(default)]
+    pub verification_agents: Vec<String>,
     /// Target repo name or ID (for multi-repo features). Empty = first/primary repo.
     #[serde(default)]
     pub repo: String,
+}
+
+/// Status written by the agent to `.gmb/status.json` inside the worktree.
+/// The app polls this file to detect task progress.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TaskDotStatus {
+    pub phase: String, // "implementing", "verifying", "done", "failed"
+    #[serde(default)]
+    pub message: String,
 }
 
 // ── Validator Results ──

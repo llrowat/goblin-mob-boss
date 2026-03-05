@@ -4,7 +4,6 @@ use crate::git;
 use crate::models::*;
 use crate::prompts;
 use crate::store::AppState;
-use crate::validators::run_validators;
 use chrono::Utc;
 use std::path::Path;
 use tauri::State;
@@ -459,6 +458,7 @@ pub fn import_tasks(
 
         let agent_id = resolve_agent(&spec.agent);
         let subagent_ids: Vec<String> = spec.subagents.iter().map(|s| resolve_agent(s)).collect();
+        let verification_agent_ids: Vec<String> = spec.verification_agents.iter().map(|s| resolve_agent(s)).collect();
 
         let task = Task {
             task_id: uuid::Uuid::new_v4().to_string(),
@@ -470,6 +470,7 @@ pub fn import_tasks(
             dependencies: spec.dependencies,
             agent_id,
             subagent_ids,
+            verification_agent_ids,
             status: TaskStatus::Pending,
             branch,
             worktree_path,
@@ -577,6 +578,15 @@ pub fn start_task(state: State<AppState>, task_id: String) -> Result<Task, Strin
         .map(|a| format!("- **{}** ({}): {}", a.name, a.role, a.system_prompt))
         .collect::<Vec<_>>()
         .join("\n");
+
+    // Build verification agent context
+    let verification_context: String = task
+        .verification_agent_ids
+        .iter()
+        .filter_map(|id| agents.get(id))
+        .map(|a| format!("- **{}** ({}): {}", a.name, a.role, a.system_prompt))
+        .collect::<Vec<_>>()
+        .join("\n");
     drop(agents);
 
     let system_prompt = prompts::agent_system_prompt(&agent_prompt, &subagent_prompts);
@@ -593,6 +603,7 @@ pub fn start_task(state: State<AppState>, task_id: String) -> Result<Task, Strin
         &task.description,
         &task.acceptance_criteria,
         &repo.validators,
+        &verification_context,
     );
     std::fs::write(prompts_dir.join("task.md"), &task_prompt)
         .map_err(|e| format!("Failed to write task prompt: {}", e))?;
@@ -743,6 +754,131 @@ pub fn delete_task(state: State<AppState>, task_id: String) -> Result<(), String
     Ok(())
 }
 
+// ── Status Polling & Auto-Merge ──
+
+/// Poll `.gmb/status.json` in each running task's worktree.
+/// Updates task status accordingly and auto-merges completed tasks.
+#[tauri::command]
+pub fn poll_task_statuses(
+    state: State<AppState>,
+    feature_id: String,
+) -> Result<Vec<Task>, String> {
+    let tasks = state.tasks.lock().unwrap();
+    let running: Vec<Task> = tasks
+        .values()
+        .filter(|t| {
+            t.feature_id == feature_id
+                && (t.status == TaskStatus::Running || t.status == TaskStatus::Verifying)
+        })
+        .cloned()
+        .collect();
+    drop(tasks);
+
+    let mut updated_tasks = Vec::new();
+
+    for task in running {
+        let status_path = format!("{}/.gmb/status.json", task.worktree_path);
+        let dot_status = match std::fs::read_to_string(&status_path) {
+            Ok(contents) => match serde_json::from_str::<TaskDotStatus>(&contents) {
+                Ok(s) => s,
+                Err(_) => continue,
+            },
+            Err(_) => continue,
+        };
+
+        let new_status = match dot_status.phase.as_str() {
+            "implementing" => Some(TaskStatus::Running),
+            "verifying" => Some(TaskStatus::Verifying),
+            "done" => Some(TaskStatus::Completed),
+            "failed" => Some(TaskStatus::Failed),
+            _ => None,
+        };
+
+        if let Some(status) = new_status {
+            if status == task.status {
+                continue;
+            }
+
+            let mut tasks = state.tasks.lock().unwrap();
+            if let Some(t) = tasks.get_mut(&task.task_id) {
+                t.status = status.clone();
+                t.updated_at = Utc::now();
+                updated_tasks.push(t.clone());
+            }
+            drop(tasks);
+            state.save_tasks();
+
+            // Auto-merge completed tasks
+            if status == TaskStatus::Completed {
+                let _ = auto_merge_task(&state, &task.task_id);
+            }
+        }
+    }
+
+    // Check if all tasks are merged → mark feature ready
+    let tasks = state.tasks.lock().unwrap();
+    let feature_tasks: Vec<&Task> = tasks
+        .values()
+        .filter(|t| t.feature_id == feature_id)
+        .collect();
+    let all_merged = !feature_tasks.is_empty()
+        && feature_tasks.iter().all(|t| t.status == TaskStatus::Merged);
+    drop(tasks);
+
+    if all_merged {
+        let mut features = state.features.lock().unwrap();
+        if let Some(f) = features.get_mut(&feature_id) {
+            if f.status == FeatureStatus::InProgress {
+                f.status = FeatureStatus::Ready;
+                f.updated_at = Utc::now();
+            }
+        }
+        drop(features);
+        state.save_features();
+    }
+
+    Ok(updated_tasks)
+}
+
+/// Auto-merge a completed task back to the feature branch.
+fn auto_merge_task(state: &State<AppState>, task_id: &str) -> Result<(), String> {
+    let tasks = state.tasks.lock().unwrap();
+    let task = tasks.get(task_id).ok_or("Task not found")?.clone();
+    drop(tasks);
+
+    let repos = state.repositories.lock().unwrap();
+    let repo = repos
+        .get(&task.repo_id)
+        .ok_or("Repository not found")?
+        .clone();
+    drop(repos);
+
+    let features = state.features.lock().unwrap();
+    let feature = features
+        .get(&task.feature_id)
+        .ok_or("Feature not found")?
+        .clone();
+    drop(features);
+
+    // Merge task branch into feature branch
+    git::merge_branch(&repo.path, &feature.branch, &task.branch).map_err(|e| e.to_string())?;
+
+    // Clean up worktree
+    if Path::new(&task.worktree_path).exists() {
+        let _ = git::remove_worktree(&repo.path, &task.worktree_path);
+    }
+
+    let mut tasks = state.tasks.lock().unwrap();
+    if let Some(t) = tasks.get_mut(task_id) {
+        t.status = TaskStatus::Merged;
+        t.updated_at = Utc::now();
+    }
+    drop(tasks);
+    state.save_tasks();
+
+    Ok(())
+}
+
 // ── Diff Commands ──
 
 #[tauri::command]
@@ -798,172 +934,6 @@ pub fn get_task_diff(state: State<AppState>, task_id: String) -> Result<DiffSumm
         total_insertions,
         total_deletions,
     })
-}
-
-// ── Verification Commands ──
-
-#[tauri::command]
-pub fn run_verification(state: State<AppState>, task_id: String) -> Result<VerifyResult, String> {
-    let tasks = state.tasks.lock().unwrap();
-    let task = tasks.get(&task_id).ok_or("Task not found")?.clone();
-    drop(tasks);
-
-    let repos = state.repositories.lock().unwrap();
-    let repo = repos
-        .get(&task.repo_id)
-        .ok_or("Repository not found")?
-        .clone();
-    drop(repos);
-
-    if repo.validators.is_empty() {
-        return Err("No validators configured".to_string());
-    }
-
-    let results_dir = format!("{}/.gmb/results/verify", task.worktree_path);
-    let attempt = if Path::new(&results_dir).exists() {
-        std::fs::read_dir(&results_dir)
-            .map(|entries| entries.count() as u32 + 1)
-            .unwrap_or(1)
-    } else {
-        1
-    };
-
-    let result = run_validators(&task.worktree_path, &repo.validators, attempt)?;
-
-    let mut tasks = state.tasks.lock().unwrap();
-    if let Some(t) = tasks.get_mut(&task_id) {
-        if result.all_passed {
-            t.status = TaskStatus::Completed;
-        } else {
-            t.status = TaskStatus::Failed;
-        }
-        t.updated_at = Utc::now();
-    }
-    drop(tasks);
-    state.save_tasks();
-
-    Ok(result)
-}
-
-/// Start final verification on the feature branch after all tasks are merged.
-/// For multi-repo features, creates verification worktrees in each repo.
-#[tauri::command]
-pub fn start_feature_verification(
-    state: State<AppState>,
-    feature_id: String,
-) -> Result<Feature, String> {
-    let features = state.features.lock().unwrap();
-    let feature = features
-        .get(&feature_id)
-        .ok_or("Feature not found")?
-        .clone();
-    drop(features);
-
-    let feature_repos = get_feature_repos(&state, &feature)?;
-
-    // Build verification agent context
-    let prefs = state.preferences.lock().unwrap().clone();
-    let agents = state.agents.lock().unwrap();
-    let agent_context: String = prefs
-        .verification_agent_ids
-        .iter()
-        .filter_map(|id| agents.get(id))
-        .map(|a| format!("- **{}** ({}): {}", a.name, a.role, a.system_prompt))
-        .collect::<Vec<_>>()
-        .join("\n");
-    drop(agents);
-
-    // Create verification worktree in each repo
-    for (repo, feature_branch) in &feature_repos {
-        let verify_slug = format!("verify-{}", &feature.id[..4]);
-        let worktree_path = format!("{}/.gmb/worktrees/{}", repo.path, verify_slug);
-
-        if !Path::new(&worktree_path).exists() {
-            let verify_branch = format!("{}/verify", feature_branch);
-            git::create_worktree(&repo.path, &verify_branch, &worktree_path, feature_branch)
-                .map_err(|e| format!("Failed in {}: {}", repo.name, e))?;
-        }
-
-        // Write verification prompt
-        let prompt = prompts::verification_prompt(&feature.name, &repo.validators, &agent_context);
-        let gmb_dir = Path::new(&worktree_path).join(".gmb").join("prompts");
-        std::fs::create_dir_all(&gmb_dir).map_err(|e| format!("Failed to create dir: {}", e))?;
-        std::fs::write(gmb_dir.join("verify.md"), &prompt)
-            .map_err(|e| format!("Failed to write verify prompt: {}", e))?;
-    }
-
-    // Update feature status
-    let mut features = state.features.lock().unwrap();
-    if let Some(f) = features.get_mut(&feature_id) {
-        f.status = FeatureStatus::Verifying;
-        f.updated_at = Utc::now();
-    }
-    let updated = features.get(&feature_id).cloned().unwrap();
-    drop(features);
-    state.save_features();
-
-    Ok(updated)
-}
-
-/// Returns verification commands for all repos in the feature.
-/// For multi-repo features, returns one command per repo separated by newlines.
-#[tauri::command]
-pub fn get_verification_terminal_command(
-    state: State<AppState>,
-    feature_id: String,
-    repo_id: Option<String>,
-) -> Result<String, String> {
-    let features = state.features.lock().unwrap();
-    let feature = features
-        .get(&feature_id)
-        .ok_or("Feature not found")?
-        .clone();
-    drop(features);
-
-    let feature_repos = get_feature_repos(&state, &feature)?;
-
-    let commands: Vec<String> = feature_repos
-        .iter()
-        .filter(|(r, _)| repo_id.as_ref().map_or(true, |rid| &r.id == rid))
-        .map(|(repo, _)| {
-            let verify_slug = format!("verify-{}", &feature.id[..4]);
-            let worktree_path = format!("{}/.gmb/worktrees/{}", repo.path, verify_slug);
-            let prompt_path = format!("{}/.gmb/prompts/verify.md", worktree_path);
-            format!("cd {} && claude \"$(cat '{}')\"", worktree_path, prompt_path)
-        })
-        .collect();
-
-    Ok(commands.join("\n"))
-}
-
-#[tauri::command]
-pub fn launch_verification(
-    state: State<AppState>,
-    feature_id: String,
-    repo_id: Option<String>,
-) -> Result<(), String> {
-    let cmd = get_verification_terminal_command(state.clone(), feature_id, repo_id)?;
-    let prefs = state.preferences.lock().unwrap().clone();
-    // Launch a terminal for each command line (one per repo)
-    for line in cmd.lines() {
-        let parts: Vec<&str> = line.splitn(2, " && ").collect();
-        let cwd = parts[0].strip_prefix("cd ").unwrap_or(".");
-        let claude_cmd = parts.get(1).unwrap_or(&"");
-        launch_terminal_cmd(&prefs.shell, cwd, claude_cmd)?;
-    }
-    Ok(())
-}
-
-#[tauri::command]
-pub fn mark_feature_ready(state: State<AppState>, feature_id: String) -> Result<Feature, String> {
-    let mut features = state.features.lock().unwrap();
-    let feature = features.get_mut(&feature_id).ok_or("Feature not found")?;
-    feature.status = FeatureStatus::Ready;
-    feature.updated_at = Utc::now();
-    let updated = feature.clone();
-    drop(features);
-    state.save_features();
-    Ok(updated)
 }
 
 #[tauri::command]

@@ -127,7 +127,7 @@ export function SettingsPage() {
 
       <div className="panel" style={{ marginTop: 16 }}>
         <div className="panel-title" style={{ marginBottom: 8 }}>
-          Verification Agents
+          Default Verification Agents
         </div>
         <p
           style={{
@@ -137,9 +137,8 @@ export function SettingsPage() {
             lineHeight: 1.5,
           }}
         >
-          Select which agents are used during the final verification step after
-          all tasks are merged. Their expertise is included in the verification
-          prompt.
+          Default verification agents assigned to new tasks during ideation.
+          Their expertise is included in each task prompt as a self-review step.
         </p>
 
         <div className="verification-agent-list">

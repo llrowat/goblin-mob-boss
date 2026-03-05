@@ -70,6 +70,7 @@ Name files `01.json`, `02.json`, etc:
   "dependencies": [],
   "agent": "agent-name-or-id",
   "subagents": [],
+  "verification_agents": ["agent-name-or-id"],
 {repo_field_doc}}}}}
 ```
 
@@ -78,6 +79,7 @@ Rules:
 - Use `dependencies` for task numbers (e.g. `["01"]`) that must complete first
 - Assign the best-fit agent from the available list
 - Use `subagents` for helpers (e.g. a test writer alongside a developer)
+- Use `verification_agents` to assign agents that verify the task after implementation (e.g. security reviewer, integration tester). Their expertise is applied as a self-review step before the task is marked complete.
 - Include enough detail that an agent can work without asking questions
 {repo_rule}
 **Do NOT create task files until the user confirms the plan.**
@@ -109,6 +111,7 @@ pub fn agent_task_prompt(
     description: &str,
     acceptance_criteria: &[String],
     validators: &[String],
+    verification_context: &str,
 ) -> String {
     let criteria_text = if acceptance_criteria.is_empty() {
         "- Complete the task as described above".to_string()
@@ -130,6 +133,21 @@ pub fn agent_task_prompt(
             .join("\n")
     };
 
+    let verification_section = if verification_context.is_empty() {
+        String::new()
+    } else {
+        format!(
+            r#"
+## Verification
+
+After implementing and committing, apply the following verification lenses to self-review your changes. Fix any issues found, then re-run validators.
+
+{verification_context}
+"#,
+            verification_context = verification_context
+        )
+    };
+
     format!(
         r#"# Task: {title}
 
@@ -149,62 +167,27 @@ These commands must pass before the task is done:
 
 ## Instructions
 
-1. Read and understand the relevant parts of the codebase.
-2. Implement the change with minimal, focused edits.
-3. Follow existing code style and patterns.
-4. Run the validators to confirm everything passes.
-5. Commit your changes with a clear message.
-6. Keep changes scoped to this task only.
+1. Update status: write `{{"phase":"implementing"}}` to `.gmb/status.json`
+2. Read and understand the relevant parts of the codebase.
+3. Implement the change with minimal, focused edits.
+4. Follow existing code style and patterns.
+5. Run the validators to confirm everything passes.
+6. Commit your changes with a clear message.
+7. Keep changes scoped to this task only.
+{verification_section}
+## Completion
+
+When all validators pass and verification is complete:
+1. Write `{{"phase":"done"}}` to `.gmb/status.json`
+
+If you encounter a blocker you cannot resolve:
+1. Write `{{"phase":"failed","message":"description of the issue"}}` to `.gmb/status.json`
 "#,
         title = title,
         description = description,
         criteria_text = criteria_text,
         validators_text = validators_text,
-    )
-}
-
-/// Verification prompt — used after all tasks are merged to the feature branch.
-pub fn verification_prompt(
-    feature_name: &str,
-    validators: &[String],
-    agent_context: &str,
-) -> String {
-    let validators_text = validators
-        .iter()
-        .map(|v| format!("- `{}`", v))
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    let agent_section = if agent_context.is_empty() {
-        String::new()
-    } else {
-        format!(
-            "\n## Verification Agents\n\nYou are working with these verification agent roles:\n\n{}\n\nApply each agent's expertise when reviewing and fixing the code.\n",
-            agent_context
-        )
-    };
-
-    format!(
-        r#"# Final Verification: {feature_name}
-
-All tasks for this feature have been merged. Your job is to verify everything works together.
-{agent_section}
-## Steps
-
-1. Run all validators and fix any failures:
-
-{validators_text}
-
-2. Check for integration issues between the merged changes.
-3. Ensure the codebase builds and all tests pass.
-4. Fix any issues you find — keep changes minimal.
-5. Commit fixes with clear messages.
-
-If everything passes, you're done. If there are issues, fix them and re-run validators until everything is green.
-"#,
-        feature_name = feature_name,
-        agent_section = agent_section,
-        validators_text = validators_text,
+        verification_section = verification_section,
     )
 }
 
@@ -228,5 +211,40 @@ mod tests {
         assert!(prompt.contains("frontend, backend"));
         assert!(prompt.contains("2 repositories"));
         assert!(prompt.contains("multi-repo"));
+    }
+
+    #[test]
+    fn ideation_prompt_includes_verification_agents_field() {
+        let prompt = ideation_system_prompt("/tasks", "repo map", "agents", &["my-app"]);
+        assert!(prompt.contains("\"verification_agents\""));
+        assert!(prompt.contains("verification_agents"));
+    }
+
+    #[test]
+    fn task_prompt_includes_status_dot_file_instructions() {
+        let prompt = agent_task_prompt("Test", "Do thing", &[], &[], "");
+        assert!(prompt.contains(".gmb/status.json"));
+        assert!(prompt.contains("\"phase\":\"implementing\""));
+        assert!(prompt.contains("\"phase\":\"done\""));
+        assert!(prompt.contains("\"phase\":\"failed\""));
+    }
+
+    #[test]
+    fn task_prompt_includes_verification_context() {
+        let prompt = agent_task_prompt(
+            "Test",
+            "Do thing",
+            &[],
+            &[],
+            "- **Security Reviewer**: Check for XSS",
+        );
+        assert!(prompt.contains("## Verification"));
+        assert!(prompt.contains("Security Reviewer"));
+    }
+
+    #[test]
+    fn task_prompt_omits_verification_section_when_empty() {
+        let prompt = agent_task_prompt("Test", "Do thing", &[], &[], "");
+        assert!(!prompt.contains("## Verification"));
     }
 }
