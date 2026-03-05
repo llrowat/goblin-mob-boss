@@ -74,6 +74,22 @@ pub struct VerifyResult {
     pub timestamp: DateTime<Utc>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Preferences {
+    pub shell: String,
+}
+
+impl Default for Preferences {
+    fn default() -> Self {
+        let shell = if cfg!(target_os = "windows") {
+            "powershell".to_string()
+        } else {
+            "bash".to_string()
+        };
+        Self { shell }
+    }
+}
+
 impl Repository {
     pub fn new(name: String, path: String, base_branch: String, validators: Vec<String>, pr_command: Option<String>) -> Self {
         Self {

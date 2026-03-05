@@ -1,73 +1,79 @@
-# React + TypeScript + Vite
+# Goblin Mob Boss
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A local desktop app for structured AI-assisted development workflows. Create tasks, walk through phased pipelines (plan, code, verify), and launch Claude Code with tailored prompts — all from a single interface.
 
-Currently, two official plugins are available:
+## Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- **Task creation** — Define tasks with descriptions, select a target repository, and get a structured workflow
+- **Phase pipeline** — Walk through plan / code / verify phases with status tracking
+- **Repository management** — Register local git repos with native folder picker or manual path entry
+- **Claude Code launch** — Open Claude Code in your preferred terminal directly from a task, with context-aware prompts pre-loaded
+- **Verification** — Run checks and view results inline
+- **Configurable shell** — Choose your preferred terminal (PowerShell, cmd, Windows Terminal, Bash, Zsh) in Settings
 
-## React Compiler
+## Project Structure
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```
+goblin-mob-boss/
+├── backend/            # Rust backend (Tauri v2)
+│   ├── src/
+│   │   ├── lib.rs              # App entry, state management
+│   │   ├── commands.rs         # Tauri IPC command handlers
+│   │   ├── models.rs           # Data models (Task, Repository, etc.)
+│   │   ├── store.rs            # JSON file-based persistence
+│   │   ├── context.rs          # Task context generation
+│   │   ├── claude_md.rs        # CLAUDE.md file management
+│   │   ├── git.rs              # Git operations
+│   │   ├── prompts.rs          # Prompt templates
+│   │   └── validators.rs       # Input validation
+│   └── tauri.conf.json
+├── frontend/           # React (TypeScript) frontend
+│   ├── components/     # Shared UI components
+│   ├── pages/          # Page components (Home, Repos, TaskList, TaskDetail, Settings)
+│   ├── hooks/          # React hooks (useTauri)
+│   ├── types/          # TypeScript type definitions
+│   ├── test/           # Vitest setup
+│   └── styles.css      # Global styles (dark theme)
+├── Cargo.toml          # Cargo workspace root
+├── package.json        # Frontend dependencies
+└── vite.config.ts      # Vite + Vitest configuration
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## Getting Started
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+### Prerequisites
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+- [Node.js](https://nodejs.org/) (v18+)
+- [npm](https://www.npmjs.com/)
+- [Rust](https://www.rust-lang.org/tools/install)
+- Tauri v2 system dependencies ([see Tauri docs](https://v2.tauri.app/start/prerequisites/))
+
+### Development
+
+```bash
+# Install frontend dependencies
+npm install
+
+# Run in dev mode (starts both Vite and Tauri)
+npm run tauri dev
+
+# Build for production
+npm run tauri build
 ```
+
+### Testing
+
+```bash
+# Run Rust backend tests
+cd backend && cargo test --lib
+
+# Run frontend tests
+npm test
+
+# Run frontend tests in watch mode
+npm run test:watch
+```
+
+## License
+
+MIT

@@ -52,3 +52,7 @@ export interface RepoInfo {
   name: string;
   base_branch: string;
 }
+
+export interface Preferences {
+  shell: string;
+}

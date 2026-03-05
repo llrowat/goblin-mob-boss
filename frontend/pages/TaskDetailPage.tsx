@@ -17,7 +17,6 @@ export function TaskDetailPage() {
   const navigate = useNavigate();
   const tauri = useTauri();
   const [task, setTask] = useState<Task | null>(null);
-  const [command, setCommand] = useState("");
   const [prompt, setPrompt] = useState("");
   const [events, setEvents] = useState<TaskEvent[]>([]);
   const [verifyResult, setVerifyResult] = useState<VerifyResult | null>(null);
@@ -25,6 +24,7 @@ export function TaskDetailPage() {
   const [showPrompt, setShowPrompt] = useState(false);
   const [showEvents, setShowEvents] = useState(false);
   const [copied, setCopied] = useState("");
+  const [launching, setLaunching] = useState(false);
   const [error, setError] = useState("");
 
   const loadTask = async () => {
@@ -33,8 +33,6 @@ export function TaskDetailPage() {
       // Auto-detect phase from worktree state first
       const t = await tauri.detectPhase(taskId);
       setTask(t);
-      const cmd = await tauri.getTerminalCommand(taskId);
-      setCommand(cmd);
       const p = await tauri.getPrompt(taskId);
       setPrompt(p);
     } catch (e) {
@@ -143,9 +141,20 @@ export function TaskDetailPage() {
           {isWorkPhase && (
             <button
               className="btn btn-primary btn-lg"
-              onClick={() => handleCopy(command, "launch")}
+              onClick={async () => {
+                setLaunching(true);
+                setError("");
+                try {
+                  await tauri.launchClaude(taskId!);
+                } catch (e) {
+                  setError(String(e));
+                } finally {
+                  setLaunching(false);
+                }
+              }}
+              disabled={launching}
             >
-              {copied === "launch" ? "Copied! Paste in terminal" : "Copy Launch Command"}
+              {launching ? "Launching..." : "Launch Claude Code"}
             </button>
           )}
 
@@ -171,25 +180,6 @@ export function TaskDetailPage() {
           )}
         </div>
       </div>
-
-      {/* Launch command display — always visible for work phases */}
-      {isWorkPhase && (
-        <div className="panel" style={{ marginTop: 16 }}>
-          <div className="panel-header">
-            <div className="panel-title">Launch Command</div>
-            <span className="flavor-text">
-              paste this in your terminal — Claude Code picks up the CLAUDE.md automatically
-            </span>
-          </div>
-          <div
-            className="code-block"
-            style={{ cursor: "pointer" }}
-            onClick={() => handleCopy(command, "launch")}
-          >
-            {command}
-          </div>
-        </div>
-      )}
 
       {/* Secondary Actions */}
       <div className="actions-bar">

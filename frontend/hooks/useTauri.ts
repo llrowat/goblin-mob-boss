@@ -7,6 +7,7 @@ import type {
   RepoInfo,
   TaskPhase,
   TaskStatus,
+  Preferences,
 } from "../types";
 
 export function useTauri() {
@@ -98,5 +99,15 @@ export function useTauri() {
     // Cleanup
     deleteTask: (taskId: string) =>
       invoke<void>("delete_task", { taskId }),
+
+    // Preferences
+    getPreferences: () => invoke<Preferences>("get_preferences"),
+
+    setPreferences: (shell: string) =>
+      invoke<Preferences>("set_preferences", { shell }),
+
+    // Launch
+    launchClaude: (taskId: string) =>
+      invoke<void>("launch_claude", { taskId }),
   };
 }

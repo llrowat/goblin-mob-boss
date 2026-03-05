@@ -1,5 +1,5 @@
 {
-  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/refs/heads/v2/crates/tauri-cli/schema.json",
   "productName": "Goblin Mob Boss",
   "version": "0.1.0",
   "identifier": "com.goblinmobboss.app",
@@ -33,5 +33,10 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "shell": {
+      "open": true
+    }
   }
 }

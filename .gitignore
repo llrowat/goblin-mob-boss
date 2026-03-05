@@ -1,5 +1,33 @@
+# Dependencies
 node_modules/
+
+# Build output
 dist/
 target/
-*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
 .DS_Store
+Thumbs.db
+
+# Tauri generated
+backend/gen/
+
+# Env files
+.env
+.env.*
+.env.local
+
+# Logs
+*.log
+
+# Secrets / credentials
+*.pem
+*.key
+credentials.json

@@ -16,6 +16,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -45,6 +46,9 @@ pub fn run() {
             commands::get_events,
             commands::delete_task,
             commands::detect_phase,
+            commands::get_preferences,
+            commands::set_preferences,
+            commands::launch_claude,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

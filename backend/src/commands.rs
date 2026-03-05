@@ -513,6 +513,98 @@ pub fn delete_task(state: State<AppState>, task_id: String) -> Result<(), String
     Ok(())
 }
 
+// ── Preferences Commands ──
+
+#[tauri::command]
+pub fn get_preferences(state: State<AppState>) -> crate::models::Preferences {
+    state.preferences.lock().unwrap().clone()
+}
+
+#[tauri::command]
+pub fn set_preferences(state: State<AppState>, shell: String) -> crate::models::Preferences {
+    let mut prefs = state.preferences.lock().unwrap();
+    prefs.shell = shell;
+    let updated = prefs.clone();
+    drop(prefs);
+    state.save_preferences();
+    updated
+}
+
+// ── Launch Commands ──
+
+#[tauri::command]
+pub fn launch_claude(state: State<AppState>, task_id: String) -> Result<(), String> {
+    let tasks = state.tasks.lock().unwrap();
+    let task = tasks.get(&task_id).ok_or("Task not found")?.clone();
+    drop(tasks);
+
+    let prefs = state.preferences.lock().unwrap().clone();
+
+    let phase_file = match task.phase {
+        TaskPhase::Plan => "plan.md",
+        TaskPhase::Code => "code.md",
+        TaskPhase::Verify => "verify.md",
+        TaskPhase::Ready => return Err("Task is in Ready phase — nothing to launch".to_string()),
+    };
+
+    let prompt_path = format!("{}/.gmb/prompts/{}", task.worktree_path, phase_file);
+    let prompt_content = std::fs::read_to_string(&prompt_path)
+        .map_err(|e| format!("Failed to read prompt: {}", e))?;
+
+    // Escape the prompt for shell embedding
+    let escaped_prompt = prompt_content.replace('\'', "'\\''");
+
+    launch_terminal(&prefs.shell, &task.worktree_path, &escaped_prompt)
+}
+
+fn launch_terminal(shell: &str, cwd: &str, prompt: &str) -> Result<(), String> {
+    use std::process::Command;
+
+    let result = if cfg!(target_os = "windows") {
+        match shell {
+            "powershell" => Command::new("cmd")
+                .args(["/c", "start", "powershell", "-NoExit", "-Command",
+                    &format!("cd '{}'; claude '{}'", cwd, prompt)])
+                .spawn(),
+            "cmd" => Command::new("cmd")
+                .args(["/c", "start", "cmd", "/k",
+                    &format!("cd /d \"{}\" && claude \"{}\"", cwd, prompt)])
+                .spawn(),
+            "wt" | "windows-terminal" => Command::new("cmd")
+                .args(["/c", "start", "wt", "-d", cwd, "cmd", "/k",
+                    &format!("claude \"{}\"", prompt)])
+                .spawn(),
+            _ => Command::new("cmd")
+                .args(["/c", "start", shell, "-NoExit", "-Command",
+                    &format!("cd '{}'; claude '{}'", cwd, prompt)])
+                .spawn(),
+        }
+    } else if cfg!(target_os = "macos") {
+        // Use open -a Terminal with a temp script
+        let script = format!("cd '{}' && claude '{}'\n", cwd, prompt);
+        let tmp = format!("/tmp/gmb-launch-{}.sh", uuid::Uuid::new_v4());
+        std::fs::write(&tmp, &script)
+            .map_err(|e| format!("Failed to write launch script: {}", e))?;
+        let _ = Command::new("chmod").args(["+x", &tmp]).output();
+        Command::new("open")
+            .args(["-a", "Terminal", &tmp])
+            .spawn()
+    } else {
+        // Linux: try common terminal emulators
+        let terminal = match shell {
+            "bash" | "zsh" | "fish" => "x-terminal-emulator",
+            other => other,
+        };
+        Command::new(terminal)
+            .args(["-e", &format!("cd '{}' && claude '{}'; exec {}", cwd, prompt, shell)])
+            .spawn()
+    };
+
+    result
+        .map(|_| ())
+        .map_err(|e| format!("Failed to launch terminal: {}", e))
+}
+
 // ── Helpers ──
 
 fn save_task_file(task: &Task) -> Result<(), String> {

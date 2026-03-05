@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { open } from "@tauri-apps/plugin-dialog";
 import { useTauri } from "../hooks/useTauri";
 
 interface Props {
@@ -16,6 +17,14 @@ export function AddRepoModal({ onClose, onAdded }: Props) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [detected, setDetected] = useState(false);
+
+  const handleBrowse = async () => {
+    const selected = await open({ directory: true, multiple: false });
+    if (selected) {
+      setPath(selected as string);
+      setDetected(false);
+    }
+  };
 
   const handleDetect = async () => {
     if (!path.trim()) return;
@@ -89,6 +98,9 @@ export function AddRepoModal({ onClose, onAdded }: Props) {
               }}
               placeholder="/home/user/my-project"
             />
+            <button className="btn btn-secondary" onClick={handleBrowse}>
+              Browse
+            </button>
             <button className="btn btn-secondary" onClick={handleDetect}>
               Detect
             </button>

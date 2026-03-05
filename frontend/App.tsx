@@ -3,6 +3,7 @@ import { HomePage } from "./pages/HomePage";
 import { ReposPage } from "./pages/ReposPage";
 import { TaskListPage } from "./pages/TaskListPage";
 import { TaskDetailPage } from "./pages/TaskDetailPage";
+import { SettingsPage } from "./pages/SettingsPage";
 
 function App() {
   return (
@@ -43,6 +44,14 @@ function App() {
             >
               Repositories
             </NavLink>
+            <NavLink
+              to="/settings"
+              className={({ isActive }) =>
+                `sidebar-nav-item ${isActive ? "active" : ""}`
+              }
+            >
+              Preferences
+            </NavLink>
           </div>
         </nav>
 
@@ -52,6 +61,7 @@ function App() {
             <Route path="/repos" element={<ReposPage />} />
             <Route path="/tasks" element={<TaskListPage />} />
             <Route path="/task/:taskId" element={<TaskDetailPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
           </Routes>
         </main>
       </div>
