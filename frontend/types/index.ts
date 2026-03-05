@@ -85,4 +85,5 @@ export interface RepoInfo {
 
 export interface Preferences {
   shell: string;
+  verification_agent_ids: string[];
 }

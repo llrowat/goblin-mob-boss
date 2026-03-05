@@ -128,18 +128,31 @@ These commands must pass before the task is done:
 }
 
 /// Verification prompt — used after all tasks are merged to the feature branch.
-pub fn verification_prompt(feature_name: &str, validators: &[String]) -> String {
+pub fn verification_prompt(
+    feature_name: &str,
+    validators: &[String],
+    agent_context: &str,
+) -> String {
     let validators_text = validators
         .iter()
         .map(|v| format!("- `{}`", v))
         .collect::<Vec<_>>()
         .join("\n");
 
+    let agent_section = if agent_context.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "\n## Verification Agents\n\nYou are working with these verification agent roles:\n\n{}\n\nApply each agent's expertise when reviewing and fixing the code.\n",
+            agent_context
+        )
+    };
+
     format!(
         r#"# Final Verification: {feature_name}
 
 All tasks for this feature have been merged. Your job is to verify everything works together.
-
+{agent_section}
 ## Steps
 
 1. Run all validators and fix any failures:
@@ -154,6 +167,7 @@ All tasks for this feature have been merged. Your job is to verify everything wo
 If everything passes, you're done. If there are issues, fix them and re-run validators until everything is green.
 "#,
         feature_name = feature_name,
+        agent_section = agent_section,
         validators_text = validators_text,
     )
 }

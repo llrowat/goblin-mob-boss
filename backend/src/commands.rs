@@ -781,8 +781,20 @@ pub fn start_feature_verification(
             .map_err(|e| e.to_string())?;
     }
 
+    // Build verification agent context
+    let prefs = state.preferences.lock().unwrap().clone();
+    let agents = state.agents.lock().unwrap();
+    let agent_context: String = prefs
+        .verification_agent_ids
+        .iter()
+        .filter_map(|id| agents.get(id))
+        .map(|a| format!("- **{}** ({}): {}", a.name, a.role, a.system_prompt))
+        .collect::<Vec<_>>()
+        .join("\n");
+    drop(agents);
+
     // Write verification prompt
-    let prompt = prompts::verification_prompt(&feature.name, &repo.validators);
+    let prompt = prompts::verification_prompt(&feature.name, &repo.validators, &agent_context);
     let gmb_dir = Path::new(&worktree_path).join(".gmb").join("prompts");
     std::fs::create_dir_all(&gmb_dir).map_err(|e| format!("Failed to create dir: {}", e))?;
     std::fs::write(gmb_dir.join("verify.md"), &prompt)
@@ -906,9 +918,14 @@ pub fn get_preferences(state: State<AppState>) -> Preferences {
 }
 
 #[tauri::command]
-pub fn set_preferences(state: State<AppState>, shell: String) -> Preferences {
+pub fn set_preferences(
+    state: State<AppState>,
+    shell: String,
+    verification_agent_ids: Vec<String>,
+) -> Preferences {
     let mut prefs = state.preferences.lock().unwrap();
     prefs.shell = shell;
+    prefs.verification_agent_ids = verification_agent_ids;
     let updated = prefs.clone();
     drop(prefs);
     state.save_preferences();

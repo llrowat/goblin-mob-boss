@@ -206,6 +206,8 @@ pub struct VerifyResult {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Preferences {
     pub shell: String,
+    #[serde(default)]
+    pub verification_agent_ids: Vec<String>,
 }
 
 impl Default for Preferences {
@@ -215,6 +217,12 @@ impl Default for Preferences {
         } else {
             "bash".to_string()
         };
-        Self { shell }
+        Self {
+            shell,
+            verification_agent_ids: vec![
+                "builtin-test-writer".to_string(),
+                "builtin-reviewer".to_string(),
+            ],
+        }
     }
 }

@@ -145,7 +145,10 @@ export function useTauri() {
     // Preferences
     getPreferences: () => invoke<Preferences>("get_preferences"),
 
-    setPreferences: (shell: string) =>
-      invoke<Preferences>("set_preferences", { shell }),
+    setPreferences: (shell: string, verificationAgentIds: string[]) =>
+      invoke<Preferences>("set_preferences", {
+        shell,
+        verificationAgentIds,
+      }),
   };
 }
