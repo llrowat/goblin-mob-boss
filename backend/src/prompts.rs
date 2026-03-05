@@ -1,9 +1,42 @@
 /// System prompt for ideation — appended to Claude Code via --append-system-prompt-file.
 /// The user gets an interactive conversation to plan and create tasks.
-pub fn ideation_system_prompt(tasks_dir: &str, repo_map: &str, available_agents: &str) -> String {
+pub fn ideation_system_prompt(
+    tasks_dir: &str,
+    repo_map: &str,
+    available_agents: &str,
+    repo_names: &[&str],
+) -> String {
+    let multi_repo = repo_names.len() > 1;
+    let repo_field_doc = if multi_repo {
+        format!(
+            r#"  "repo": "target-repo-name",  // One of: {}
+"#,
+            repo_names.join(", ")
+        )
+    } else {
+        String::new()
+    };
+
+    let repo_rule = if multi_repo {
+        "- Use `repo` to specify which repository the task targets (required for multi-repo features)\n"
+            .to_string()
+    } else {
+        String::new()
+    };
+
+    let multi_repo_header = if multi_repo {
+        format!(
+            "\n**This feature spans {} repositories:** {}\n",
+            repo_names.len(),
+            repo_names.join(", ")
+        )
+    } else {
+        String::new()
+    };
+
     format!(
         r#"You are helping the user plan a development feature and break it into parallelizable tasks.
-
+{multi_repo_header}
 ## Repository Overview
 
 {repo_map}
@@ -36,8 +69,8 @@ Name files `01.json`, `02.json`, etc:
   "acceptance_criteria": ["Specific, verifiable criterion"],
   "dependencies": [],
   "agent": "agent-name-or-id",
-  "subagents": []
-}}}}
+  "subagents": [],
+{repo_field_doc}}}}}
 ```
 
 Rules:
@@ -46,12 +79,15 @@ Rules:
 - Assign the best-fit agent from the available list
 - Use `subagents` for helpers (e.g. a test writer alongside a developer)
 - Include enough detail that an agent can work without asking questions
-
+{repo_rule}
 **Do NOT create task files until the user confirms the plan.**
 "#,
         tasks_dir = tasks_dir,
         repo_map = repo_map,
         available_agents = available_agents,
+        multi_repo_header = multi_repo_header,
+        repo_field_doc = repo_field_doc,
+        repo_rule = repo_rule,
     )
 }
 
@@ -170,4 +206,27 @@ If everything passes, you're done. If there are issues, fix them and re-run vali
         agent_section = agent_section,
         validators_text = validators_text,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ideation_prompt_single_repo_has_no_repo_field() {
+        let prompt = ideation_system_prompt("/tasks", "repo map", "agents", &["my-app"]);
+        assert!(!prompt.contains("\"repo\""));
+        assert!(!prompt.contains("multi-repo"));
+        assert!(prompt.contains("repo map"));
+    }
+
+    #[test]
+    fn ideation_prompt_multi_repo_includes_repo_field() {
+        let prompt =
+            ideation_system_prompt("/tasks", "repo map", "agents", &["frontend", "backend"]);
+        assert!(prompt.contains("\"repo\""));
+        assert!(prompt.contains("frontend, backend"));
+        assert!(prompt.contains("2 repositories"));
+        assert!(prompt.contains("multi-repo"));
+    }
 }

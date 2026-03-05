@@ -10,7 +10,7 @@ export function TaskBoardPage() {
   const navigate = useNavigate();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [feature, setFeature] = useState<Feature | null>(null);
-  const [repo, setRepo] = useState<Repository | null>(null);
+  const [reposMap, setReposMap] = useState<Record<string, Repository>>({});
   const [agents, setAgents] = useState<Record<string, Agent>>({});
   const [expandedTask, setExpandedTask] = useState<string | null>(null);
   const [terminalCmds, setTerminalCmds] = useState<Record<string, string>>({});
@@ -21,14 +21,17 @@ export function TaskBoardPage() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [prCommand, setPrCommand] = useState("");
 
-  // Load feature and repo
+  const isMultiRepo = feature ? feature.repos.length > 1 : false;
+
+  // Load feature and repos
   useEffect(() => {
     if (!featureId) return;
     tauri.getFeature(featureId).then((f) => {
       setFeature(f);
       tauri.listRepositories().then((repos) => {
-        const found = repos.find((r) => r.id === f.repo_id);
-        if (found) setRepo(found);
+        const map: Record<string, Repository> = {};
+        repos.forEach((r) => (map[r.id] = r));
+        setReposMap(map);
       });
     });
     tauri.listAgents().then((list) => {
@@ -62,7 +65,13 @@ export function TaskBoardPage() {
   };
 
   const runningCount = tasks.filter((t) => t.status === "running").length;
-  const maxParallel = repo?.max_parallel_agents ?? 4;
+  // Sum max parallel across all feature repos
+  const maxParallel = feature
+    ? feature.repos.reduce(
+        (sum, fr) => sum + (reposMap[fr.repo_id]?.max_parallel_agents ?? 4),
+        0,
+      ) || 4
+    : 4;
 
   const handleStartTask = async (taskId: string) => {
     setError("");
@@ -231,6 +240,17 @@ export function TaskBoardPage() {
           {mergedCount + completedCount}/{tasks.length} done
           {runningCount > 0 && ` \u00B7 ${runningCount} running`}
           {pendingCount > 0 && ` \u00B7 ${pendingCount} pending`}
+          {isMultiRepo && (
+            <span
+              style={{
+                marginLeft: 12,
+                fontSize: 12,
+                color: "var(--text-secondary)",
+              }}
+            >
+              {feature.repos.length} repos
+            </span>
+          )}
           <span
             style={{
               marginLeft: 12,
@@ -318,6 +338,14 @@ export function TaskBoardPage() {
                 {String(index + 1).padStart(2, "0")}
               </div>
               <div className="task-card-title">{task.title}</div>
+              {isMultiRepo && reposMap[task.repo_id] && (
+                <span
+                  className="agent-tag agent-tag-sub"
+                  title={reposMap[task.repo_id].path}
+                >
+                  {reposMap[task.repo_id].name}
+                </span>
+              )}
               {agents[task.agent_id] && (
                 <span className="agent-tag">
                   {agents[task.agent_id].name}

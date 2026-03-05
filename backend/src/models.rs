@@ -110,12 +110,26 @@ pub enum FeatureStatus {
     Ready,
 }
 
+/// Per-repo branch info for a multi-repo feature.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FeatureRepo {
+    pub repo_id: String,
+    pub branch: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Feature {
     pub id: String,
+    /// Primary repo (first in the list). Kept for backwards compatibility.
+    #[serde(default)]
     pub repo_id: String,
+    /// All repos this feature spans, with per-repo branch info.
+    #[serde(default)]
+    pub repos: Vec<FeatureRepo>,
     pub name: String,
     pub description: String,
+    /// Primary branch name (matches first repo). Kept for backwards compat.
+    #[serde(default)]
     pub branch: String,
     pub status: FeatureStatus,
     pub created_at: DateTime<Utc>,
@@ -123,17 +137,42 @@ pub struct Feature {
 }
 
 impl Feature {
-    pub fn new(repo_id: String, name: String, description: String, branch: String) -> Self {
+    pub fn new(repos: Vec<FeatureRepo>, name: String, description: String) -> Self {
         let now = Utc::now();
+        let repo_id = repos.first().map(|r| r.repo_id.clone()).unwrap_or_default();
+        let branch = repos.first().map(|r| r.branch.clone()).unwrap_or_default();
         Self {
             id: uuid::Uuid::new_v4().to_string(),
             repo_id,
+            repos,
             name,
             description,
             branch,
             status: FeatureStatus::Ideation,
             created_at: now,
             updated_at: now,
+        }
+    }
+
+    /// Get the branch for a specific repo, or None.
+    pub fn branch_for_repo(&self, repo_id: &str) -> Option<&str> {
+        self.repos
+            .iter()
+            .find(|r| r.repo_id == repo_id)
+            .map(|r| r.branch.as_str())
+    }
+
+    /// Get all repo IDs this feature spans.
+    pub fn repo_ids(&self) -> Vec<&str> {
+        if self.repos.is_empty() {
+            // Backwards compat: old features only have repo_id
+            if self.repo_id.is_empty() {
+                vec![]
+            } else {
+                vec![self.repo_id.as_str()]
+            }
+        } else {
+            self.repos.iter().map(|r| r.repo_id.as_str()).collect()
         }
     }
 }
@@ -180,6 +219,9 @@ pub struct TaskSpec {
     pub agent: String,
     #[serde(default)]
     pub subagents: Vec<String>,
+    /// Target repo name or ID (for multi-repo features). Empty = first/primary repo.
+    #[serde(default)]
+    pub repo: String,
 }
 
 // ── Validator Results ──
@@ -224,5 +266,113 @@ impl Default for Preferences {
                 "builtin-reviewer".to_string(),
             ],
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn feature_new_single_repo() {
+        let repos = vec![FeatureRepo {
+            repo_id: "repo-1".to_string(),
+            branch: "feature/auth-ab12".to_string(),
+        }];
+        let feature = Feature::new(repos, "Auth".to_string(), "Add auth".to_string());
+
+        assert_eq!(feature.repo_id, "repo-1");
+        assert_eq!(feature.branch, "feature/auth-ab12");
+        assert_eq!(feature.repos.len(), 1);
+        assert_eq!(feature.status, FeatureStatus::Ideation);
+        assert_eq!(feature.repo_ids(), vec!["repo-1"]);
+        assert_eq!(feature.branch_for_repo("repo-1"), Some("feature/auth-ab12"));
+    }
+
+    #[test]
+    fn feature_new_multi_repo() {
+        let repos = vec![
+            FeatureRepo {
+                repo_id: "repo-1".to_string(),
+                branch: "feature/auth-ab12".to_string(),
+            },
+            FeatureRepo {
+                repo_id: "repo-2".to_string(),
+                branch: "feature/auth-ab12".to_string(),
+            },
+        ];
+        let feature = Feature::new(repos, "Auth".to_string(), "Add auth".to_string());
+
+        assert_eq!(feature.repo_id, "repo-1"); // primary = first
+        assert_eq!(feature.repos.len(), 2);
+        assert_eq!(feature.repo_ids(), vec!["repo-1", "repo-2"]);
+        assert_eq!(feature.branch_for_repo("repo-2"), Some("feature/auth-ab12"));
+        assert_eq!(feature.branch_for_repo("repo-3"), None);
+    }
+
+    #[test]
+    fn feature_backwards_compat_deserialize() {
+        // Old features only had repo_id and branch, no repos vec
+        let json = r#"{
+            "id": "feat-1",
+            "repo_id": "repo-old",
+            "name": "Legacy",
+            "description": "Old feature",
+            "branch": "feature/legacy-1234",
+            "status": "in_progress",
+            "created_at": "2025-01-01T00:00:00Z",
+            "updated_at": "2025-01-01T00:00:00Z"
+        }"#;
+        let feature: Feature = serde_json::from_str(json).unwrap();
+
+        assert_eq!(feature.repo_id, "repo-old");
+        assert!(feature.repos.is_empty());
+        // repo_ids() falls back to repo_id for backwards compat
+        assert_eq!(feature.repo_ids(), vec!["repo-old"]);
+    }
+
+    #[test]
+    fn taskspec_with_repo_field() {
+        let json = r#"{
+            "title": "Add API endpoint",
+            "description": "Backend work",
+            "acceptance_criteria": ["tests pass"],
+            "repo": "backend-service"
+        }"#;
+        let spec: TaskSpec = serde_json::from_str(json).unwrap();
+        assert_eq!(spec.repo, "backend-service");
+        assert_eq!(spec.agent, ""); // default
+    }
+
+    #[test]
+    fn taskspec_without_repo_field() {
+        let json = r#"{
+            "title": "Add button",
+            "description": "Frontend work",
+            "acceptance_criteria": []
+        }"#;
+        let spec: TaskSpec = serde_json::from_str(json).unwrap();
+        assert_eq!(spec.repo, ""); // default empty
+    }
+
+    #[test]
+    fn feature_serializes_with_repos() {
+        let repos = vec![
+            FeatureRepo {
+                repo_id: "r1".to_string(),
+                branch: "feature/x-1234".to_string(),
+            },
+            FeatureRepo {
+                repo_id: "r2".to_string(),
+                branch: "feature/x-1234".to_string(),
+            },
+        ];
+        let feature = Feature::new(repos, "X".to_string(), "desc".to_string());
+        let json = serde_json::to_string(&feature).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        assert!(parsed["repos"].is_array());
+        assert_eq!(parsed["repos"].as_array().unwrap().len(), 2);
+        assert_eq!(parsed["repo_id"], "r1");
     }
 }

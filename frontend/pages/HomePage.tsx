@@ -7,34 +7,47 @@ export function HomePage() {
   const tauri = useTauri();
   const navigate = useNavigate();
   const [repos, setRepos] = useState<Repository[]>([]);
-  const [selectedRepoId, setSelectedRepoId] = useState("");
+  const [selectedRepoIds, setSelectedRepoIds] = useState<string[]>([]);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [features, setFeatures] = useState<Feature[]>([]);
+  const [filterRepoId, setFilterRepoId] = useState<string>("");
 
   useEffect(() => {
     tauri.listRepositories().then((r) => {
       setRepos(r);
-      if (r.length > 0 && !selectedRepoId) {
-        setSelectedRepoId(r[0].id);
+      if (r.length > 0 && selectedRepoIds.length === 0) {
+        setSelectedRepoIds([r[0].id]);
       }
     });
   }, []);
 
+  // Load features — show all or filter by repo
   useEffect(() => {
-    if (!selectedRepoId) return;
-    tauri.listFeatures(selectedRepoId).then(setFeatures).catch(() => {});
-  }, [selectedRepoId]);
+    const loadFeatures = filterRepoId
+      ? tauri.listFeatures(filterRepoId)
+      : tauri.listAllFeatures();
+    loadFeatures.then(setFeatures).catch(() => {});
+  }, [filterRepoId]);
+
+  const toggleRepo = (repoId: string) => {
+    setSelectedRepoIds((prev) =>
+      prev.includes(repoId)
+        ? prev.filter((id) => id !== repoId)
+        : [...prev, repoId],
+    );
+  };
 
   const handleStartFeature = async () => {
-    if (!selectedRepoId || !name.trim() || !description.trim()) return;
+    if (selectedRepoIds.length === 0 || !name.trim() || !description.trim())
+      return;
     setLoading(true);
     setError("");
     try {
       const feature = await tauri.startFeature(
-        selectedRepoId,
+        selectedRepoIds,
         name.trim(),
         description.trim(),
       );
@@ -45,6 +58,9 @@ export function HomePage() {
       setLoading(false);
     }
   };
+
+  const repoNameById = (id: string) =>
+    repos.find((r) => r.id === id)?.name ?? id;
 
   if (repos.length === 0) {
     return (
@@ -82,18 +98,43 @@ export function HomePage() {
 
       <div className="panel">
         <div className="form-group">
-          <label className="form-label">Repository</label>
-          <select
-            className="form-select"
-            value={selectedRepoId}
-            onChange={(e) => setSelectedRepoId(e.target.value)}
+          <label className="form-label">
+            Repositories
+            {selectedRepoIds.length > 1 && (
+              <span
+                style={{
+                  fontSize: 12,
+                  color: "var(--text-secondary)",
+                  marginLeft: 8,
+                }}
+              >
+                ({selectedRepoIds.length} selected — multi-repo feature)
+              </span>
+            )}
+          </label>
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 8,
+              marginBottom: 4,
+            }}
           >
             {repos.map((r) => (
-              <option key={r.id} value={r.id}>
+              <button
+                key={r.id}
+                className={`btn btn-sm ${selectedRepoIds.includes(r.id) ? "btn-primary" : "btn-secondary"}`}
+                onClick={() => toggleRepo(r.id)}
+                type="button"
+              >
                 {r.name}
-              </option>
+              </button>
             ))}
-          </select>
+          </div>
+          <div className="form-help">
+            Select one or more repositories. Multi-repo features create branches
+            in all selected repos.
+          </div>
         </div>
 
         <div className="form-group">
@@ -129,20 +170,60 @@ export function HomePage() {
         <button
           className="btn btn-primary btn-lg"
           onClick={handleStartFeature}
-          disabled={loading || !name.trim() || !description.trim()}
+          disabled={
+            loading ||
+            selectedRepoIds.length === 0 ||
+            !name.trim() ||
+            !description.trim()
+          }
           style={{ width: "100%" }}
         >
-          {loading ? "Creating feature branch..." : "Start Feature"}
+          {loading
+            ? "Creating feature branch..."
+            : selectedRepoIds.length > 1
+              ? `Start Multi-Repo Feature (${selectedRepoIds.length} repos)`
+              : "Start Feature"}
         </button>
       </div>
 
       {/* Active features */}
-      {features.length > 0 && (
-        <div style={{ marginTop: 24 }}>
-          <div className="sidebar-section-label" style={{ padding: "0 0 8px" }}>
-            Active Features
-          </div>
-          {features.map((f) => (
+      <div style={{ marginTop: 24 }}>
+        <div
+          className="sidebar-section-label"
+          style={{
+            padding: "0 0 8px",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+          }}
+        >
+          <span>Active Features</span>
+          <select
+            className="form-select"
+            style={{ width: "auto", fontSize: 12, padding: "2px 8px" }}
+            value={filterRepoId}
+            onChange={(e) => setFilterRepoId(e.target.value)}
+          >
+            <option value="">All Repos</option>
+            {repos.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        {features.length === 0 ? (
+          <p
+            style={{
+              fontSize: 13,
+              color: "var(--text-secondary)",
+              fontStyle: "italic",
+            }}
+          >
+            No active features.
+          </p>
+        ) : (
+          features.map((f) => (
             <div
               key={f.id}
               className="panel"
@@ -158,7 +239,22 @@ export function HomePage() {
               <div className="panel-header" style={{ marginBottom: 0 }}>
                 <div>
                   <div className="panel-title">{f.name}</div>
-                  <div className="form-help">{f.description}</div>
+                  <div className="form-help">
+                    {f.description}
+                    {f.repos && f.repos.length > 1 && (
+                      <span
+                        style={{
+                          marginLeft: 8,
+                          fontSize: 11,
+                          color: "var(--muted)",
+                        }}
+                      >
+                        [{f.repos
+                          .map((fr) => repoNameById(fr.repo_id))
+                          .join(", ")}]
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <span
                   className={`status-badge ${f.status === "in_progress" ? "running" : f.status}`}
@@ -168,9 +264,9 @@ export function HomePage() {
                 </span>
               </div>
             </div>
-          ))}
-        </div>
-      )}
+          ))
+        )}
+      </div>
     </div>
   );
 }

@@ -71,11 +71,14 @@ export function useTauri() {
     removeAgent: (id: string) => invoke<void>("remove_agent", { id }),
 
     // Features
-    startFeature: (repoId: string, name: string, description: string) =>
-      invoke<Feature>("start_feature", { repoId, name, description }),
+    startFeature: (repoIds: string[], name: string, description: string) =>
+      invoke<Feature>("start_feature", { repoIds, name, description }),
 
-    listFeatures: (repoId: string) =>
-      invoke<Feature[]>("list_features", { repoId }),
+    listFeatures: (repoId?: string) =>
+      invoke<Feature[]>("list_features", { repoId: repoId ?? null }),
+
+    listAllFeatures: () =>
+      invoke<Feature[]>("list_features", { repoId: null }),
 
     getFeature: (featureId: string) =>
       invoke<Feature>("get_feature", { featureId }),
@@ -127,11 +130,17 @@ export function useTauri() {
     startFeatureVerification: (featureId: string) =>
       invoke<Feature>("start_feature_verification", { featureId }),
 
-    getVerificationTerminalCommand: (featureId: string) =>
-      invoke<string>("get_verification_terminal_command", { featureId }),
+    getVerificationTerminalCommand: (featureId: string, repoId?: string) =>
+      invoke<string>("get_verification_terminal_command", {
+        featureId,
+        repoId: repoId ?? null,
+      }),
 
-    launchVerification: (featureId: string) =>
-      invoke<void>("launch_verification", { featureId }),
+    launchVerification: (featureId: string, repoId?: string) =>
+      invoke<void>("launch_verification", {
+        featureId,
+        repoId: repoId ?? null,
+      }),
 
     markFeatureReady: (featureId: string) =>
       invoke<Feature>("mark_feature_ready", { featureId }),
