@@ -543,13 +543,13 @@ Review code for issues."#;
 
     #[test]
     fn agent_file_parse_with_color() {
-        let content = r#"---
+        let content = r##"---
 name: "Frontend Developer"
 description: "React specialist"
 color: "#5b8abd"
 ---
 
-You are a frontend specialist."#;
+You are a frontend specialist."##;
 
         let agent = AgentFile::parse("frontend-dev.md", content).unwrap();
         assert_eq!(agent.color, "#5b8abd");
