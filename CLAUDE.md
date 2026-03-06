@@ -11,8 +11,8 @@ goblin-mob-boss/
 │   │   ├── lib.rs              # App entry, state management, plugin setup
 │   │   ├── main.rs             # Binary entry point
 │   │   ├── commands.rs         # Tauri IPC command handlers (repos, agents, features, ideation, launch, validation, PR)
-│   │   ├── models.rs           # Data models (AgentFile, Feature, TaskSpec, Repository, Preferences, ExecutionMode)
-│   │   ├── store.rs            # JSON file-based persistence (repos, features, agents, preferences)
+│   │   ├── models.rs           # Data models (AgentFile, Feature, TaskSpec, Repository, Preferences, ExecutionMode, SystemMap)
+│   │   ├── store.rs            # JSON file-based persistence (repos, features, agents, preferences, system maps)
 │   │   ├── launch.rs           # Launch command builder (Teams/Subagents mode)
 │   │   ├── git.rs              # Git operations (branches, merge, push, diff)
 │   │   ├── prompts.rs          # Ideation prompt templates with execution mode heuristics
@@ -29,7 +29,8 @@ goblin-mob-boss/
 │   │   ├── FeatureStatusPage   # Execution monitor (diff summary, validators, status transitions)
 │   │   ├── AgentsPage          # Agent CRUD (form-based editor for .claude/agents/*.md files)
 │   │   ├── ReposPage           # Repository management (validators, base branch, PR command)
-│   │   └── SettingsPage        # App preferences (shell selection)
+│   │   ├── SettingsPage        # App preferences (shell selection)
+│   │   └── SystemMapPage       # Interactive system topology map (goblin treasure map style)
 │   ├── hooks/          # React hooks
 │   │   └── useTauri            # Tauri IPC wrapper
 │   ├── types/          # TypeScript type definitions

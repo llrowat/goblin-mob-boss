@@ -183,6 +183,76 @@ export interface GuidanceNote {
   created_at: string;
 }
 
+// ── System Map ──
+
+export type ServiceType =
+  | "backend"
+  | "frontend"
+  | "worker"
+  | "gateway"
+  | "database"
+  | "queue"
+  | "cache"
+  | "external";
+
+export type ConnectionType =
+  | "rest"
+  | "grpc"
+  | "graphql"
+  | "websocket"
+  | "event"
+  | "shared_db"
+  | "file_system"
+  | "ipc";
+
+export interface ServiceEndpoint {
+  type: ConnectionType;
+  path: string;
+  description: string;
+}
+
+export interface ServiceDependency {
+  type: ConnectionType;
+  target: string;
+  description: string;
+  sync: boolean;
+}
+
+export interface MapService {
+  id: string;
+  name: string;
+  service_type: ServiceType;
+  repo_id: string | null;
+  runtime: string;
+  framework: string;
+  description: string;
+  exposes: ServiceEndpoint[];
+  consumes: ServiceDependency[];
+  owns_data: string[];
+  position: [number, number];
+  color: string;
+}
+
+export interface MapConnection {
+  id: string;
+  from_service: string;
+  to_service: string;
+  connection_type: ConnectionType;
+  sync: boolean;
+  label: string;
+  description: string;
+}
+
+export interface SystemMap {
+  id: string;
+  name: string;
+  description: string;
+  services: MapService[];
+  connections: MapConnection[];
+  created_at: string;
+  updated_at: string;
+}
+
 // ── Heuristics ──
 
 export interface TaskNode {

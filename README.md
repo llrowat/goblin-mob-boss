@@ -38,6 +38,14 @@ A desktop app for agent-based AI development workflows. Configure agents, plan f
 - **Mode assessment** — Evaluate whether the chosen execution mode (Teams vs Subagents) was appropriate based on task independence and file overlap
 - **Unplanned change detection** — Identify files modified that weren't part of any planned task
 
+### System Map
+- **Service topology** — Map your services, their types (backend, frontend, worker, gateway, database, queue, cache, external), and how they connect
+- **Connection mapping** — Define connections between services with type (REST, gRPC, GraphQL, WebSocket, event, shared DB, file system, IPC), sync/async mode, and labels
+- **Goblin treasure map UI** — Interactive SVG visualization with a parchment-textured, treasure-map aesthetic. Services are "lairs" with type-specific icons, connections are "routes" with distinct line styles per connection type. Includes compass rose, vignette, and map legend
+- **Drag-and-drop layout** — Reposition service nodes on the map by dragging; positions are persisted automatically
+- **Service detail panel** — Click a service to see its connections (incoming/outgoing), owned data ("treasure hoard"), runtime, framework, and description
+- **Multiple maps** — Create and switch between multiple system maps for different environments or subsystems
+
 ### Intelligent Mode Selection
 - **Task dependency graph** — Visual representation of task dependencies with parallel execution lanes, grouped by depth level
 - **Heuristic analysis** — Automatic recommendation based on: task count, parallelism ratio, agent diversity, and critical path length
@@ -70,7 +78,7 @@ goblin-mob-boss/
 │   │   ├── lib.rs              # App entry, state management, plugin setup
 │   │   ├── main.rs             # Binary entry point
 │   │   ├── commands.rs         # Tauri IPC command handlers
-│   │   ├── models.rs           # Data models (Agent, Feature, TaskSpec, Repository, Preferences)
+│   │   ├── models.rs           # Data models (Agent, Feature, TaskSpec, Repository, Preferences, SystemMap)
 │   │   ├── store.rs            # JSON file-based persistence
 │   │   ├── launch.rs           # Launch command builder (Teams/Subagents mode)
 │   │   ├── git.rs              # Git operations (branches, merge, push, diff)
@@ -84,7 +92,7 @@ goblin-mob-boss/
 │   └── tauri.conf.json
 ├── frontend/           # React (TypeScript) frontend
 │   ├── components/     # AddRepoModal, StatusBadge, Terminal
-│   ├── pages/          # HomePage, IdeationPage, LaunchConfigPage, FeatureStatusPage, GuidePage, AgentsPage, ReposPage, SettingsPage
+│   ├── pages/          # HomePage, IdeationPage, LaunchConfigPage, FeatureStatusPage, GuidePage, AgentsPage, ReposPage, SettingsPage, SystemMapPage
 │   ├── hooks/          # useTauri (IPC wrapper)
 │   ├── types/          # TypeScript type definitions
 │   ├── test/           # Vitest setup
