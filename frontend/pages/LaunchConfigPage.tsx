@@ -44,14 +44,28 @@ export function LaunchConfigPage() {
       }
 
       tauri.listRepositories().then((repos) => {
-        const r = repos.find((repo) => repo.id === f.repo_id);
-        if (r) {
-          tauri.listAgents(r.path).then((agentList) => {
-            setAgents(agentList);
-            if (f.selected_agents.length === 0) {
-              setSelectedAgents(agentList.map((a) => a.filename));
-            }
-          });
+        const repoIds = f.repo_ids?.length > 0 ? f.repo_ids : f.repo_id ? [f.repo_id] : [];
+        const matchedRepos = repos.filter((repo) => repoIds.includes(repo.id));
+        if (matchedRepos.length > 0) {
+          // Load agents from all repos, deduplicating by filename
+          Promise.all(matchedRepos.map((r) => tauri.listAgents(r.path))).then(
+            (agentLists) => {
+              const seen = new Set<string>();
+              const deduped: AgentFile[] = [];
+              for (const list of agentLists) {
+                for (const agent of list) {
+                  if (!seen.has(agent.filename)) {
+                    seen.add(agent.filename);
+                    deduped.push(agent);
+                  }
+                }
+              }
+              setAgents(deduped);
+              if (f.selected_agents.length === 0) {
+                setSelectedAgents(deduped.map((a) => a.filename));
+              }
+            },
+          );
         }
       });
 

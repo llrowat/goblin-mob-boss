@@ -193,7 +193,12 @@ pub enum FeatureStatus {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Feature {
     pub id: String,
+    /// Deprecated: use `repo_ids` instead. Kept for backward compat with old features.json.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub repo_id: String,
+    /// List of repository IDs this feature spans. Cross-repo features have multiple entries.
+    #[serde(default)]
+    pub repo_ids: Vec<String>,
     pub name: String,
     pub description: String,
     pub branch: String,
@@ -213,11 +218,12 @@ pub struct Feature {
 }
 
 impl Feature {
-    pub fn new(repo_id: String, name: String, description: String, branch: String) -> Self {
+    pub fn new(repo_ids: Vec<String>, name: String, description: String, branch: String) -> Self {
         let now = Utc::now();
         Self {
             id: uuid::Uuid::new_v4().to_string(),
-            repo_id,
+            repo_id: String::new(),
+            repo_ids,
             name,
             description,
             branch,
@@ -229,6 +235,28 @@ impl Feature {
             pty_session_id: None,
             created_at: now,
             updated_at: now,
+        }
+    }
+
+    /// Get the effective list of repo IDs, handling legacy single-repo features.
+    pub fn effective_repo_ids(&self) -> Vec<String> {
+        if !self.repo_ids.is_empty() {
+            self.repo_ids.clone()
+        } else if !self.repo_id.is_empty() {
+            vec![self.repo_id.clone()]
+        } else {
+            vec![]
+        }
+    }
+
+    /// Primary repo ID (first in the list) — used for .gmb feature directory storage and ideation.
+    pub fn primary_repo_id(&self) -> Option<&str> {
+        if !self.repo_ids.is_empty() {
+            Some(&self.repo_ids[0])
+        } else if !self.repo_id.is_empty() {
+            Some(&self.repo_id)
+        } else {
+            None
         }
     }
 }
@@ -320,12 +348,14 @@ mod tests {
     #[test]
     fn feature_new_creates_with_ideation_status() {
         let feature = Feature::new(
-            "repo-1".to_string(),
+            vec!["repo-1".to_string()],
             "Auth".to_string(),
             "Add auth".to_string(),
             "feature/auth-ab12".to_string(),
         );
-        assert_eq!(feature.repo_id, "repo-1");
+        assert_eq!(feature.repo_ids, vec!["repo-1"]);
+        assert_eq!(feature.effective_repo_ids(), vec!["repo-1"]);
+        assert_eq!(feature.primary_repo_id(), Some("repo-1"));
         assert_eq!(feature.branch, "feature/auth-ab12");
         assert_eq!(feature.status, FeatureStatus::Ideation);
         assert!(feature.execution_mode.is_none());
@@ -334,9 +364,22 @@ mod tests {
     }
 
     #[test]
+    fn feature_new_multi_repo() {
+        let feature = Feature::new(
+            vec!["repo-1".to_string(), "repo-2".to_string()],
+            "Cross-repo".to_string(),
+            "Spans two repos".to_string(),
+            "feature/cross-ab12".to_string(),
+        );
+        assert_eq!(feature.repo_ids, vec!["repo-1", "repo-2"]);
+        assert_eq!(feature.effective_repo_ids(), vec!["repo-1", "repo-2"]);
+        assert_eq!(feature.primary_repo_id(), Some("repo-1"));
+    }
+
+    #[test]
     fn feature_serializes_with_execution_mode() {
         let mut feature = Feature::new(
-            "r1".to_string(),
+            vec!["r1".to_string()],
             "X".to_string(),
             "desc".to_string(),
             "feature/x-1234".to_string(),
@@ -357,10 +400,11 @@ mod tests {
         assert_eq!(parsed.execution_mode, Some(ExecutionMode::Teams));
         assert_eq!(parsed.selected_agents, vec!["frontend-dev.md"]);
         assert_eq!(parsed.task_specs.len(), 1);
+        assert_eq!(parsed.repo_ids, vec!["r1"]);
     }
 
     #[test]
-    fn feature_backwards_compat_deserialize() {
+    fn feature_backwards_compat_deserialize_single_repo_id() {
         let json = r#"{
             "id": "feat-1",
             "repo_id": "repo-old",
@@ -373,9 +417,25 @@ mod tests {
         }"#;
         let feature: Feature = serde_json::from_str(json).unwrap();
         assert_eq!(feature.repo_id, "repo-old");
+        assert!(feature.repo_ids.is_empty());
+        assert_eq!(feature.effective_repo_ids(), vec!["repo-old"]);
+        assert_eq!(feature.primary_repo_id(), Some("repo-old"));
         assert!(feature.execution_mode.is_none());
         assert!(feature.selected_agents.is_empty());
         assert!(feature.task_specs.is_empty());
+    }
+
+    #[test]
+    fn feature_new_does_not_serialize_empty_repo_id() {
+        let feature = Feature::new(
+            vec!["r1".to_string()],
+            "X".to_string(),
+            "desc".to_string(),
+            "feature/x-1234".to_string(),
+        );
+        let json = serde_json::to_string(&feature).unwrap();
+        assert!(!json.contains("\"repo_id\""));
+        assert!(json.contains("\"repo_ids\""));
     }
 
     #[test]

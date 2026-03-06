@@ -7,7 +7,7 @@ export function HomePage() {
   const tauri = useTauri();
   const navigate = useNavigate();
   const [repos, setRepos] = useState<Repository[]>([]);
-  const [selectedRepoId, setSelectedRepoId] = useState<string>("");
+  const [selectedRepoIds, setSelectedRepoIds] = useState<string[]>([]);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [loading, setLoading] = useState(false);
@@ -19,8 +19,8 @@ export function HomePage() {
   useEffect(() => {
     tauri.listRepositories().then((r) => {
       setRepos(r);
-      if (r.length > 0 && !selectedRepoId) {
-        setSelectedRepoId(r[0].id);
+      if (r.length > 0 && selectedRepoIds.length === 0) {
+        setSelectedRepoIds([r[0].id]);
       }
     });
   }, []);
@@ -33,12 +33,12 @@ export function HomePage() {
   }, [filterRepoId]);
 
   const handleStartFeature = async () => {
-    if (!selectedRepoId || !name.trim() || !description.trim()) return;
+    if (selectedRepoIds.length === 0 || !name.trim() || !description.trim()) return;
     setLoading(true);
     setError("");
     try {
       const feature = await tauri.startFeature(
-        selectedRepoId,
+        selectedRepoIds,
         name.trim(),
         description.trim(),
       );
@@ -72,6 +72,18 @@ export function HomePage() {
 
   const repoNameById = (id: string) =>
     repos.find((r) => r.id === id)?.name ?? id;
+
+  const featureRepoIds = (f: Feature) =>
+    f.repo_ids?.length > 0 ? f.repo_ids : f.repo_id ? [f.repo_id] : [];
+
+  const featureRepoNames = (f: Feature) =>
+    featureRepoIds(f).map(repoNameById).join(", ");
+
+  const toggleRepoSelection = (id: string) => {
+    setSelectedRepoIds((prev) =>
+      prev.includes(id) ? prev.filter((r) => r !== id) : [...prev, id],
+    );
+  };
 
   if (repos.length === 0) {
     return (
@@ -176,7 +188,7 @@ export function HomePage() {
                         color: "var(--muted)",
                       }}
                     >
-                      [{repoNameById(f.repo_id)}]
+                      [{featureRepoNames(f)}]
                     </span>
                   </div>
                 </div>
@@ -211,18 +223,39 @@ export function HomePage() {
             {error && <div className="error-banner">{error}</div>}
 
             <div className="form-group">
-              <label className="form-label">Repository</label>
-              <select
-                className="form-select"
-                value={selectedRepoId}
-                onChange={(e) => setSelectedRepoId(e.target.value)}
-              >
+              <label className="form-label">
+                Repositories
+                <span style={{ fontSize: 12, fontWeight: 400, color: "var(--muted)", marginLeft: 8 }}>
+                  ({selectedRepoIds.length} selected)
+                </span>
+              </label>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {repos.map((r) => (
-                  <option key={r.id} value={r.id}>
+                  <label
+                    key={r.id}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      cursor: "pointer",
+                      fontSize: 13,
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedRepoIds.includes(r.id)}
+                      onChange={() => toggleRepoSelection(r.id)}
+                    />
                     {r.name}
-                  </option>
+                    <span style={{ fontSize: 11, color: "var(--muted)" }}>
+                      {r.path}
+                    </span>
+                  </label>
                 ))}
-              </select>
+              </div>
+              <div className="form-help">
+                Select one or more repositories for this feature.
+              </div>
             </div>
 
             <div className="form-group">
@@ -270,7 +303,7 @@ export function HomePage() {
                 onClick={handleStartFeature}
                 disabled={
                   loading ||
-                  !selectedRepoId ||
+                  selectedRepoIds.length === 0 ||
                   !name.trim() ||
                   !description.trim()
                 }

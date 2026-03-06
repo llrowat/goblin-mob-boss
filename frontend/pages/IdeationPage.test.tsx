@@ -19,7 +19,7 @@ vi.mock("../components/Terminal", () => ({
 
 const mockFeature = {
   id: "feat-123",
-  repo_id: "repo-1",
+  repo_ids: ["repo-1"],
   name: "Test Feature",
   description: "A test feature",
   branch: "feature/test-ab12",

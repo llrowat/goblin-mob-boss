@@ -5,19 +5,20 @@ A desktop app for agent-based AI development workflows. Configure agents, plan f
 ## How It Works
 
 1. **Configure Agents** — Agents are defined as `.claude/agents/*.md` files with YAML frontmatter (name, description, tools, model, system prompt, color). Manage them per-repo or globally via the built-in form editor, or apply starter templates from the Guide page.
-2. **Start a Feature** — Describe what you want to build and select a repository. A feature branch is created from the repo's base branch.
+2. **Start a Feature** — Describe what you want to build and select one or more repositories. A feature branch is created from each repo's base branch. Cross-repo features span multiple repositories with a shared branch name.
 3. **Plan with Claude** — An interactive Claude Code session in plan mode helps you refine the approach and break it into task specs, each with assigned agents. The ideation prompt includes repo context (languages, structure, available agents).
 4. **Configure Launch** — GMB analyzes your task dependency graph and recommends an execution mode with confidence scoring:
    - **Agent Teams** — Multiple Claude Code instances in parallel tmux panes, each with its own agent identity. Best for large features with 3+ independent workstreams.
    - **Subagents** — A single lead Claude Code instance that delegates subtasks. Best for focused features with dependent tasks.
    You can accept or override the recommendation, and select which agents participate. The task graph visualization shows parallel execution lanes and the critical path.
 5. **Execute & Monitor** — Copy the generated launch command and run it. GMB provides live execution observability: commit tracking, file change monitoring, and active file lists updated in real-time. Send guidance notes mid-execution to steer the agent.
-6. **Validate & Analyze** — Run repository validators, review diffs, and analyze execution results. The post-execution analysis compares the original plan against actual file changes, assesses whether the chosen execution mode was appropriate, and identifies unplanned modifications.
-7. **PR** — Push the feature branch and create a PR.
+6. **Validate & Analyze** — Run repository validators, review diffs, and analyze execution results across all repos. The post-execution analysis compares the original plan against actual file changes, assesses whether the chosen execution mode was appropriate, and identifies unplanned modifications.
+7. **PR** — Push the feature branch to all repos and create PRs.
 
 ## Features
 
 ### Core Workflow
+- **Cross-repo features** — Features can span multiple repositories. Branches, validators, diffs, and pushes operate across all selected repos. Agents and context from all repos are aggregated during ideation and launch.
 - **Execution mode intelligence** — Ideation analyzes planned tasks and recommends Teams or Subagents mode with confidence scoring and rationale
 - **Agent management** — Agents stored as `.claude/agents/*.md` files with YAML frontmatter; form-based editor with color picker, tools, model, and system prompt configuration
 - **Interactive planning** — Back-and-forth conversation with Claude in plan mode; task specs written to `plan.json` with automatic polling

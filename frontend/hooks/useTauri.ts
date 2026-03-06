@@ -72,8 +72,8 @@ export function useTauri() {
       invoke<void>("delete_agent", { repoPath, filename }),
 
     // Features
-    startFeature: (repoId: string, name: string, description: string) =>
-      invoke<Feature>("start_feature", { repoId, name, description }),
+    startFeature: (repoIds: string[], name: string, description: string) =>
+      invoke<Feature>("start_feature", { repoIds, name, description }),
 
     listFeatures: (repoId?: string) =>
       invoke<Feature[]>("list_features", { repoId: repoId ?? null }),

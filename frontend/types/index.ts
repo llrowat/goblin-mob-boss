@@ -36,7 +36,10 @@ export type FeatureStatus =
 
 export interface Feature {
   id: string;
-  repo_id: string;
+  /** @deprecated Use repo_ids instead. Present for backward compat with old features. */
+  repo_id?: string;
+  /** Repository IDs this feature spans. Cross-repo features have multiple entries. */
+  repo_ids: string[];
   name: string;
   description: string;
   branch: string;

@@ -70,12 +70,12 @@ describe("useTauri", () => {
     });
   });
 
-  it("startFeature passes repoId, name, description", async () => {
+  it("startFeature passes repoIds, name, description", async () => {
     vi.mocked(invoke).mockResolvedValueOnce({});
     const { result } = renderHook(() => useTauri());
-    await result.current.startFeature("r1", "Auth", "Add auth");
+    await result.current.startFeature(["r1", "r2"], "Auth", "Add auth");
     expect(invoke).toHaveBeenCalledWith("start_feature", {
-      repoId: "r1",
+      repoIds: ["r1", "r2"],
       name: "Auth",
       description: "Add auth",
     });

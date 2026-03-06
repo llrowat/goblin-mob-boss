@@ -252,7 +252,7 @@ mod tests {
 
     fn make_feature_with_tasks() -> Feature {
         let mut f = Feature::new(
-            "repo-1".to_string(),
+            vec!["repo-1".to_string()],
             "Test Feature".to_string(),
             "Test description".to_string(),
             "feature/test-1234".to_string(),
@@ -313,7 +313,7 @@ mod tests {
     #[test]
     fn analyze_execution_no_tasks() {
         let feature = Feature::new(
-            "r1".to_string(),
+            vec!["r1".to_string()],
             "Empty".to_string(),
             "desc".to_string(),
             "feature/empty-1234".to_string(),

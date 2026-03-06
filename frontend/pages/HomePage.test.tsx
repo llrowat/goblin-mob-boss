@@ -101,7 +101,7 @@ describe("HomePage", () => {
         return Promise.resolve([
           {
             id: "f1",
-            repo_id: "r1",
+            repo_ids: ["r1"],
             name: "Auth Feature",
             description: "Add authentication",
             branch: "feature/auth",
@@ -138,7 +138,7 @@ describe("HomePage", () => {
         return Promise.resolve([
           {
             id: "f1",
-            repo_id: "r1",
+            repo_ids: ["r1"],
             name: "Auth Feature",
             description: "Add authentication",
             branch: "feature/auth",
@@ -173,6 +173,90 @@ describe("HomePage", () => {
       expect(invoke).toHaveBeenCalledWith("delete_feature", { featureId: "f1" });
       expect(screen.queryByText("Auth Feature")).not.toBeInTheDocument();
     });
+  });
+
+  it("shows multiple repo names for cross-repo features", async () => {
+    const mockRepo2 = {
+      id: "r2",
+      name: "api-service",
+      path: "/api",
+      base_branch: "main",
+      validators: [],
+      pr_command: null,
+      created_at: "2025-01-01T00:00:00Z",
+    };
+
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "list_repositories") return Promise.resolve([mockRepo, mockRepo2]);
+      if (cmd === "list_features") {
+        return Promise.resolve([
+          {
+            id: "f1",
+            repo_ids: ["r1", "r2"],
+            name: "Cross-Repo Feature",
+            description: "Spans both repos",
+            branch: "feature/cross",
+            status: "executing",
+            execution_mode: null,
+            execution_rationale: null,
+            selected_agents: [],
+            task_specs: [],
+            pty_session_id: null,
+            created_at: "2025-01-01T00:00:00Z",
+            updated_at: "2025-01-01T00:00:00Z",
+          },
+        ]);
+      }
+      return Promise.resolve([]);
+    });
+
+    render(
+      <MemoryRouter>
+        <HomePage />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Cross-Repo Feature")).toBeInTheDocument();
+      expect(screen.getByText("[my-app, api-service]")).toBeInTheDocument();
+    });
+  });
+
+  it("shows repo checkboxes in new feature modal", async () => {
+    const mockRepo2 = {
+      id: "r2",
+      name: "api-service",
+      path: "/api",
+      base_branch: "main",
+      validators: [],
+      pr_command: null,
+      created_at: "2025-01-01T00:00:00Z",
+    };
+
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "list_repositories") return Promise.resolve([mockRepo, mockRepo2]);
+      return Promise.resolve([]);
+    });
+
+    render(
+      <MemoryRouter>
+        <HomePage />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("New Feature")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText("New Feature"));
+
+    expect(screen.getByText("Repositories")).toBeInTheDocument();
+    // Repos appear in both filter dropdown and modal checkboxes
+    expect(screen.getAllByText("my-app").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText("api-service").length).toBeGreaterThanOrEqual(2);
+    // Should have checkboxes for repo selection
+    const checkboxes = screen.getAllByRole("checkbox");
+    expect(checkboxes.length).toBeGreaterThanOrEqual(2);
   });
 
   it("closes modal when Cancel is clicked", async () => {
