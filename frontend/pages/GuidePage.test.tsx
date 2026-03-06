@@ -19,38 +19,26 @@ describe("GuidePage", () => {
     },
   ];
 
-  const mockTemplates = [
+  const mockBuiltInAgents = [
     {
-      id: "frontend-developer",
+      filename: "frontend-developer.md",
       name: "Frontend Developer",
       description: "React/TypeScript UI specialist",
-      category: "development",
-      agent: {
-        filename: "frontend-developer.md",
-        name: "Frontend Developer",
-        description: "React/TypeScript UI specialist",
-        tools: "Read, Edit, Write, Bash, Glob, Grep",
-        model: null,
-        system_prompt: "You are a frontend specialist.",
-        is_global: false,
-        color: "#5b8abd",
-      },
+      tools: "Read, Edit, Write, Bash, Glob, Grep",
+      model: null,
+      system_prompt: "You are a frontend specialist.",
+      is_global: true,
+      color: "#5b8abd",
     },
     {
-      id: "test-engineer",
+      filename: "test-engineer.md",
       name: "Test Engineer",
       description: "Testing specialist",
-      category: "quality",
-      agent: {
-        filename: "test-engineer.md",
-        name: "Test Engineer",
-        description: "Testing specialist",
-        tools: "Read, Edit, Write, Bash",
-        model: null,
-        system_prompt: "You are a testing specialist.",
-        is_global: false,
-        color: "#c9a84c",
-      },
+      tools: "Read, Edit, Write, Bash",
+      model: null,
+      system_prompt: "You are a testing specialist.",
+      is_global: true,
+      color: "#c9a84c",
     },
   ];
 
@@ -99,7 +87,7 @@ describe("GuidePage", () => {
   function mockInvoke() {
     vi.mocked(invoke).mockImplementation((cmd: string) => {
       if (cmd === "list_repositories") return Promise.resolve(mockRepos);
-      if (cmd === "list_agent_templates") return Promise.resolve(mockTemplates);
+      if (cmd === "list_built_in_agents") return Promise.resolve(mockBuiltInAgents);
       if (cmd === "list_feature_recipes") return Promise.resolve(mockRecipes);
       return Promise.resolve([]);
     });
@@ -110,11 +98,11 @@ describe("GuidePage", () => {
     render(<GuidePage />);
     expect(screen.getByText("Guide")).toBeInTheDocument();
     expect(
-      screen.getByText(/Starter templates and recipes/),
+      screen.getByText(/Built-in agents and recipes/),
     ).toBeInTheDocument();
   });
 
-  it("shows agent templates tab by default", async () => {
+  it("shows built-in agents tab by default", async () => {
     mockInvoke();
     render(<GuidePage />);
 
@@ -124,17 +112,17 @@ describe("GuidePage", () => {
     });
   });
 
-  it("shows template categories", async () => {
+  it("shows built-in badge on agents", async () => {
     mockInvoke();
     render(<GuidePage />);
 
     await waitFor(() => {
-      expect(screen.getByText("development")).toBeInTheDocument();
-      expect(screen.getByText("quality")).toBeInTheDocument();
+      const badges = screen.getAllByText("built-in");
+      expect(badges.length).toBeGreaterThanOrEqual(2);
     });
   });
 
-  it("shows template tools", async () => {
+  it("shows agent tools", async () => {
     mockInvoke();
     render(<GuidePage />);
 
@@ -185,7 +173,7 @@ describe("GuidePage", () => {
     });
   });
 
-  it("shows Add to Repository button for templates", async () => {
+  it("shows Add to Repository button for built-in agents", async () => {
     mockInvoke();
     render(<GuidePage />);
 
@@ -195,14 +183,14 @@ describe("GuidePage", () => {
     });
   });
 
-  it("calls apply template on button click", async () => {
+  it("calls add_built_in_agent on button click", async () => {
     mockInvoke();
     vi.mocked(invoke).mockImplementation((cmd: string) => {
       if (cmd === "list_repositories") return Promise.resolve(mockRepos);
-      if (cmd === "list_agent_templates") return Promise.resolve(mockTemplates);
+      if (cmd === "list_built_in_agents") return Promise.resolve(mockBuiltInAgents);
       if (cmd === "list_feature_recipes") return Promise.resolve(mockRecipes);
-      if (cmd === "apply_agent_template")
-        return Promise.resolve(mockTemplates[0].agent);
+      if (cmd === "add_built_in_agent")
+        return Promise.resolve(mockBuiltInAgents[0]);
       return Promise.resolve([]);
     });
 
@@ -215,7 +203,7 @@ describe("GuidePage", () => {
     fireEvent.click(screen.getAllByText("Add to Repository")[0]);
 
     await waitFor(() => {
-      expect(screen.getByText("Applied")).toBeInTheDocument();
+      expect(screen.getByText("Added")).toBeInTheDocument();
     });
   });
 
@@ -224,7 +212,7 @@ describe("GuidePage", () => {
     render(<GuidePage />);
 
     await waitFor(() => {
-      expect(screen.getByText("Apply to repository:")).toBeInTheDocument();
+      expect(screen.getByText("Add to repository:")).toBeInTheDocument();
       expect(screen.getByText("my-project")).toBeInTheDocument();
     });
   });

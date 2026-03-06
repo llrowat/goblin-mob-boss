@@ -74,10 +74,10 @@ pub fn run() {
             // Preferences
             commands::get_preferences,
             commands::set_preferences,
-            // Templates
-            commands::list_agent_templates,
+            // Built-in Agents & Recipes
+            commands::list_built_in_agents,
+            commands::add_built_in_agent,
             commands::list_feature_recipes,
-            commands::apply_agent_template,
             // Execution Observability
             commands::poll_execution_status,
             // Analytics

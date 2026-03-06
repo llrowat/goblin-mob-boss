@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useTauri } from "../hooks/useTauri";
-import type { AgentFile, AgentTemplate, Repository } from "../types";
+import type { AgentFile, Repository } from "../types";
 
 const PRESET_COLORS = [
   "#5a8a5c",
@@ -46,11 +46,11 @@ export function AgentsPage() {
   const [modalAgent, setModalAgent] = useState<AgentFile | null>(null);
   const [modalMode, setModalMode] = useState<"create" | "edit" | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
-  const [templates, setTemplates] = useState<AgentTemplate[]>([]);
-  const [addingTemplate, setAddingTemplate] = useState<string | null>(null);
+  const [builtInAgents, setBuiltInAgents] = useState<AgentFile[]>([]);
+  const [addingBuiltIn, setAddingBuiltIn] = useState<string | null>(null);
 
   useEffect(() => {
-    tauri.listAgentTemplates().then(setTemplates).catch(() => setTemplates([]));
+    tauri.listBuiltInAgents().then(setBuiltInAgents).catch(() => setBuiltInAgents([]));
   }, []);
 
   useEffect(() => {
@@ -133,27 +133,27 @@ export function AgentsPage() {
     }
   };
 
-  const handleAddTemplate = async (templateId: string) => {
-    if (!selectedRepo || addingTemplate) return;
-    setAddingTemplate(templateId);
+  const handleAddBuiltIn = async (filename: string) => {
+    if (!selectedRepo || addingBuiltIn) return;
+    setAddingBuiltIn(filename);
     setError("");
     try {
-      await tauri.applyAgentTemplate(selectedRepo.path, templateId);
+      await tauri.addBuiltInAgent(selectedRepo.path, filename);
       loadAgents();
     } catch (e) {
       setError(String(e));
     } finally {
-      setAddingTemplate(null);
+      setAddingBuiltIn(null);
     }
   };
 
   const repoAgents = agents.filter((a) => !a.is_global);
   const globalAgents = agents.filter((a) => a.is_global);
 
-  // Templates not yet added as agents (match by filename)
+  // Built-in agents not yet added (match by filename)
   const agentFilenames = new Set(agents.map((a) => a.filename));
-  const unappliedTemplates = templates.filter(
-    (t) => !agentFilenames.has(t.agent.filename),
+  const unappliedBuiltIns = builtInAgents.filter(
+    (a) => !agentFilenames.has(a.filename),
   );
 
   return (
@@ -242,29 +242,29 @@ export function AgentsPage() {
         </>
       )}
 
-      {/* Built-in templates (not yet added) */}
-      {unappliedTemplates.length > 0 && selectedRepo && (
+      {/* Built-in agents (not yet added) */}
+      {unappliedBuiltIns.length > 0 && selectedRepo && (
         <>
           <div
             className="sidebar-section-label"
             style={{ padding: agents.length > 0 ? "20px 0 8px" : "0 0 8px" }}
           >
-            Built-in Templates
+            Built-in Agents
           </div>
           <div className="agent-grid">
-            {unappliedTemplates.map((template) => (
-              <TemplateCard
-                key={template.id}
-                template={template}
-                adding={addingTemplate === template.id}
-                onAdd={() => handleAddTemplate(template.id)}
+            {unappliedBuiltIns.map((agent) => (
+              <BuiltInAgentCard
+                key={agent.filename}
+                agent={agent}
+                adding={addingBuiltIn === agent.filename}
+                onAdd={() => handleAddBuiltIn(agent.filename)}
               />
             ))}
           </div>
         </>
       )}
 
-      {agents.length === 0 && unappliedTemplates.length === 0 && (
+      {agents.length === 0 && unappliedBuiltIns.length === 0 && (
         <div className="empty-state">
           <h3>No Agents</h3>
           <p>
@@ -397,16 +397,15 @@ function AgentCard({
   );
 }
 
-function TemplateCard({
-  template,
+function BuiltInAgentCard({
+  agent,
   adding,
   onAdd,
 }: {
-  template: AgentTemplate;
+  agent: AgentFile;
   adding: boolean;
   onAdd: () => void;
 }) {
-  const agent = template.agent;
   return (
     <div className="agent-card agent-card-template">
       <div
@@ -424,12 +423,12 @@ function TemplateCard({
           <div className="agent-card-info">
             <div className="agent-card-name">{agent.name}</div>
             <div className="agent-card-role">
-              {template.category}
-              <span className="agent-card-builtin-badge">template</span>
+              {agent.filename}
+              <span className="agent-card-builtin-badge">built-in</span>
             </div>
           </div>
         </div>
-        {template.description && (
+        {agent.description && (
           <div
             style={{
               fontSize: 12,
@@ -437,7 +436,7 @@ function TemplateCard({
               marginBottom: 8,
             }}
           >
-            {template.description}
+            {agent.description}
           </div>
         )}
         {agent.tools && (

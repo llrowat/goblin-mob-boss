@@ -799,31 +799,30 @@ pub fn set_preferences(state: State<AppState>, shell: String) -> Preferences {
     updated
 }
 
-// ── Template Commands ──
+// ── Built-in Agents & Recipe Commands ──
 
 #[tauri::command]
-pub fn list_agent_templates() -> Vec<templates::AgentTemplate> {
-    templates::list_agent_templates()
+pub fn list_built_in_agents() -> Vec<AgentFile> {
+    templates::built_in_agents()
+}
+
+/// Add a built-in agent to a repo's .claude/agents/ directory by filename.
+#[tauri::command]
+pub fn add_built_in_agent(repo_path: String, filename: String) -> Result<AgentFile, String> {
+    let agents = templates::built_in_agents();
+    let agent = agents
+        .iter()
+        .find(|a| a.filename == filename)
+        .ok_or("Built-in agent not found")?;
+    let mut repo_agent = agent.clone();
+    repo_agent.is_global = false;
+    store::save_repo_agent(&repo_path, &repo_agent)?;
+    Ok(repo_agent)
 }
 
 #[tauri::command]
 pub fn list_feature_recipes() -> Vec<templates::FeatureRecipe> {
     templates::list_feature_recipes()
-}
-
-#[tauri::command]
-pub fn apply_agent_template(
-    repo_path: String,
-    template_id: String,
-) -> Result<AgentFile, String> {
-    let templates = templates::list_agent_templates();
-    let template = templates
-        .iter()
-        .find(|t| t.id == template_id)
-        .ok_or("Template not found")?;
-    let agent = template.agent.clone();
-    store::save_repo_agent(&repo_path, &agent)?;
-    Ok(agent)
 }
 
 // ── Execution Observability Commands ──

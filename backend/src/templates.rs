@@ -1,33 +1,21 @@
 use crate::models::AgentFile;
 use serde::{Deserialize, Serialize};
 
-// ── Agent Templates ──
-// Built-in starter agent definitions that users can apply to repos.
+// ── Built-in Agents ──
+// Default agent definitions seeded into ~/.claude/agents/ on first run.
+// Existing user-edited files are never overwritten (smart merge).
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AgentTemplate {
-    pub id: String,
-    pub name: String,
-    pub description: String,
-    pub category: String,
-    pub agent: AgentFile,
-}
-
-/// Return the built-in agent templates.
-pub fn list_agent_templates() -> Vec<AgentTemplate> {
+/// Return the built-in agent definitions.
+/// Used by `store::seed_global_agents()` to populate `~/.claude/agents/`.
+pub fn built_in_agents() -> Vec<AgentFile> {
     vec![
-        AgentTemplate {
-            id: "frontend-developer".to_string(),
+        AgentFile {
+            filename: "frontend-developer.md".to_string(),
             name: "Frontend Developer".to_string(),
-            description: "React/TypeScript UI specialist. Handles components, styling, state management, and accessibility.".to_string(),
-            category: "development".to_string(),
-            agent: AgentFile {
-                filename: "frontend-developer.md".to_string(),
-                name: "Frontend Developer".to_string(),
-                description: "React/TypeScript UI specialist".to_string(),
-                tools: Some("Read, Edit, Write, Bash, Glob, Grep".to_string()),
-                model: None,
-                system_prompt: r#"You are a frontend development specialist. Your expertise includes:
+            description: "React/TypeScript UI specialist".to_string(),
+            tools: Some("Read, Edit, Write, Bash, Glob, Grep".to_string()),
+            model: None,
+            system_prompt: r#"You are a frontend development specialist. Your expertise includes:
 
 - React components (functional, hooks, context)
 - TypeScript types and interfaces
@@ -42,22 +30,16 @@ When working on tasks:
 - Use TypeScript strictly — avoid `any` types
 - Write unit tests for new components using the project's test framework
 - Keep components focused and composable"#.to_string(),
-                is_global: false,
-                color: "#5b8abd".to_string(),
-            },
+            is_global: true,
+            color: "#5b8abd".to_string(),
         },
-        AgentTemplate {
-            id: "backend-developer".to_string(),
+        AgentFile {
+            filename: "backend-developer.md".to_string(),
             name: "Backend Developer".to_string(),
-            description: "API and server-side specialist. Handles endpoints, data models, business logic, and database operations.".to_string(),
-            category: "development".to_string(),
-            agent: AgentFile {
-                filename: "backend-developer.md".to_string(),
-                name: "Backend Developer".to_string(),
-                description: "API and server-side specialist".to_string(),
-                tools: Some("Read, Edit, Write, Bash, Glob, Grep".to_string()),
-                model: None,
-                system_prompt: r#"You are a backend development specialist. Your expertise includes:
+            description: "API and server-side specialist".to_string(),
+            tools: Some("Read, Edit, Write, Bash, Glob, Grep".to_string()),
+            model: None,
+            system_prompt: r#"You are a backend development specialist. Your expertise includes:
 
 - API design (REST, GraphQL)
 - Data modeling and database operations
@@ -73,22 +55,16 @@ When working on tasks:
 - Write unit tests for business logic and integration tests for endpoints
 - Keep functions focused with clear responsibility boundaries
 - Document complex business logic with comments"#.to_string(),
-                is_global: false,
-                color: "#6b9e6b".to_string(),
-            },
+            is_global: true,
+            color: "#6b9e6b".to_string(),
         },
-        AgentTemplate {
-            id: "test-engineer".to_string(),
+        AgentFile {
+            filename: "test-engineer.md".to_string(),
             name: "Test Engineer".to_string(),
-            description: "Testing specialist. Writes unit tests, integration tests, and ensures comprehensive coverage.".to_string(),
-            category: "quality".to_string(),
-            agent: AgentFile {
-                filename: "test-engineer.md".to_string(),
-                name: "Test Engineer".to_string(),
-                description: "Testing and quality assurance specialist".to_string(),
-                tools: Some("Read, Edit, Write, Bash, Glob, Grep".to_string()),
-                model: None,
-                system_prompt: r#"You are a testing specialist. Your expertise includes:
+            description: "Testing and quality assurance specialist".to_string(),
+            tools: Some("Read, Edit, Write, Bash, Glob, Grep".to_string()),
+            model: None,
+            system_prompt: r#"You are a testing specialist. Your expertise includes:
 
 - Unit testing (isolating components, mocking dependencies)
 - Integration testing (testing component interactions)
@@ -104,22 +80,16 @@ When working on tasks:
 - Mock external dependencies appropriately
 - Keep tests focused — one assertion concept per test
 - Ensure tests are deterministic and don't depend on execution order"#.to_string(),
-                is_global: false,
-                color: "#c9a84c".to_string(),
-            },
+            is_global: true,
+            color: "#c9a84c".to_string(),
         },
-        AgentTemplate {
-            id: "code-reviewer".to_string(),
+        AgentFile {
+            filename: "code-reviewer.md".to_string(),
             name: "Code Reviewer".to_string(),
-            description: "Reviews code for quality, security, and consistency. Suggests improvements and catches bugs.".to_string(),
-            category: "quality".to_string(),
-            agent: AgentFile {
-                filename: "code-reviewer.md".to_string(),
-                name: "Code Reviewer".to_string(),
-                description: "Code quality and review specialist".to_string(),
-                tools: Some("Read, Glob, Grep, Bash".to_string()),
-                model: None,
-                system_prompt: r#"You are a code review specialist. Your expertise includes:
+            description: "Code quality and review specialist".to_string(),
+            tools: Some("Read, Glob, Grep, Bash".to_string()),
+            model: None,
+            system_prompt: r#"You are a code review specialist. Your expertise includes:
 
 - Code quality assessment (readability, maintainability, correctness)
 - Security vulnerability detection (OWASP top 10)
@@ -134,22 +104,16 @@ When reviewing code:
 - Check for proper error handling and input validation
 - Verify test coverage for new or changed code
 - Be specific — reference file paths and line numbers"#.to_string(),
-                is_global: false,
-                color: "#9b6b9e".to_string(),
-            },
+            is_global: true,
+            color: "#9b6b9e".to_string(),
         },
-        AgentTemplate {
-            id: "devops-engineer".to_string(),
+        AgentFile {
+            filename: "devops-engineer.md".to_string(),
             name: "DevOps Engineer".to_string(),
-            description: "CI/CD, infrastructure, and deployment specialist. Handles build pipelines, Docker, and configuration.".to_string(),
-            category: "infrastructure".to_string(),
-            agent: AgentFile {
-                filename: "devops-engineer.md".to_string(),
-                name: "DevOps Engineer".to_string(),
-                description: "CI/CD and infrastructure specialist".to_string(),
-                tools: Some("Read, Edit, Write, Bash, Glob, Grep".to_string()),
-                model: None,
-                system_prompt: r#"You are a DevOps and infrastructure specialist. Your expertise includes:
+            description: "CI/CD and infrastructure specialist".to_string(),
+            tools: Some("Read, Edit, Write, Bash, Glob, Grep".to_string()),
+            model: None,
+            system_prompt: r#"You are a DevOps and infrastructure specialist. Your expertise includes:
 
 - CI/CD pipelines (GitHub Actions, GitLab CI)
 - Docker and containerization
@@ -165,22 +129,16 @@ When working on tasks:
 - Write idempotent scripts and configurations
 - Test pipeline changes in isolation before merging
 - Document any manual steps required for deployment"#.to_string(),
-                is_global: false,
-                color: "#c45a6a".to_string(),
-            },
+            is_global: true,
+            color: "#c45a6a".to_string(),
         },
-        AgentTemplate {
-            id: "documentation-writer".to_string(),
+        AgentFile {
+            filename: "documentation-writer.md".to_string(),
             name: "Documentation Writer".to_string(),
-            description: "Technical writing specialist. Creates and maintains README, API docs, and inline documentation.".to_string(),
-            category: "quality".to_string(),
-            agent: AgentFile {
-                filename: "documentation-writer.md".to_string(),
-                name: "Documentation Writer".to_string(),
-                description: "Technical documentation specialist".to_string(),
-                tools: Some("Read, Edit, Write, Glob, Grep".to_string()),
-                model: None,
-                system_prompt: r#"You are a technical documentation specialist. Your expertise includes:
+            description: "Technical documentation specialist".to_string(),
+            tools: Some("Read, Edit, Write, Glob, Grep".to_string()),
+            model: None,
+            system_prompt: r#"You are a technical documentation specialist. Your expertise includes:
 
 - README and project documentation
 - API documentation (endpoints, parameters, examples)
@@ -195,9 +153,8 @@ When working on tasks:
 - Use consistent formatting and structure
 - Document the "why" behind decisions, not just the "what"
 - Include troubleshooting sections for common issues"#.to_string(),
-                is_global: false,
-                color: "#7ba3cc".to_string(),
-            },
+            is_global: true,
+            color: "#7ba3cc".to_string(),
         },
     ]
 }
@@ -417,38 +374,39 @@ mod tests {
     use super::*;
 
     #[test]
-    fn list_agent_templates_returns_all_templates() {
-        let templates = list_agent_templates();
-        assert!(templates.len() >= 6);
-        let ids: Vec<&str> = templates.iter().map(|t| t.id.as_str()).collect();
-        assert!(ids.contains(&"frontend-developer"));
-        assert!(ids.contains(&"backend-developer"));
-        assert!(ids.contains(&"test-engineer"));
-        assert!(ids.contains(&"code-reviewer"));
-        assert!(ids.contains(&"devops-engineer"));
-        assert!(ids.contains(&"documentation-writer"));
+    fn built_in_agents_returns_all_agents() {
+        let agents = built_in_agents();
+        assert!(agents.len() >= 6);
+        let filenames: Vec<&str> = agents.iter().map(|a| a.filename.as_str()).collect();
+        assert!(filenames.contains(&"frontend-developer.md"));
+        assert!(filenames.contains(&"backend-developer.md"));
+        assert!(filenames.contains(&"test-engineer.md"));
+        assert!(filenames.contains(&"code-reviewer.md"));
+        assert!(filenames.contains(&"devops-engineer.md"));
+        assert!(filenames.contains(&"documentation-writer.md"));
     }
 
     #[test]
-    fn agent_templates_have_valid_agents() {
-        let templates = list_agent_templates();
-        for t in &templates {
-            assert!(!t.agent.filename.is_empty());
-            assert!(t.agent.filename.ends_with(".md"));
-            assert!(!t.agent.name.is_empty());
-            assert!(!t.agent.system_prompt.is_empty());
-            assert!(!t.agent.color.is_empty());
+    fn built_in_agents_have_valid_fields() {
+        let agents = built_in_agents();
+        for a in &agents {
+            assert!(!a.filename.is_empty());
+            assert!(a.filename.ends_with(".md"));
+            assert!(!a.name.is_empty());
+            assert!(!a.system_prompt.is_empty());
+            assert!(!a.color.is_empty());
+            assert!(a.is_global);
         }
     }
 
     #[test]
-    fn agent_templates_have_unique_ids() {
-        let templates = list_agent_templates();
-        let mut ids: Vec<&str> = templates.iter().map(|t| t.id.as_str()).collect();
-        let count = ids.len();
-        ids.sort();
-        ids.dedup();
-        assert_eq!(ids.len(), count, "Duplicate template IDs found");
+    fn built_in_agents_have_unique_filenames() {
+        let agents = built_in_agents();
+        let mut filenames: Vec<&str> = agents.iter().map(|a| a.filename.as_str()).collect();
+        let count = filenames.len();
+        filenames.sort();
+        filenames.dedup();
+        assert_eq!(filenames.len(), count, "Duplicate filenames found");
     }
 
     #[test]

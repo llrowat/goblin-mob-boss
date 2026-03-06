@@ -1,25 +1,25 @@
 import { useState, useEffect } from "react";
 import { useTauri } from "../hooks/useTauri";
 import type {
-  AgentTemplate,
+  AgentFile,
   FeatureRecipe,
   Repository,
 } from "../types";
 
 export function GuidePage() {
   const tauri = useTauri();
-  const [templates, setTemplates] = useState<AgentTemplate[]>([]);
+  const [builtInAgents, setBuiltInAgents] = useState<AgentFile[]>([]);
   const [recipes, setRecipes] = useState<FeatureRecipe[]>([]);
   const [repos, setRepos] = useState<Repository[]>([]);
   const [selectedRepo, setSelectedRepo] = useState<string>("");
-  const [appliedTemplates, setAppliedTemplates] = useState<Set<string>>(
+  const [appliedAgents, setAppliedAgents] = useState<Set<string>>(
     new Set(),
   );
   const [applying, setApplying] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"agents" | "recipes">("agents");
 
   useEffect(() => {
-    tauri.listAgentTemplates().then(setTemplates);
+    tauri.listBuiltInAgents().then(setBuiltInAgents);
     tauri.listFeatureRecipes().then(setRecipes);
     tauri.listRepositories().then((r) => {
       setRepos(r);
@@ -27,12 +27,12 @@ export function GuidePage() {
     });
   }, []);
 
-  const handleApplyTemplate = async (templateId: string) => {
+  const handleAddBuiltIn = async (filename: string) => {
     if (!selectedRepo) return;
-    setApplying(templateId);
+    setApplying(filename);
     try {
-      await tauri.applyAgentTemplate(selectedRepo, templateId);
-      setAppliedTemplates((prev) => new Set(prev).add(templateId));
+      await tauri.addBuiltInAgent(selectedRepo, filename);
+      setAppliedAgents((prev) => new Set(prev).add(filename));
     } catch {
       // Best-effort
     } finally {
@@ -55,7 +55,7 @@ export function GuidePage() {
       <div className="page-header">
         <h2>Guide</h2>
         <p>
-          Starter templates and recipes to help you get the most out of
+          Built-in agents and recipes to help you get the most out of
           multi-agent workflows.
         </p>
       </div>
@@ -66,7 +66,7 @@ export function GuidePage() {
           className={`btn ${activeTab === "agents" ? "btn-primary" : "btn-secondary"}`}
           onClick={() => setActiveTab("agents")}
         >
-          Agent Templates ({templates.length})
+          Built-in Agents ({builtInAgents.length})
         </button>
         <button
           className={`btn ${activeTab === "recipes" ? "btn-primary" : "btn-secondary"}`}
@@ -76,7 +76,7 @@ export function GuidePage() {
         </button>
       </div>
 
-      {/* Agent Templates Tab */}
+      {/* Built-in Agents Tab */}
       {activeTab === "agents" && (
         <>
           {repos.length > 0 && (
@@ -88,7 +88,7 @@ export function GuidePage() {
                   marginRight: 8,
                 }}
               >
-                Apply to repository:
+                Add to repository:
               </label>
               <select
                 className="form-select"
@@ -112,8 +112,8 @@ export function GuidePage() {
               gap: 12,
             }}
           >
-            {templates.map((t) => (
-              <div key={t.id} className="panel" style={{ padding: 16 }}>
+            {builtInAgents.map((agent) => (
+              <div key={agent.filename} className="panel" style={{ padding: 16 }}>
                 <div
                   style={{
                     display: "flex",
@@ -127,7 +127,7 @@ export function GuidePage() {
                       width: 12,
                       height: 12,
                       borderRadius: "50%",
-                      backgroundColor: t.agent.color,
+                      backgroundColor: agent.color,
                       flexShrink: 0,
                     }}
                   />
@@ -135,20 +135,20 @@ export function GuidePage() {
                     className="panel-title"
                     style={{ margin: 0, flex: 1 }}
                   >
-                    {t.name}
+                    {agent.name}
                   </div>
                   <span
                     style={{
                       fontSize: 11,
                       padding: "2px 8px",
                       borderRadius: 4,
-                      backgroundColor: `${categoryColors[t.category] ?? "#666"}22`,
-                      color: categoryColors[t.category] ?? "#666",
+                      backgroundColor: "rgba(90, 138, 92, 0.15)",
+                      color: "#5a8a5c",
                       textTransform: "uppercase",
                       letterSpacing: "0.5px",
                     }}
                   >
-                    {t.category}
+                    built-in
                   </span>
                 </div>
 
@@ -160,10 +160,10 @@ export function GuidePage() {
                     marginBottom: 12,
                   }}
                 >
-                  {t.description}
+                  {agent.description}
                 </p>
 
-                {t.agent.tools && (
+                {agent.tools && (
                   <div
                     style={{
                       fontSize: 11,
@@ -171,24 +171,24 @@ export function GuidePage() {
                       marginBottom: 8,
                     }}
                   >
-                    Tools: {t.agent.tools}
+                    Tools: {agent.tools}
                   </div>
                 )}
 
                 <button
-                  className={`btn btn-sm ${appliedTemplates.has(t.id) ? "btn-secondary" : "btn-primary"}`}
-                  onClick={() => handleApplyTemplate(t.id)}
+                  className={`btn btn-sm ${appliedAgents.has(agent.filename) ? "btn-secondary" : "btn-primary"}`}
+                  onClick={() => handleAddBuiltIn(agent.filename)}
                   disabled={
                     !selectedRepo ||
-                    applying === t.id ||
-                    appliedTemplates.has(t.id)
+                    applying === agent.filename ||
+                    appliedAgents.has(agent.filename)
                   }
                   style={{ width: "100%" }}
                 >
-                  {appliedTemplates.has(t.id)
-                    ? "Applied"
-                    : applying === t.id
-                      ? "Applying..."
+                  {appliedAgents.has(agent.filename)
+                    ? "Added"
+                    : applying === agent.filename
+                      ? "Adding..."
                       : "Add to Repository"}
                 </button>
               </div>
