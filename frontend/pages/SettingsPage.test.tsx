@@ -14,7 +14,7 @@ describe("SettingsPage", () => {
 
     expect(screen.getByText("Settings")).toBeInTheDocument();
     expect(
-      screen.getByText("Configure Goblin Mob Boss preferences."),
+      screen.getByText("Tune the war machine to your liking."),
     ).toBeInTheDocument();
   });
 

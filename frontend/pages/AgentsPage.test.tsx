@@ -85,7 +85,7 @@ describe("AgentsPage", () => {
 
     expect(screen.getByText("Agents")).toBeInTheDocument();
     expect(
-      screen.getByText(/Manage .claude\/agents\/\*\.md files/),
+      screen.getByText(/Manage your mob roster/),
     ).toBeInTheDocument();
   });
 
@@ -243,6 +243,7 @@ describe("AgentsPage", () => {
 
     await waitFor(() => {
       expect(screen.getByText("No Agents")).toBeInTheDocument();
+      expect(screen.getByText(/No goblins in the ranks/)).toBeInTheDocument();
     });
   });
 

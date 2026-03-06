@@ -376,8 +376,8 @@ export function FeatureStatusPage() {
                 marginBottom: 8,
               }}
             >
-              Add notes that the agent can read during execution. Notes are
-              written to the feature directory.
+              Send orders to the mob mid-raid. Notes are
+              written to the feature directory for agents to read.
             </p>
             <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
               <select
@@ -456,7 +456,7 @@ export function FeatureStatusPage() {
                 marginBottom: 12,
               }}
             >
-              Claude Code is working on your feature. When execution completes,
+              The mob is at work. When execution completes,
               mark the feature as ready to proceed to validation and PR creation.
             </p>
 

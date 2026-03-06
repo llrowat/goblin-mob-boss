@@ -158,7 +158,7 @@ export function LaunchConfigPage() {
       <div className="page-header">
         <h2>Launch: {feature.name}</h2>
         <p>
-          Review and override the execution configuration before launching.
+          Review the battle plan and rally your agents before launching.
         </p>
       </div>
 
@@ -388,8 +388,8 @@ export function LaunchConfigPage() {
               fontStyle: "italic",
             }}
           >
-            No agents found. Add agent files to .claude/agents/ in your repo, or
-            use the Guide page to add built-in agents.
+            No goblins recruited. Add agent files to .claude/agents/ in your repo, or
+            visit the Guide page to recruit built-in agents.
           </p>
         )}
       </div>
@@ -407,7 +407,7 @@ export function LaunchConfigPage() {
               fontStyle: "italic",
             }}
           >
-            No tasks defined.
+            No tasks defined. The mob needs a plan first.
           </p>
         ) : (
           <div className="task-spec-list">
