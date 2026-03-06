@@ -440,6 +440,58 @@ pub struct SystemMap {
     pub updated_at: DateTime<Utc>,
 }
 
+/// Raw discovery result from a single repo scan — parsed from the agent's JSON output.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiscoveryResult {
+    #[serde(default)]
+    pub repo_name: String,
+    #[serde(default)]
+    pub services: Vec<DiscoveredService>,
+    #[serde(default)]
+    pub connections: Vec<DiscoveredConnection>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiscoveredService {
+    pub name: String,
+    #[serde(default = "default_backend_type")]
+    pub service_type: String,
+    #[serde(default)]
+    pub runtime: String,
+    #[serde(default)]
+    pub framework: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub owns_data: Vec<String>,
+    #[serde(default)]
+    pub exposes: Vec<ServiceEndpoint>,
+    #[serde(default)]
+    pub consumes: Vec<ServiceDependency>,
+}
+
+fn default_backend_type() -> String {
+    "backend".to_string()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiscoveredConnection {
+    pub from: String,
+    pub to: String,
+    #[serde(default = "default_rest_type")]
+    pub connection_type: String,
+    #[serde(default = "default_sync")]
+    pub sync: bool,
+    #[serde(default)]
+    pub label: String,
+    #[serde(default)]
+    pub description: String,
+}
+
+fn default_rest_type() -> String {
+    "rest".to_string()
+}
+
 impl SystemMap {
     pub fn new(name: String, description: String) -> Self {
         let now = Utc::now();

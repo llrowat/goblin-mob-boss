@@ -93,6 +93,8 @@ pub fn run() {
             commands::create_system_map,
             commands::update_system_map,
             commands::delete_system_map,
+            commands::start_map_discovery,
+            commands::poll_map_discovery,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -6,6 +6,8 @@ import type {
   MapConnection,
   ServiceType,
   ConnectionType,
+  Repository,
+  DiscoveryStatus,
 } from "../types";
 
 // ── Service type visual config (goblin-themed) ──
@@ -91,6 +93,15 @@ export function SystemMapPage() {
   );
   const [confirmDeleteMap, setConfirmDeleteMap] = useState(false);
 
+  // Discovery (Explore)
+  const [repos, setRepos] = useState<Repository[]>([]);
+  const [showExploreModal, setShowExploreModal] = useState(false);
+  const [exploreRepoIds, setExploreRepoIds] = useState<string[]>([]);
+  const [exploring, setExploring] = useState(false);
+  const [exploreCommand, setExploreCommand] = useState("");
+  const [discoveryStatus, setDiscoveryStatus] = useState<DiscoveryStatus | null>(null);
+  const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // Dragging
   const [dragServiceId, setDragServiceId] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
@@ -114,13 +125,20 @@ export function SystemMapPage() {
 
   const activeMap = maps.find((m) => m.id === activeMapId) ?? null;
 
+  // ── Cleanup discovery polling on unmount ──
+  useEffect(() => {
+    return () => {
+      if (pollRef.current) clearTimeout(pollRef.current);
+    };
+  }, []);
+
   // ── Load ──
   useEffect(() => {
-    tauri
-      .listSystemMaps()
-      .then((list) => {
-        setMaps(list);
-        if (list.length > 0) setActiveMapId(list[0].id);
+    Promise.all([tauri.listSystemMaps(), tauri.listRepositories()])
+      .then(([mapList, repoList]) => {
+        setMaps(mapList);
+        if (mapList.length > 0) setActiveMapId(mapList[0].id);
+        setRepos(repoList);
       })
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
@@ -360,6 +378,65 @@ export function SystemMapPage() {
     }
     setDragServiceId(null);
   }, [dragServiceId, activeMap, persistMap]);
+
+  // ── Discovery (Explore) ──
+  const handleExplore = async () => {
+    if (!activeMapId || exploreRepoIds.length === 0) return;
+    setExploring(true);
+    setDiscoveryStatus(null);
+    setExploreCommand("");
+    try {
+      const cmd = await tauri.startMapDiscovery(activeMapId, exploreRepoIds);
+      setExploreCommand(cmd);
+      setShowExploreModal(false);
+      startDiscoveryPolling();
+    } catch (e) {
+      setError(String(e));
+      setExploring(false);
+    }
+  };
+
+  const startDiscoveryPolling = () => {
+    if (!activeMapId) return;
+    const repoIds = exploreRepoIds;
+    let attempts = 0;
+    const maxAttempts = 120; // ~10 minutes at 5s intervals
+
+    const poll = async () => {
+      if (attempts >= maxAttempts) {
+        setExploring(false);
+        setError("Discovery timed out — scouts took too long.");
+        return;
+      }
+      attempts++;
+      try {
+        const status = await tauri.pollMapDiscovery(activeMapId!, repoIds);
+        setDiscoveryStatus(status);
+        if (status.complete) {
+          setExploring(false);
+          setExploreCommand("");
+          // Reload the map to show discovered services
+          const updated = await tauri.getSystemMap(activeMapId!);
+          setMaps((prev) => prev.map((m) => (m.id === updated.id ? updated : m)));
+        } else {
+          pollRef.current = setTimeout(poll, 5000);
+        }
+      } catch (e) {
+        // Discovery files may not exist yet; keep polling
+        pollRef.current = setTimeout(poll, 5000);
+      }
+    };
+
+    pollRef.current = setTimeout(poll, 3000); // Initial delay before first poll
+  };
+
+  const toggleExploreRepo = (repoId: string) => {
+    setExploreRepoIds((prev) =>
+      prev.includes(repoId)
+        ? prev.filter((id) => id !== repoId)
+        : [...prev, repoId],
+    );
+  };
 
   // ── Render helpers ──
 
@@ -960,6 +1037,108 @@ export function SystemMapPage() {
     );
   }
 
+  function renderExploreModal() {
+    return (
+      <div className="modal-overlay" onClick={() => setShowExploreModal(false)}>
+        <div className="modal" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-title">Explore Territory</div>
+          <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 16 }}>
+            Send scouts into your lairs to discover services, connections, and
+            treasure hoards. Select which repos to explore.
+          </p>
+          {repos.length === 0 ? (
+            <div style={{ fontSize: 13, color: "var(--muted)", padding: "16px 0" }}>
+              No lairs registered. Add repositories first.
+            </div>
+          ) : (
+            <div className="explore-repo-list">
+              {repos.map((repo) => (
+                <label key={repo.id} className="explore-repo-item">
+                  <input
+                    type="checkbox"
+                    checked={exploreRepoIds.includes(repo.id)}
+                    onChange={() => toggleExploreRepo(repo.id)}
+                    style={{ accentColor: "var(--accent)" }}
+                  />
+                  <div>
+                    <div style={{ fontWeight: 500 }}>{repo.name}</div>
+                    <div style={{ fontSize: 11, color: "var(--muted)" }}>
+                      {repo.path}
+                    </div>
+                  </div>
+                </label>
+              ))}
+            </div>
+          )}
+          <div className="modal-actions">
+            <button className="btn btn-secondary" onClick={() => setShowExploreModal(false)}>
+              Cancel
+            </button>
+            <button
+              className="btn btn-brass"
+              onClick={handleExplore}
+              disabled={exploreRepoIds.length === 0}
+            >
+              Send Scouts
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  function renderDiscoveryProgress() {
+    return (
+      <div className="discovery-progress">
+        {exploreCommand && (
+          <div className="discovery-command">
+            <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600, textTransform: "uppercase", marginBottom: 4 }}>
+              Run this command to send scouts
+            </div>
+            <pre className="command-display">{exploreCommand}</pre>
+            <button
+              className="btn btn-sm btn-secondary"
+              style={{ marginTop: 6 }}
+              onClick={() => navigator.clipboard.writeText(exploreCommand)}
+            >
+              Copy
+            </button>
+          </div>
+        )}
+        {discoveryStatus && (
+          <div className="discovery-status">
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+              <span className="discovery-spinner" />
+              <span style={{ fontSize: 13, fontWeight: 500 }}>
+                {discoveryStatus.complete
+                  ? "Scouts returned!"
+                  : `${discoveryStatus.found} of ${discoveryStatus.total} scouts returned...`}
+              </span>
+            </div>
+            <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+              {discoveryStatus.services_discovered} lair{discoveryStatus.services_discovered !== 1 ? "s" : ""} discovered
+              {" \u00B7 "}
+              {discoveryStatus.connections_discovered} route{discoveryStatus.connections_discovered !== 1 ? "s" : ""} mapped
+            </div>
+            {discoveryStatus.errors.length > 0 && (
+              <div style={{ fontSize: 12, color: "var(--danger)", marginTop: 6 }}>
+                {discoveryStatus.errors.map((err, i) => (
+                  <div key={i}>{err}</div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+        {!exploreCommand && !discoveryStatus && exploring && (
+          <div style={{ fontSize: 13, color: "var(--muted)", display: "flex", alignItems: "center", gap: 8 }}>
+            <span className="discovery-spinner" />
+            Preparing scouts...
+          </div>
+        )}
+      </div>
+    );
+  }
+
   // ── Main render ──
   return (
     <div className="system-map-page">
@@ -1005,6 +1184,13 @@ export function SystemMapPage() {
             >
               Add Route
             </button>
+            <button
+              className="btn btn-brass btn-sm"
+              onClick={() => setShowExploreModal(true)}
+              disabled={exploring || repos.length === 0}
+            >
+              {exploring ? "Exploring..." : "Explore"}
+            </button>
             <div style={{ flex: 1 }} />
             <span style={{ fontSize: 12, color: "var(--muted)" }}>
               {activeMap.services.length} lair{activeMap.services.length !== 1 ? "s" : ""}
@@ -1029,16 +1215,30 @@ export function SystemMapPage() {
             )}
           </div>
 
+          {/* Discovery progress */}
+          {exploring && renderDiscoveryProgress()}
+
           {/* Map Canvas */}
           <div className="map-canvas-container">
             <div className="map-canvas-wrapper">
               {activeMap.services.length === 0 ? (
                 <div className="empty-state" style={{ padding: "80px 24px" }}>
                   <h3>Empty territory</h3>
-                  <p>Add your first lair to start charting the operation.</p>
-                  <button className="btn btn-brass" onClick={openAddService}>
-                    Add Lair
-                  </button>
+                  <p>Add a lair manually or send scouts to explore your repos.</p>
+                  <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+                    <button className="btn btn-brass" onClick={openAddService}>
+                      Add Lair
+                    </button>
+                    {repos.length > 0 && (
+                      <button
+                        className="btn btn-primary"
+                        onClick={() => setShowExploreModal(true)}
+                        disabled={exploring}
+                      >
+                        Explore
+                      </button>
+                    )}
+                  </div>
                 </div>
               ) : (
                 <svg
@@ -1155,6 +1355,7 @@ export function SystemMapPage() {
       {showNewMapModal && renderNewMapModal()}
       {showServiceModal && renderServiceModal()}
       {showConnectionModal && renderConnectionModal()}
+      {showExploreModal && renderExploreModal()}
     </div>
   );
 }

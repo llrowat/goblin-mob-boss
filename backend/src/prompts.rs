@@ -94,6 +94,112 @@ After defining tasks, recommend an execution mode:
     )
 }
 
+// ── System Map Discovery Prompts ──
+
+/// System prompt for map discovery agents — context about what repo they are scanning.
+pub fn map_discovery_system_prompt(repo_name: &str, repo_context: &str) -> String {
+    format!(
+        r#"## Repository: {repo_name}
+
+{repo_context}
+
+You are a system architecture analyst. Your job is to explore this repository
+and identify all services, components, data stores, and communication patterns."#,
+        repo_name = repo_name,
+        repo_context = repo_context,
+    )
+}
+
+/// User prompt for map discovery — tells the agent what to find and where to write results.
+pub fn map_discovery_user_prompt(repo_name: &str, output_path: &str) -> String {
+    format!(
+        r#"Explore the repository "{repo_name}" and discover its system architecture.
+
+## What to Find
+
+1. **Services/Components** — Identify every distinct service, app, or deployable unit.
+   Look at: directory structure, Dockerfiles, docker-compose.yml, Kubernetes manifests,
+   serverless configs, package.json workspaces, Cargo workspace members, separate main
+   entrypoints, microservice directories.
+
+2. **Data Stores** — Find all databases, caches, queues, and blob storage.
+   Look at: connection strings, ORM configs, migration directories, queue client imports,
+   Redis/Memcached usage, S3/blob storage clients.
+
+3. **APIs & Connections** — Map how components talk to each other.
+   Look at: HTTP client calls to other services, gRPC proto imports, GraphQL schema
+   stitching, WebSocket handlers, message queue publishers/subscribers, shared database
+   connections, IPC mechanisms, event emitters/listeners.
+
+4. **Data Ownership** — What data does each component own?
+   Look at: database migration files, model/entity definitions, schema files.
+
+## How to Explore
+
+- Read directory listings, config files, and key source files
+- Follow imports to understand dependencies
+- Check for infrastructure-as-code (docker-compose, k8s, terraform)
+- Look at environment variable references for service URLs
+- Examine CI/CD configs for deployment topology
+
+## Output
+
+Write a single JSON file to `{output_path}`:
+
+```json
+{{{{
+  "repo_name": "{repo_name}",
+  "services": [
+    {{{{
+      "name": "Service name",
+      "service_type": "backend|frontend|worker|gateway|database|queue|cache|external",
+      "runtime": "node|python|rust|go|java|etc",
+      "framework": "express|fastapi|actix|etc or empty",
+      "description": "What this service does",
+      "owns_data": ["table or collection names"],
+      "exposes": [
+        {{{{
+          "type": "rest|grpc|graphql|websocket|event|shared_db|file_system|ipc",
+          "path": "/api/endpoint or topic name",
+          "description": "What this endpoint does"
+        }}}}
+      ],
+      "consumes": [
+        {{{{
+          "type": "rest|grpc|graphql|websocket|event|shared_db|file_system|ipc",
+          "target": "name of target service",
+          "description": "Why it connects",
+          "sync": true
+        }}}}
+      ]
+    }}}}
+  ],
+  "connections": [
+    {{{{
+      "from": "service name",
+      "to": "service name",
+      "connection_type": "rest|grpc|graphql|websocket|event|shared_db|file_system|ipc",
+      "sync": true,
+      "label": "/api/path or event.name",
+      "description": "What flows through this connection"
+    }}}}
+  ]
+}}}}
+```
+
+## Rules
+
+- The ONLY file you may write is `{output_path}`.
+- Do NOT modify any source files.
+- Be thorough — look beyond top-level directories into actual source code.
+- If the repo is a monorepo, identify each service within it.
+- For external dependencies (third-party APIs, SaaS), add them as "external" type services.
+- Write the JSON file and stop."#,
+        repo_name = repo_name,
+        output_path = output_path,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -139,5 +245,45 @@ mod tests {
     fn user_prompt_includes_tasks_dir() {
         let prompt = ideation_user_prompt("desc", "/my/tasks/dir", "agents");
         assert!(prompt.contains("/my/tasks/dir/plan.json"));
+    }
+
+    // ── Map Discovery Prompt Tests ──
+
+    #[test]
+    fn map_discovery_system_prompt_includes_repo_info() {
+        let prompt = map_discovery_system_prompt("my-service", "Rust backend context");
+        assert!(prompt.contains("my-service"));
+        assert!(prompt.contains("Rust backend context"));
+        assert!(prompt.contains("system architecture analyst"));
+    }
+
+    #[test]
+    fn map_discovery_user_prompt_includes_repo_name() {
+        let prompt = map_discovery_user_prompt("auth-service", "/tmp/discovery.json");
+        assert!(prompt.contains("auth-service"));
+    }
+
+    #[test]
+    fn map_discovery_user_prompt_includes_output_path() {
+        let prompt = map_discovery_user_prompt("api", "/my/output/discovery.json");
+        assert!(prompt.contains("/my/output/discovery.json"));
+    }
+
+    #[test]
+    fn map_discovery_user_prompt_includes_json_schema() {
+        let prompt = map_discovery_user_prompt("api", "/tmp/out.json");
+        assert!(prompt.contains("\"services\""));
+        assert!(prompt.contains("\"connections\""));
+        assert!(prompt.contains("\"service_type\""));
+        assert!(prompt.contains("\"connection_type\""));
+    }
+
+    #[test]
+    fn map_discovery_user_prompt_includes_exploration_guidance() {
+        let prompt = map_discovery_user_prompt("api", "/tmp/out.json");
+        assert!(prompt.contains("Dockerfiles"));
+        assert!(prompt.contains("docker-compose"));
+        assert!(prompt.contains("migration"));
+        assert!(prompt.contains("Do NOT modify any source files"));
     }
 }

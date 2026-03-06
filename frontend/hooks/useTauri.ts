@@ -16,6 +16,7 @@ import type {
   GuidancePriority,
   ModeRecommendation,
   SystemMap,
+  DiscoveryStatus,
 } from "../types";
 
 export function useTauri() {
@@ -208,5 +209,11 @@ export function useTauri() {
 
     deleteSystemMap: (mapId: string) =>
       invoke<void>("delete_system_map", { mapId }),
+
+    startMapDiscovery: (mapId: string, repoIds: string[]) =>
+      invoke<string>("start_map_discovery", { mapId, repoIds }),
+
+    pollMapDiscovery: (mapId: string, repoIds: string[]) =>
+      invoke<DiscoveryStatus>("poll_map_discovery", { mapId, repoIds }),
   };
 }

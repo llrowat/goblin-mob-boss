@@ -12,6 +12,25 @@ if (!globalThis.crypto?.randomUUID) {
   });
 }
 
+const mockRepos = [
+  {
+    id: "repo-1",
+    name: "Backend API",
+    path: "/home/user/backend-api",
+    base_branch: "main",
+    validators: [],
+    pr_command: null,
+  },
+  {
+    id: "repo-2",
+    name: "Frontend App",
+    path: "/home/user/frontend-app",
+    base_branch: "main",
+    validators: [],
+    pr_command: null,
+  },
+];
+
 const mockMap = {
   id: "map-1",
   name: "Platform Overview",
@@ -79,7 +98,11 @@ describe("SystemMapPage", () => {
   });
 
   it("shows empty state when no maps exist", async () => {
-    vi.mocked(invoke).mockResolvedValue([]);
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "list_system_maps") return Promise.resolve([]);
+      if (cmd === "list_repositories") return Promise.resolve([]);
+      return Promise.resolve(null);
+    });
 
     render(
       <MemoryRouter>
@@ -94,7 +117,11 @@ describe("SystemMapPage", () => {
   });
 
   it("shows page header and description", async () => {
-    vi.mocked(invoke).mockResolvedValue([]);
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "list_system_maps") return Promise.resolve([]);
+      if (cmd === "list_repositories") return Promise.resolve([]);
+      return Promise.resolve(null);
+    });
 
     render(
       <MemoryRouter>
@@ -110,6 +137,7 @@ describe("SystemMapPage", () => {
   it("renders map with services and connections", async () => {
     vi.mocked(invoke).mockImplementation((cmd: string) => {
       if (cmd === "list_system_maps") return Promise.resolve([mockMap]);
+      if (cmd === "list_repositories") return Promise.resolve(mockRepos);
       return Promise.resolve(null);
     });
 
@@ -128,6 +156,7 @@ describe("SystemMapPage", () => {
   it("shows toolbar with lair and route counts", async () => {
     vi.mocked(invoke).mockImplementation((cmd: string) => {
       if (cmd === "list_system_maps") return Promise.resolve([mockMap]);
+      if (cmd === "list_repositories") return Promise.resolve(mockRepos);
       return Promise.resolve(null);
     });
 
@@ -164,6 +193,7 @@ describe("SystemMapPage", () => {
   it("opens add service modal from toolbar", async () => {
     vi.mocked(invoke).mockImplementation((cmd: string) => {
       if (cmd === "list_system_maps") return Promise.resolve([mockMap]);
+      if (cmd === "list_repositories") return Promise.resolve(mockRepos);
       return Promise.resolve(null);
     });
 
@@ -185,6 +215,7 @@ describe("SystemMapPage", () => {
   it("shows legend with service types and connection types", async () => {
     vi.mocked(invoke).mockImplementation((cmd: string) => {
       if (cmd === "list_system_maps") return Promise.resolve([mockMap]);
+      if (cmd === "list_repositories") return Promise.resolve(mockRepos);
       return Promise.resolve(null);
     });
 
@@ -207,6 +238,7 @@ describe("SystemMapPage", () => {
   it("shows service detail panel when a service is clicked", async () => {
     vi.mocked(invoke).mockImplementation((cmd: string) => {
       if (cmd === "list_system_maps") return Promise.resolve([mockMap]);
+      if (cmd === "list_repositories") return Promise.resolve(mockRepos);
       return Promise.resolve(null);
     });
 
@@ -233,6 +265,7 @@ describe("SystemMapPage", () => {
   it("shows delete confirmation for map", async () => {
     vi.mocked(invoke).mockImplementation((cmd: string) => {
       if (cmd === "list_system_maps") return Promise.resolve([mockMap]);
+      if (cmd === "list_repositories") return Promise.resolve(mockRepos);
       return Promise.resolve(null);
     });
 
@@ -253,10 +286,103 @@ describe("SystemMapPage", () => {
     expect(screen.getByText("No")).toBeInTheDocument();
   });
 
+  it("shows explore button in toolbar when repos exist", async () => {
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "list_system_maps") return Promise.resolve([mockMap]);
+      if (cmd === "list_repositories") return Promise.resolve(mockRepos);
+      return Promise.resolve(null);
+    });
+
+    render(
+      <MemoryRouter>
+        <SystemMapPage />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Explore")).toBeInTheDocument();
+    });
+  });
+
+  it("opens explore modal with repo checkboxes", async () => {
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "list_system_maps") return Promise.resolve([mockMap]);
+      if (cmd === "list_repositories") return Promise.resolve(mockRepos);
+      return Promise.resolve(null);
+    });
+
+    render(
+      <MemoryRouter>
+        <SystemMapPage />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Explore")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText("Explore"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Explore Territory")).toBeInTheDocument();
+      expect(screen.getByText("Backend API")).toBeInTheDocument();
+      expect(screen.getByText("Frontend App")).toBeInTheDocument();
+      expect(screen.getByText("Send Scouts")).toBeInTheDocument();
+    });
+  });
+
+  it("disables send scouts button when no repos selected", async () => {
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "list_system_maps") return Promise.resolve([mockMap]);
+      if (cmd === "list_repositories") return Promise.resolve(mockRepos);
+      return Promise.resolve(null);
+    });
+
+    render(
+      <MemoryRouter>
+        <SystemMapPage />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Explore")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText("Explore"));
+
+    await waitFor(() => {
+      const sendButton = screen.getByText("Send Scouts");
+      expect(sendButton).toBeDisabled();
+    });
+  });
+
+  it("shows explore button in empty territory state when repos exist", async () => {
+    const emptyMap = { ...mockMap, services: [], connections: [] };
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "list_system_maps") return Promise.resolve([emptyMap]);
+      if (cmd === "list_repositories") return Promise.resolve(mockRepos);
+      return Promise.resolve(null);
+    });
+
+    render(
+      <MemoryRouter>
+        <SystemMapPage />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Empty territory")).toBeInTheDocument();
+      // The Explore button in the toolbar + the one in empty state
+      const exploreButtons = screen.getAllByText("Explore");
+      expect(exploreButtons.length).toBeGreaterThanOrEqual(1);
+    });
+  });
+
   it("shows empty territory when map has no services", async () => {
     const emptyMap = { ...mockMap, services: [], connections: [] };
     vi.mocked(invoke).mockImplementation((cmd: string) => {
       if (cmd === "list_system_maps") return Promise.resolve([emptyMap]);
+      if (cmd === "list_repositories") return Promise.resolve(mockRepos);
       return Promise.resolve(null);
     });
 

@@ -253,6 +253,15 @@ export interface SystemMap {
   updated_at: string;
 }
 
+export interface DiscoveryStatus {
+  found: number;
+  total: number;
+  complete: boolean;
+  services_discovered: number;
+  connections_discovered: number;
+  errors: string[];
+}
+
 // ── Heuristics ──
 
 export interface TaskNode {

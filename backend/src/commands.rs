@@ -1114,6 +1114,265 @@ pub fn delete_system_map(state: State<AppState>, map_id: String) -> Result<(), S
     Ok(())
 }
 
+/// Generate the discovery command for a system map.
+/// Sets up prompts for each repo and returns a shell command that launches
+/// Claude Code agents (one per repo) to explore architecture.
+#[tauri::command]
+pub fn start_map_discovery(
+    state: State<AppState>,
+    map_id: String,
+    repo_ids: Vec<String>,
+) -> Result<String, String> {
+    if repo_ids.is_empty() {
+        return Err("At least one repository must be selected".to_string());
+    }
+
+    let maps = state.system_maps.lock().unwrap();
+    let map = maps.get(&map_id).ok_or("System map not found")?;
+    let map_name = map.name.clone();
+    drop(maps);
+
+    let repos_lock = state.repositories.lock().unwrap();
+    let repos: Vec<Repository> = repo_ids
+        .iter()
+        .map(|id| {
+            repos_lock
+                .get(id)
+                .cloned()
+                .ok_or(format!("Repository not found: {}", id))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    drop(repos_lock);
+
+    // Create discovery directory in GMB config
+    let discovery_dir = Path::new(&state.config_path)
+        .join("discoveries")
+        .join(&map_id);
+    std::fs::create_dir_all(&discovery_dir)
+        .map_err(|e| format!("Failed to create discovery dir: {}", e))?;
+
+    // Generate per-repo commands
+    let mut commands = Vec::new();
+
+    for repo in &repos {
+        let repo_context = generate_context_pack_string(&repo.path);
+        let output_file = discovery_dir.join(format!("{}.json", repo.id));
+
+        let system_prompt =
+            prompts::map_discovery_system_prompt(&repo.name, &repo_context);
+        let user_prompt =
+            prompts::map_discovery_user_prompt(&repo.name, &output_file.to_string_lossy());
+
+        // Write prompts to disk for the command
+        let sys_prompt_path = discovery_dir.join(format!("{}-system.md", repo.id));
+        let usr_prompt_path = discovery_dir.join(format!("{}-user.md", repo.id));
+        std::fs::write(&sys_prompt_path, &system_prompt)
+            .map_err(|e| format!("Failed to write system prompt: {}", e))?;
+        std::fs::write(&usr_prompt_path, &user_prompt)
+            .map_err(|e| format!("Failed to write user prompt: {}", e))?;
+
+        let escaped_path = shell_quote(&repo.path);
+        let escaped_sys = shell_quote(&sys_prompt_path.to_string_lossy());
+        let escaped_usr = shell_quote(&usr_prompt_path.to_string_lossy());
+
+        commands.push(format!(
+            "cd {} && claude --print --append-system-prompt \"$(cat {})\" \"$(cat {})\"",
+            escaped_path, escaped_sys, escaped_usr
+        ));
+    }
+
+    // For multiple repos, run in parallel with subshells
+    let full_command = if commands.len() == 1 {
+        format!("echo 'Exploring {} for map: {}...' && {}", repos[0].name, map_name, commands[0])
+    } else {
+        let parallel: Vec<String> = repos
+            .iter()
+            .zip(commands.iter())
+            .map(|(repo, cmd)| {
+                format!("(echo 'Exploring {}...' && {}) &", repo.name, cmd)
+            })
+            .collect();
+        format!(
+            "echo 'Sending {} scouts for map: {}...' && {} wait && echo 'All scouts returned.'",
+            repos.len(),
+            map_name,
+            parallel.join(" "),
+        )
+    };
+
+    Ok(full_command)
+}
+
+/// Poll for discovery results. Checks if per-repo discovery JSON files exist,
+/// parses them, and assembles the results into the system map.
+#[tauri::command]
+pub fn poll_map_discovery(
+    state: State<AppState>,
+    map_id: String,
+    repo_ids: Vec<String>,
+) -> Result<serde_json::Value, String> {
+    let discovery_dir = Path::new(&state.config_path)
+        .join("discoveries")
+        .join(&map_id);
+
+    let mut found = 0u32;
+    let total = repo_ids.len() as u32;
+    let mut all_services: Vec<MapService> = Vec::new();
+    let mut all_connections: Vec<MapConnection> = Vec::new();
+    let mut errors: Vec<String> = Vec::new();
+
+    let repos_lock = state.repositories.lock().unwrap();
+
+    for repo_id in &repo_ids {
+        let output_file = discovery_dir.join(format!("{}.json", repo_id));
+        if !output_file.exists() {
+            continue;
+        }
+
+        let data = match std::fs::read_to_string(&output_file) {
+            Ok(d) => d,
+            Err(e) => {
+                errors.push(format!("Failed to read {}: {}", repo_id, e));
+                continue;
+            }
+        };
+
+        let result: DiscoveryResult = match serde_json::from_str(&data) {
+            Ok(r) => r,
+            Err(e) => {
+                errors.push(format!("Malformed discovery for {}: {}", repo_id, e));
+                continue;
+            }
+        };
+
+        found += 1;
+
+        let repo = repos_lock.get(repo_id);
+        let repo_id_opt = repo.map(|r| r.id.clone());
+
+        // Convert discovered services to MapService
+        let cols = 3usize;
+        let offset = all_services.len();
+        for (i, svc) in result.services.iter().enumerate() {
+            let row = (offset + i) / cols;
+            let col = (offset + i) % cols;
+            let position = (200.0 + col as f64 * 250.0, 150.0 + row as f64 * 200.0);
+
+            let service_type = parse_service_type(&svc.service_type);
+            let color = service_type_color(&service_type);
+
+            all_services.push(MapService {
+                id: uuid::Uuid::new_v4().to_string(),
+                name: svc.name.clone(),
+                service_type,
+                repo_id: repo_id_opt.clone(),
+                runtime: svc.runtime.clone(),
+                framework: svc.framework.clone(),
+                description: svc.description.clone(),
+                exposes: svc.exposes.clone(),
+                consumes: svc.consumes.clone(),
+                owns_data: svc.owns_data.clone(),
+                position,
+                color,
+            });
+        }
+
+        // Convert discovered connections to MapConnection
+        for conn in &result.connections {
+            let from_id = all_services
+                .iter()
+                .find(|s| s.name == conn.from)
+                .map(|s| s.id.clone());
+            let to_id = all_services
+                .iter()
+                .find(|s| s.name == conn.to)
+                .map(|s| s.id.clone());
+
+            if let (Some(from), Some(to)) = (from_id, to_id) {
+                all_connections.push(MapConnection {
+                    id: uuid::Uuid::new_v4().to_string(),
+                    from_service: from,
+                    to_service: to,
+                    connection_type: parse_connection_type(&conn.connection_type),
+                    sync: conn.sync,
+                    label: conn.label.clone(),
+                    description: conn.description.clone(),
+                });
+            }
+        }
+    }
+    drop(repos_lock);
+
+    let complete = found == total;
+
+    // If all repos are scanned, assemble into the system map
+    if complete && found > 0 {
+        let mut maps = state.system_maps.lock().unwrap();
+        if let Some(map) = maps.get_mut(&map_id) {
+            // Merge — append discovered services/connections (don't overwrite manual ones)
+            map.services.extend(all_services.clone());
+            map.connections.extend(all_connections.clone());
+            map.updated_at = Utc::now();
+        }
+        drop(maps);
+        state.save_system_maps();
+
+        // Clean up discovery files
+        let _ = std::fs::remove_dir_all(&discovery_dir);
+    }
+
+    Ok(serde_json::json!({
+        "found": found,
+        "total": total,
+        "complete": complete,
+        "services_discovered": all_services.len(),
+        "connections_discovered": all_connections.len(),
+        "errors": errors,
+    }))
+}
+
+fn parse_service_type(s: &str) -> ServiceType {
+    match s.to_lowercase().as_str() {
+        "backend" => ServiceType::Backend,
+        "frontend" => ServiceType::Frontend,
+        "worker" => ServiceType::Worker,
+        "gateway" => ServiceType::Gateway,
+        "database" => ServiceType::Database,
+        "queue" => ServiceType::Queue,
+        "cache" => ServiceType::Cache,
+        "external" => ServiceType::External,
+        _ => ServiceType::Backend,
+    }
+}
+
+fn parse_connection_type(s: &str) -> ConnectionType {
+    match s.to_lowercase().as_str() {
+        "rest" => ConnectionType::Rest,
+        "grpc" => ConnectionType::Grpc,
+        "graphql" => ConnectionType::Graphql,
+        "websocket" => ConnectionType::Websocket,
+        "event" => ConnectionType::Event,
+        "shared_db" => ConnectionType::SharedDb,
+        "file_system" => ConnectionType::FileSystem,
+        "ipc" => ConnectionType::Ipc,
+        _ => ConnectionType::Rest,
+    }
+}
+
+fn service_type_color(st: &ServiceType) -> String {
+    match st {
+        ServiceType::Backend => "#5a8a5c",
+        ServiceType::Frontend => "#5b8abd",
+        ServiceType::Worker => "#9b6abf",
+        ServiceType::Gateway => "#b8944a",
+        ServiceType::Database => "#d4aa5a",
+        ServiceType::Queue => "#c4654a",
+        ServiceType::Cache => "#6a8a7a",
+        ServiceType::External => "#6a675f",
+    }
+    .to_string()
+}
+
 // ── Helpers ──
 
 /// Shell-quote a string for safe inclusion in shell commands.
