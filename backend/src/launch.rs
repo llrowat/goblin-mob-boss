@@ -1,18 +1,28 @@
+use crate::guidance;
 use crate::models::{ExecutionMode, Feature, TaskSpec};
 
 /// Build the launch command and environment for executing a feature.
 /// Returns (command_args, env_vars, initial_prompt_content).
 /// `system_prompt_content` is the system prompt text to append (passed inline via --append-system-prompt).
+/// `repo_path` is optional — when provided, the guidance file path is included in the prompt.
 pub fn build_launch(
     feature: &Feature,
     system_prompt_content: &str,
+) -> (Vec<String>, Vec<(String, String)>, String) {
+    build_launch_with_repo(feature, system_prompt_content, None)
+}
+
+pub fn build_launch_with_repo(
+    feature: &Feature,
+    system_prompt_content: &str,
+    repo_path: Option<&str>,
 ) -> (Vec<String>, Vec<(String, String)>, String) {
     let mode = feature
         .execution_mode
         .as_ref()
         .unwrap_or(&ExecutionMode::Subagents);
 
-    let prompt = build_prompt(feature, mode);
+    let prompt = build_prompt(feature, mode, repo_path);
     let mut env = Vec::new();
     let mut args = vec!["claude".to_string()];
 
@@ -42,10 +52,19 @@ pub fn build_launch(
     (args, env, prompt)
 }
 
-fn build_prompt(feature: &Feature, mode: &ExecutionMode) -> String {
+fn build_prompt(feature: &Feature, mode: &ExecutionMode, repo_path: Option<&str>) -> String {
     let tasks_section = build_tasks_section(&feature.task_specs);
     let agents_section = build_agents_section(&feature.selected_agents);
-    let _validators_note = String::new(); // Validators are in the repo config, injected separately
+
+    let guidance_note = repo_path
+        .map(|rp| {
+            let gf = guidance::guidance_file_path(rp, &feature.id);
+            format!(
+                "\n- Check `{}` periodically for guidance notes from the user\n",
+                gf
+            )
+        })
+        .unwrap_or_default();
 
     match mode {
         ExecutionMode::Teams => {
@@ -65,12 +84,13 @@ fn build_prompt(feature: &Feature, mode: &ExecutionMode) -> String {
 - Work on the feature branch: {branch}
 - Coordinate via the shared task list
 - Each teammate should work on their assigned tasks
-- When all tasks pass, signal completion"#,
+- When all tasks pass, signal completion{guidance_note}"#,
                 name = feature.name,
                 description = feature.description,
                 tasks_section = tasks_section,
                 agents_section = agents_section,
                 branch = feature.branch,
+                guidance_note = guidance_note,
             )
         }
         ExecutionMode::Subagents => {
@@ -90,12 +110,13 @@ fn build_prompt(feature: &Feature, mode: &ExecutionMode) -> String {
 - Work on the feature branch: {branch}
 - Use the Agent tool to delegate work to subagents when beneficial
 - The task list above is a suggestion — you may reorganize as needed
-- When all tasks are complete, ensure everything works together"#,
+- When all tasks are complete, ensure everything works together{guidance_note}"#,
                 name = feature.name,
                 description = feature.description,
                 tasks_section = tasks_section,
                 agents_section = agents_section,
                 branch = feature.branch,
+                guidance_note = guidance_note,
             )
         }
     }

@@ -7,6 +7,7 @@ import type {
   TaskSpec,
   ExecutionMode,
   IdeationResult,
+  ModeRecommendation,
 } from "../types";
 
 export function LaunchConfigPage() {
@@ -15,7 +16,8 @@ export function LaunchConfigPage() {
   const navigate = useNavigate();
   const [feature, setFeature] = useState<Feature | null>(null);
   const [agents, setAgents] = useState<AgentFile[]>([]);
-  const [executionMode, setExecutionMode] = useState<ExecutionMode>("subagents");
+  const [executionMode, setExecutionMode] =
+    useState<ExecutionMode>("subagents");
   const [rationale, setRationale] = useState("");
   const [selectedAgents, setSelectedAgents] = useState<string[]>([]);
   const [taskSpecs, setTaskSpecs] = useState<TaskSpec[]>([]);
@@ -24,13 +26,16 @@ export function LaunchConfigPage() {
   const [copied, setCopied] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  // Heuristics
+  const [recommendation, setRecommendation] =
+    useState<ModeRecommendation | null>(null);
+
   useEffect(() => {
     if (!featureId) return;
 
     tauri.getFeature(featureId).then((f) => {
       setFeature(f);
 
-      // If feature already has config, use it
       if (f.execution_mode) {
         setExecutionMode(f.execution_mode);
         setRationale(f.execution_rationale ?? "");
@@ -38,13 +43,11 @@ export function LaunchConfigPage() {
         setTaskSpecs(f.task_specs);
       }
 
-      // Load repo and agents
       tauri.listRepositories().then((repos) => {
         const r = repos.find((repo) => repo.id === f.repo_id);
         if (r) {
           tauri.listAgents(r.path).then((agentList) => {
             setAgents(agentList);
-            // Pre-select all agents if none selected
             if (f.selected_agents.length === 0) {
               setSelectedAgents(agentList.map((a) => a.filename));
             }
@@ -52,20 +55,32 @@ export function LaunchConfigPage() {
         }
       });
 
-      // If still in ideation, load the plan
       if (f.task_specs.length === 0) {
-        tauri.pollIdeationResult(featureId).then((result: IdeationResult) => {
-          if (result.tasks.length > 0) {
-            setTaskSpecs(result.tasks);
-          }
-          if (result.execution_mode) {
-            setExecutionMode(result.execution_mode.recommended);
-            setRationale(result.execution_mode.rationale);
-          }
-        });
+        tauri
+          .pollIdeationResult(featureId)
+          .then((result: IdeationResult) => {
+            if (result.tasks.length > 0) {
+              setTaskSpecs(result.tasks);
+              // Analyze with heuristics
+              tauri.analyzeTaskGraph(result.tasks).then(setRecommendation);
+            }
+            if (result.execution_mode) {
+              setExecutionMode(result.execution_mode.recommended);
+              setRationale(result.execution_mode.rationale);
+            }
+          });
+      } else {
+        tauri.analyzeTaskGraph(f.task_specs).then(setRecommendation);
       }
     });
   }, [featureId]);
+
+  // Re-analyze when tasks change
+  useEffect(() => {
+    if (taskSpecs.length > 0) {
+      tauri.analyzeTaskGraph(taskSpecs).then(setRecommendation);
+    }
+  }, [taskSpecs]);
 
   const toggleAgent = (filename: string) => {
     setSelectedAgents((prev) =>
@@ -89,7 +104,6 @@ export function LaunchConfigPage() {
       );
       const cmd = await tauri.getLaunchCommand(featureId);
       setLaunchCmd(cmd);
-      // Refresh feature
       const updated = await tauri.getFeature(featureId);
       setFeature(updated);
     } catch (e) {
@@ -111,6 +125,12 @@ export function LaunchConfigPage() {
     }
   };
 
+  const applyRecommendation = () => {
+    if (!recommendation) return;
+    setExecutionMode(recommendation.recommended_mode);
+    setRationale(recommendation.reasoning.join(" "));
+  };
+
   if (!feature) {
     return (
       <div className="empty-state">
@@ -129,6 +149,152 @@ export function LaunchConfigPage() {
       </div>
 
       {error && <div className="error-banner">{error}</div>}
+
+      {/* Intelligent Mode Recommendation */}
+      {recommendation && taskSpecs.length > 0 && (
+        <div
+          className="panel"
+          style={{
+            marginBottom: 16,
+            borderLeft: `3px solid ${recommendation.recommended_mode === "teams" ? "#5b8abd" : "#6b9e6b"}`,
+          }}
+        >
+          <div className="panel-title" style={{ marginBottom: 8 }}>
+            Mode Analysis
+            <span
+              style={{
+                fontSize: 12,
+                fontWeight: 400,
+                marginLeft: 8,
+                color: "var(--muted)",
+              }}
+            >
+              {Math.round(recommendation.confidence * 100)}% confidence
+            </span>
+          </div>
+
+          <div style={{ marginBottom: 12 }}>
+            <span
+              style={{
+                fontSize: 13,
+                fontWeight: 600,
+                color:
+                  recommendation.recommended_mode === "teams"
+                    ? "#5b8abd"
+                    : "#6b9e6b",
+              }}
+            >
+              Recommends:{" "}
+              {recommendation.recommended_mode === "teams"
+                ? "Agent Teams"
+                : "Subagents"}
+            </span>
+            {recommendation.recommended_mode !== executionMode && (
+              <button
+                className="btn btn-sm btn-secondary"
+                onClick={applyRecommendation}
+                style={{ marginLeft: 8 }}
+              >
+                Apply
+              </button>
+            )}
+          </div>
+
+          {/* Reasoning */}
+          <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+            {recommendation.reasoning.map((r, i) => (
+              <div key={i} style={{ marginBottom: 2 }}>
+                {r}
+              </div>
+            ))}
+          </div>
+
+          {/* Task Graph Visualization */}
+          {recommendation.task_graph.nodes.length > 0 && (
+            <div
+              style={{
+                marginTop: 12,
+                paddingTop: 12,
+                borderTop: "1px solid var(--border)",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 11,
+                  color: "var(--muted)",
+                  marginBottom: 8,
+                }}
+              >
+                Task dependency graph (max parallel:{" "}
+                {recommendation.task_graph.max_parallel}, critical path:{" "}
+                {recommendation.task_graph.critical_path_length})
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  gap: 4,
+                  flexWrap: "wrap",
+                }}
+              >
+                {/* Group by depth level */}
+                {Array.from(
+                  new Set(
+                    recommendation.task_graph.nodes.map((n) => n.depth),
+                  ),
+                )
+                  .sort()
+                  .map((depth) => (
+                    <div
+                      key={depth}
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 4,
+                        padding: "4px 8px",
+                        borderRadius: 4,
+                        backgroundColor: "rgba(255,255,255,0.03)",
+                        minWidth: 100,
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: 9,
+                          color: "var(--muted)",
+                          textTransform: "uppercase",
+                        }}
+                      >
+                        {depth === 0 ? "Start" : `Step ${depth + 1}`}
+                      </div>
+                      {recommendation.task_graph.nodes
+                        .filter((n) => n.depth === depth)
+                        .map((node) => (
+                          <div
+                            key={node.index}
+                            style={{
+                              fontSize: 11,
+                              padding: "3px 6px",
+                              borderRadius: 3,
+                              backgroundColor: "rgba(255,255,255,0.05)",
+                              border: "1px solid var(--border)",
+                              whiteSpace: "nowrap",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                            }}
+                            title={`${node.title} (${node.agent || "unassigned"})`}
+                          >
+                            <span style={{ color: "var(--text-secondary)" }}>
+                              {node.index + 1}.
+                            </span>{" "}
+                            {node.title}
+                          </div>
+                        ))}
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Execution Mode */}
       <div className="panel" style={{ marginBottom: 16 }}>
@@ -208,7 +374,8 @@ export function LaunchConfigPage() {
               fontStyle: "italic",
             }}
           >
-            No agents found. Add agent files to .claude/agents/ in your repo.
+            No agents found. Add agent files to .claude/agents/ in your repo, or
+            use the Guide page to apply starter templates.
           </p>
         )}
       </div>
@@ -243,6 +410,17 @@ export function LaunchConfigPage() {
                   {spec.agent && (
                     <div className="task-spec-agent">Agent: {spec.agent}</div>
                   )}
+                  {spec.dependencies.length > 0 && (
+                    <div
+                      style={{
+                        fontSize: 11,
+                        color: "var(--muted)",
+                        marginTop: 2,
+                      }}
+                    >
+                      Depends on: Task {spec.dependencies.join(", ")}
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
@@ -274,7 +452,9 @@ export function LaunchConfigPage() {
               onClick={handleCopyAndLaunch}
               style={{ width: "100%" }}
             >
-              {copied ? "Copied! Redirecting..." : "Copy Command & Start Execution"}
+              {copied
+                ? "Copied! Redirecting..."
+                : "Copy Command & Start Execution"}
             </button>
           </>
         )}

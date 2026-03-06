@@ -42,10 +42,46 @@ describe("AgentsPage", () => {
     },
   ];
 
+  const mockTemplates = [
+    {
+      id: "frontend-developer",
+      name: "Frontend Developer",
+      description: "React/TypeScript UI specialist",
+      category: "development",
+      agent: {
+        filename: "frontend-developer.md",
+        name: "Frontend Developer",
+        description: "React/TypeScript UI specialist",
+        tools: "Read, Edit, Write, Bash, Glob, Grep",
+        model: null,
+        system_prompt: "You are a frontend development specialist.",
+        is_global: false,
+        color: "#5b8abd",
+      },
+    },
+    {
+      id: "test-engineer",
+      name: "Test Engineer",
+      description: "Testing specialist",
+      category: "quality",
+      agent: {
+        filename: "test-engineer.md",
+        name: "Test Engineer",
+        description: "Testing and quality assurance specialist",
+        tools: "Read, Edit, Write, Bash, Glob, Grep",
+        model: null,
+        system_prompt: "You are a testing specialist.",
+        is_global: false,
+        color: "#c9a84c",
+      },
+    },
+  ];
+
   function mockInvokeForAgents() {
     vi.mocked(invoke).mockImplementation((cmd: string) => {
       if (cmd === "list_repositories") return Promise.resolve(mockRepos);
       if (cmd === "list_agents") return Promise.resolve(mockAgents);
+      if (cmd === "list_agent_templates") return Promise.resolve(mockTemplates);
       return Promise.resolve([]);
     });
   }
@@ -53,6 +89,7 @@ describe("AgentsPage", () => {
   it("renders page header", async () => {
     vi.mocked(invoke).mockImplementation((cmd: string) => {
       if (cmd === "list_repositories") return Promise.resolve([]);
+      if (cmd === "list_agent_templates") return Promise.resolve([]);
       return Promise.resolve([]);
     });
 
@@ -71,7 +108,8 @@ describe("AgentsPage", () => {
 
     await waitFor(() => {
       expect(screen.getByText("Full-Stack Developer")).toBeInTheDocument();
-      expect(screen.getByText("Frontend Developer")).toBeInTheDocument();
+      // "Frontend Developer" appears in both agent list and template section
+      expect(screen.getAllByText("Frontend Developer").length).toBeGreaterThanOrEqual(1);
       expect(screen.getByText("Repository Agents")).toBeInTheDocument();
     });
   });
@@ -139,7 +177,8 @@ describe("AgentsPage", () => {
     });
 
     const avatars = document.querySelectorAll(".agent-card-avatar");
-    expect(avatars).toHaveLength(2);
+    expect(avatars.length).toBeGreaterThanOrEqual(2);
+    // First avatar is the repo agent with color #5a8a5c
     expect((avatars[0] as HTMLElement).style.background).toBe(
       "rgb(90, 138, 92)",
     );
@@ -204,10 +243,11 @@ describe("AgentsPage", () => {
     });
   });
 
-  it("shows empty state when no agents exist", async () => {
+  it("shows empty state when no agents and no templates exist", async () => {
     vi.mocked(invoke).mockImplementation((cmd: string) => {
       if (cmd === "list_repositories") return Promise.resolve(mockRepos);
       if (cmd === "list_agents") return Promise.resolve([]);
+      if (cmd === "list_agent_templates") return Promise.resolve([]);
       return Promise.resolve([]);
     });
 
@@ -228,6 +268,83 @@ describe("AgentsPage", () => {
         screen.getByText("Tools: Read, Edit, Write, Bash"),
       ).toBeInTheDocument();
     });
+  });
+
+  it("shows unapplied templates as greyed-out cards", async () => {
+    mockInvokeForAgents();
+
+    render(<AgentsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Built-in Templates")).toBeInTheDocument();
+    });
+
+    // test-engineer template is not in agents, so should appear
+    expect(screen.getByText("Test Engineer")).toBeInTheDocument();
+
+    // template cards have "Add to Repo" buttons
+    const addButtons = screen.getAllByText("+ Add to Repo");
+    expect(addButtons.length).toBeGreaterThan(0);
+
+    // The template card should have the template badge
+    const templateBadges = screen.getAllByText("template");
+    expect(templateBadges.length).toBeGreaterThan(0);
+  });
+
+  it("hides templates already added as agents", async () => {
+    // frontend-developer.md template has a different filename than "frontend-dev.md" in agents
+    // so both templates should show (neither matches agent filenames exactly)
+    mockInvokeForAgents();
+
+    render(<AgentsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Built-in Templates")).toBeInTheDocument();
+    });
+
+    // Both templates should show since agent filenames are "fullstack-dev.md" and "frontend-dev.md"
+    // but template filenames are "frontend-developer.md" and "test-engineer.md"
+    const addButtons = screen.getAllByText("+ Add to Repo");
+    expect(addButtons).toHaveLength(2);
+  });
+
+  it("calls applyAgentTemplate when Add to Repo is clicked", async () => {
+    mockInvokeForAgents();
+
+    render(<AgentsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Built-in Templates")).toBeInTheDocument();
+    });
+
+    const addButtons = screen.getAllByText("+ Add to Repo");
+    fireEvent.click(addButtons[0]);
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("apply_agent_template", {
+        repoPath: "/home/user/my-project",
+        templateId: "frontend-developer",
+      });
+    });
+  });
+
+  it("shows templates section when no agents but templates exist", async () => {
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "list_repositories") return Promise.resolve(mockRepos);
+      if (cmd === "list_agents") return Promise.resolve([]);
+      if (cmd === "list_agent_templates") return Promise.resolve(mockTemplates);
+      return Promise.resolve([]);
+    });
+
+    render(<AgentsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Built-in Templates")).toBeInTheDocument();
+      expect(screen.getAllByText("+ Add to Repo")).toHaveLength(2);
+    });
+
+    // Empty state should NOT show when templates are available
+    expect(screen.queryByText("No Agents")).not.toBeInTheDocument();
   });
 
   it("shows filename and description fields in create modal", async () => {

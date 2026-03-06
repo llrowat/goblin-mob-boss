@@ -1,10 +1,15 @@
+mod analytics;
 mod commands;
 mod git;
+mod guidance;
+mod heuristics;
 mod launch;
 mod models;
+mod observer;
 mod prompts;
 mod pty;
 mod store;
+mod templates;
 mod validators;
 
 use store::AppState;
@@ -69,6 +74,19 @@ pub fn run() {
             // Preferences
             commands::get_preferences,
             commands::set_preferences,
+            // Templates
+            commands::list_agent_templates,
+            commands::list_feature_recipes,
+            commands::apply_agent_template,
+            // Execution Observability
+            commands::poll_execution_status,
+            // Analytics
+            commands::analyze_feature_execution,
+            // Guidance
+            commands::add_guidance_note,
+            commands::list_guidance_notes,
+            // Heuristics
+            commands::analyze_task_graph,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

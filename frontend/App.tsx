@@ -6,6 +6,7 @@ import { FeatureStatusPage } from "./pages/FeatureStatusPage";
 import { AgentsPage } from "./pages/AgentsPage";
 import { ReposPage } from "./pages/ReposPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { GuidePage } from "./pages/GuidePage";
 
 function App() {
   return (
@@ -29,6 +30,14 @@ function App() {
               }
             >
               Features
+            </NavLink>
+            <NavLink
+              to="/guide"
+              className={({ isActive }) =>
+                `sidebar-nav-item ${isActive ? "active" : ""}`
+              }
+            >
+              Guide
             </NavLink>
 
             <div className="sidebar-section-label">Settings</div>
@@ -74,6 +83,7 @@ function App() {
               path="/feature/:featureId/status"
               element={<FeatureStatusPage />}
             />
+            <Route path="/guide" element={<GuidePage />} />
             <Route path="/agents" element={<AgentsPage />} />
             <Route path="/repos" element={<ReposPage />} />
             <Route path="/settings" element={<SettingsPage />} />

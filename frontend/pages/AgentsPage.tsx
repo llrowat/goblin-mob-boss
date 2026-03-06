@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useTauri } from "../hooks/useTauri";
-import type { AgentFile, Repository } from "../types";
+import type { AgentFile, AgentTemplate, Repository } from "../types";
 
 const PRESET_COLORS = [
   "#5a8a5c",
@@ -46,6 +46,12 @@ export function AgentsPage() {
   const [modalAgent, setModalAgent] = useState<AgentFile | null>(null);
   const [modalMode, setModalMode] = useState<"create" | "edit" | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [templates, setTemplates] = useState<AgentTemplate[]>([]);
+  const [addingTemplate, setAddingTemplate] = useState<string | null>(null);
+
+  useEffect(() => {
+    tauri.listAgentTemplates().then(setTemplates).catch(() => setTemplates([]));
+  }, []);
 
   useEffect(() => {
     tauri.listRepositories().then((r) => {
@@ -127,8 +133,28 @@ export function AgentsPage() {
     }
   };
 
+  const handleAddTemplate = async (templateId: string) => {
+    if (!selectedRepo || addingTemplate) return;
+    setAddingTemplate(templateId);
+    setError("");
+    try {
+      await tauri.applyAgentTemplate(selectedRepo.path, templateId);
+      loadAgents();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setAddingTemplate(null);
+    }
+  };
+
   const repoAgents = agents.filter((a) => !a.is_global);
   const globalAgents = agents.filter((a) => a.is_global);
+
+  // Templates not yet added as agents (match by filename)
+  const agentFilenames = new Set(agents.map((a) => a.filename));
+  const unappliedTemplates = templates.filter(
+    (t) => !agentFilenames.has(t.agent.filename),
+  );
 
   return (
     <div>
@@ -216,7 +242,29 @@ export function AgentsPage() {
         </>
       )}
 
-      {agents.length === 0 && (
+      {/* Built-in templates (not yet added) */}
+      {unappliedTemplates.length > 0 && selectedRepo && (
+        <>
+          <div
+            className="sidebar-section-label"
+            style={{ padding: agents.length > 0 ? "20px 0 8px" : "0 0 8px" }}
+          >
+            Built-in Templates
+          </div>
+          <div className="agent-grid">
+            {unappliedTemplates.map((template) => (
+              <TemplateCard
+                key={template.id}
+                template={template}
+                adding={addingTemplate === template.id}
+                onAdd={() => handleAddTemplate(template.id)}
+              />
+            ))}
+          </div>
+        </>
+      )}
+
+      {agents.length === 0 && unappliedTemplates.length === 0 && (
         <div className="empty-state">
           <h3>No Agents</h3>
           <p>
@@ -343,6 +391,70 @@ function AgentCard({
               </button>
             </div>
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TemplateCard({
+  template,
+  adding,
+  onAdd,
+}: {
+  template: AgentTemplate;
+  adding: boolean;
+  onAdd: () => void;
+}) {
+  const agent = template.agent;
+  return (
+    <div className="agent-card agent-card-template">
+      <div
+        className="agent-card-color-bar"
+        style={{ background: agent.color || "#5a8a5c" }}
+      />
+      <div className="agent-card-body">
+        <div className="agent-card-top">
+          <div
+            className="agent-card-avatar"
+            style={{ background: agent.color || "#5a8a5c", opacity: 0.5 }}
+          >
+            {agent.name.charAt(0).toUpperCase()}
+          </div>
+          <div className="agent-card-info">
+            <div className="agent-card-name">{agent.name}</div>
+            <div className="agent-card-role">
+              {template.category}
+              <span className="agent-card-builtin-badge">template</span>
+            </div>
+          </div>
+        </div>
+        {template.description && (
+          <div
+            style={{
+              fontSize: 12,
+              color: "var(--muted)",
+              marginBottom: 8,
+            }}
+          >
+            {template.description}
+          </div>
+        )}
+        {agent.tools && (
+          <div style={{ marginBottom: 8 }}>
+            <span className="agent-tag" style={{ fontSize: 10, opacity: 0.6 }}>
+              Tools: {agent.tools}
+            </span>
+          </div>
+        )}
+        <div className="agent-card-actions">
+          <button
+            className="btn btn-primary btn-sm"
+            onClick={onAdd}
+            disabled={adding}
+          >
+            {adding ? "Adding..." : "+ Add to Repo"}
+          </button>
         </div>
       </div>
     </div>
@@ -542,7 +654,7 @@ function AgentFormModal({
               value={form.system_prompt}
               onChange={(e) => update("system_prompt", e.target.value)}
               placeholder="You are a specialist in..."
-              style={{ minHeight: 120 }}
+              style={{ minHeight: 200 }}
             />
             <div className="form-help">
               Instructions defining this agent&apos;s behavior during task
