@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useTauri } from "../hooks/useTauri";
 import { Terminal } from "../components/Terminal";
@@ -27,12 +27,18 @@ export function IdeationPage() {
   useEffect(() => {
     if (!featureId) return;
 
-    tauri.getFeature(featureId).then(setFeature).catch(() => {});
-    tauri.getIdeationPrompt(featureId).then(setSystemPrompt).catch(() => {});
+    tauri.getFeature(featureId).then(setFeature).catch((e) => {
+      console.error("Failed to load feature:", e);
+    });
+    tauri.getIdeationPrompt(featureId).then(setSystemPrompt).catch((e) => {
+      console.error("Failed to load system prompt:", e);
+    });
     tauri
       .getIdeationTerminalCommand(featureId)
       .then(setTerminalCmd)
-      .catch(() => {});
+      .catch((e) => {
+        console.error("Failed to load terminal command:", e);
+      });
   }, [featureId]);
 
   const startPty = useCallback(
@@ -73,9 +79,12 @@ export function IdeationPage() {
     startPty(sessionId);
   }, [startPty, sessionId]);
 
-  // Poll for ideation result (plan.json)
+  // Poll for ideation result (plan.json) with backoff
+  const pollCountRef = React.useRef(0);
+  const MAX_POLLS = 600; // Stop after ~30 min (3s * 600)
   const pollResult = useCallback(() => {
     if (!featureId) return;
+    pollCountRef.current += 1;
     tauri
       .pollIdeationResult(featureId)
       .then((result) => {
@@ -87,9 +96,20 @@ export function IdeationPage() {
   }, [featureId]);
 
   useEffect(() => {
+    pollCountRef.current = 0;
     pollResult();
-    const interval = setInterval(pollResult, 3000);
-    return () => clearInterval(interval);
+    // Use adaptive polling: 3s initially, slows to 10s after 60 polls (~3 min)
+    let pollTimer: ReturnType<typeof setTimeout>;
+    const schedulePoll = () => {
+      const interval = pollCountRef.current > 60 ? 10000 : 3000;
+      if (pollCountRef.current >= MAX_POLLS) return; // Stop polling
+      pollTimer = setTimeout(() => {
+        pollResult();
+        schedulePoll();
+      }, interval);
+    };
+    schedulePoll();
+    return () => clearTimeout(pollTimer);
   }, [pollResult]);
 
   const handleCopyCommand = async () => {

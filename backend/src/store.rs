@@ -32,23 +32,58 @@ impl AppState {
 
     fn load_json_list<T: serde::de::DeserializeOwned>(&self, filename: &str) -> Vec<T> {
         let path = self.json_path(filename);
-        if path.exists() {
-            if let Ok(data) = std::fs::read_to_string(&path) {
-                if let Ok(items) = serde_json::from_str::<Vec<T>>(&data) {
-                    return items;
+        if !path.exists() {
+            return vec![];
+        }
+        match std::fs::read_to_string(&path) {
+            Ok(data) => match serde_json::from_str::<Vec<T>>(&data) {
+                Ok(items) => items,
+                Err(e) => {
+                    log::error!(
+                        "Corrupted JSON in {}: {}. Backing up and returning empty.",
+                        path.display(),
+                        e
+                    );
+                    // Create a backup of the corrupted file
+                    let backup = path.with_extension("json.bak");
+                    let _ = std::fs::copy(&path, &backup);
+                    vec![]
                 }
+            },
+            Err(e) => {
+                log::error!("Failed to read {}: {}", path.display(), e);
+                vec![]
             }
         }
-        vec![]
     }
 
+    /// Atomically save JSON data using write-to-temp-then-rename.
+    /// This prevents partial writes from corrupting the file.
     fn save_json_list<T: serde::Serialize>(&self, filename: &str, items: &[T]) {
         let path = self.json_path(filename);
         if let Some(parent) = path.parent() {
-            let _ = std::fs::create_dir_all(parent);
+            if let Err(e) = std::fs::create_dir_all(parent) {
+                log::error!("Failed to create config dir {}: {}", parent.display(), e);
+                return;
+            }
         }
-        if let Ok(data) = serde_json::to_string_pretty(&items) {
-            let _ = std::fs::write(&path, data);
+        let data = match serde_json::to_string_pretty(&items) {
+            Ok(d) => d,
+            Err(e) => {
+                log::error!("Failed to serialize {} for {}: {}", std::any::type_name::<T>(), filename, e);
+                return;
+            }
+        };
+        // Atomic write: write to temp file, then rename
+        let tmp_path = path.with_extension("json.tmp");
+        if let Err(e) = std::fs::write(&tmp_path, &data) {
+            log::error!("Failed to write temp file {}: {}", tmp_path.display(), e);
+            return;
+        }
+        if let Err(e) = std::fs::rename(&tmp_path, &path) {
+            log::error!("Failed to rename {} -> {}: {}", tmp_path.display(), path.display(), e);
+            // Try direct write as fallback
+            let _ = std::fs::write(&path, &data);
         }
     }
 
@@ -88,12 +123,21 @@ impl AppState {
 
     fn load_preferences(&self) {
         let path = self.json_path("preferences.json");
-        if path.exists() {
-            if let Ok(data) = std::fs::read_to_string(&path) {
-                if let Ok(prefs) = serde_json::from_str::<Preferences>(&data) {
+        if !path.exists() {
+            return;
+        }
+        match std::fs::read_to_string(&path) {
+            Ok(data) => match serde_json::from_str::<Preferences>(&data) {
+                Ok(prefs) => {
                     let mut current = self.preferences.lock().unwrap();
                     *current = prefs;
                 }
+                Err(e) => {
+                    log::error!("Corrupted preferences.json: {}", e);
+                }
+            },
+            Err(e) => {
+                log::error!("Failed to read preferences.json: {}", e);
             }
         }
     }
@@ -102,10 +146,26 @@ impl AppState {
         let prefs = self.preferences.lock().unwrap();
         let path = self.json_path("preferences.json");
         if let Some(parent) = path.parent() {
-            let _ = std::fs::create_dir_all(parent);
+            if let Err(e) = std::fs::create_dir_all(parent) {
+                log::error!("Failed to create config dir: {}", e);
+                return;
+            }
         }
-        if let Ok(data) = serde_json::to_string_pretty(&*prefs) {
-            let _ = std::fs::write(&path, data);
+        let data = match serde_json::to_string_pretty(&*prefs) {
+            Ok(d) => d,
+            Err(e) => {
+                log::error!("Failed to serialize preferences: {}", e);
+                return;
+            }
+        };
+        let tmp_path = path.with_extension("json.tmp");
+        if let Err(e) = std::fs::write(&tmp_path, &data) {
+            log::error!("Failed to write temp preferences: {}", e);
+            return;
+        }
+        if let Err(e) = std::fs::rename(&tmp_path, &path) {
+            log::error!("Failed to rename preferences: {}", e);
+            let _ = std::fs::write(&path, &data);
         }
     }
 }
@@ -383,5 +443,40 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let result = delete_repo_agent(&dir.path().to_string_lossy(), "nonexistent.md");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn load_json_list_creates_backup_for_corrupted() {
+        let dir = TempDir::new().unwrap();
+        std::fs::write(dir.path().join("corrupted.json"), "{ invalid json [").unwrap();
+        let state = make_state(&dir);
+        let repos: Vec<Repository> = state.load_json_list("corrupted.json");
+        assert!(repos.is_empty());
+        // Backup should be created
+        assert!(dir.path().join("corrupted.json.bak").exists());
+    }
+
+    #[test]
+    fn save_json_list_no_tmp_file_left() {
+        let dir = TempDir::new().unwrap();
+        let state = make_state(&dir);
+
+        let repo = Repository::new(
+            "test".to_string(),
+            "/tmp/t".to_string(),
+            "main".to_string(),
+            vec![],
+            None,
+        );
+        {
+            let mut repos = state.repositories.lock().unwrap();
+            repos.insert(repo.id.clone(), repo);
+        }
+        state.save_repos();
+
+        // The .tmp file should not exist after successful save
+        assert!(!dir.path().join("repositories.json.tmp").exists());
+        // The actual file should exist
+        assert!(dir.path().join("repositories.json").exists());
     }
 }

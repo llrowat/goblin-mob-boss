@@ -5,7 +5,7 @@ A desktop app for agent-based AI development workflows. Configure agents, plan f
 ## How It Works
 
 1. **Configure Agents** — Agents are defined as `.claude/agents/*.md` files with YAML frontmatter (name, description, tools, model, system prompt, color). Manage them per-repo or globally via the built-in form editor. Built-in agents (Frontend Developer, Backend Developer, Test Engineer, etc.) appear as greyed-out cards and can be added to any repo with one click.
-2. **Start a Feature** — Describe what you want to build and select one or more repositories. A feature branch is created from each repo's base branch. Cross-repo features span multiple repositories with a shared branch name.
+2. **Start a Feature** — Describe what you want to build and select one or more repositories. A feature branch is created from each repo's base branch, and a **git worktree** is automatically provisioned per repo so multiple features can run concurrently without interfering. Cross-repo features span multiple repositories with a shared branch name.
 3. **Plan with Claude** — An interactive Claude Code session in plan mode helps you refine the approach and break it into task specs, each with assigned agents. The ideation prompt includes repo context (languages, structure, available agents).
 4. **Configure Launch** — GMB analyzes your task dependency graph and recommends an execution mode with confidence scoring:
    - **Agent Teams** — Multiple Claude Code instances in parallel tmux panes, each with its own agent identity. Best for large features with 3+ independent workstreams.
@@ -44,9 +44,18 @@ A desktop app for agent-based AI development workflows. Configure agents, plan f
 - **Confidence scoring** — Each recommendation includes a confidence percentage and detailed reasoning
 
 ### Validation & Git
-- **Repository validators** — Configure shell commands (tests, linters) per repo; run them against the feature branch with detailed stdout/stderr output
+- **Repository validators** — Configure shell commands (tests, linters) per repo; run them in the feature's worktree with per-command timeout protection (10 min default) and detailed stdout/stderr output
+- **Git worktrees** — Each feature gets isolated worktrees per repo, enabling concurrent feature development without branch checkout conflicts
 - **Git diff summary** — View files changed, lines added/removed before pushing
 - **PR creation** — Push feature branch and generate PR command (supports custom `pr_command` templates with `{branch}` placeholder)
+
+### Robustness
+- **Atomic persistence** — JSON state files (features, repos, preferences) are saved via write-to-temp-then-rename to prevent corruption from partial writes
+- **Multi-repo rollback** — If branch creation fails in one repo during feature start, branches already created in other repos are automatically rolled back
+- **Worktree-based validation** — Validators run in isolated worktrees rather than modifying the main working directory, preventing branch state corruption
+- **PTY lifecycle management** — PTY sessions are automatically cleaned up when the reader thread exits, preventing file descriptor and session leaks
+- **Input validation** — Feature names are validated for length, path traversal, and invalid characters
+- **Adaptive polling** — Ideation and execution polling use adaptive intervals with maximum retry counts to prevent infinite requests
 
 ### Infrastructure
 - **Repository management** — Register local git repos, configure base branch, validators, and PR commands

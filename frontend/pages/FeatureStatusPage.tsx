@@ -38,7 +38,10 @@ export function FeatureStatusPage() {
 
   useEffect(() => {
     if (!featureId) return;
-    tauri.getFeature(featureId).then(setFeature).catch(() => {});
+    tauri
+      .getFeature(featureId)
+      .then(setFeature)
+      .catch((e) => setError(`Failed to load feature: ${e}`));
   }, [featureId]);
 
   useEffect(() => {
@@ -48,12 +51,27 @@ export function FeatureStatusPage() {
     tauri.listGuidanceNotes(featureId).then(setGuidanceNotes).catch(() => {});
   }, [featureId, feature]);
 
-  // Poll execution status while executing
+  // Poll execution status while executing, with max poll count
+  const pollCountRef = useRef(0);
+  const MAX_EXEC_POLLS = 720; // Stop after ~1 hour (5s * 720)
   useEffect(() => {
     if (!featureId || feature?.status !== "executing") return;
+    pollCountRef.current = 0;
 
     const poll = () => {
+      pollCountRef.current += 1;
+      if (pollCountRef.current > MAX_EXEC_POLLS) {
+        if (pollRef.current) clearInterval(pollRef.current);
+        return;
+      }
       tauri.pollExecutionStatus(featureId).then(setSnapshot).catch(() => {});
+      // Also refresh feature to detect status changes from outside
+      tauri.getFeature(featureId).then((f) => {
+        if (f.status !== "executing") {
+          setFeature(f);
+          if (pollRef.current) clearInterval(pollRef.current);
+        }
+      }).catch(() => {});
     };
     poll();
     pollRef.current = setInterval(poll, 5000);

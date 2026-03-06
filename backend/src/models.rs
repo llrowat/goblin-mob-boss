@@ -213,6 +213,11 @@ pub struct Feature {
     pub task_specs: Vec<TaskSpec>,
     #[serde(default)]
     pub pty_session_id: Option<String>,
+    /// Per-repo worktree paths: maps repo_id -> worktree_path.
+    /// When set, execution and validation use these isolated worktrees
+    /// instead of the main working directory, allowing concurrent features.
+    #[serde(default)]
+    pub worktree_paths: std::collections::HashMap<String, String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -233,6 +238,7 @@ impl Feature {
             selected_agents: vec![],
             task_specs: vec![],
             pty_session_id: None,
+            worktree_paths: std::collections::HashMap::new(),
             created_at: now,
             updated_at: now,
         }

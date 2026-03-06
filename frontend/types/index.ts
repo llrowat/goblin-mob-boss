@@ -49,6 +49,8 @@ export interface Feature {
   selected_agents: string[];
   task_specs: TaskSpec[];
   pty_session_id: string | null;
+  /** Per-repo worktree paths. Maps repo_id -> worktree directory path. */
+  worktree_paths: Record<string, string>;
   created_at: string;
   updated_at: string;
 }

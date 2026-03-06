@@ -3,11 +3,25 @@ use chrono::Utc;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
+use std::time::Duration;
+use wait_timeout::ChildExt;
+
+/// Default timeout for each validator command (10 minutes).
+const VALIDATOR_TIMEOUT: Duration = Duration::from_secs(600);
 
 pub fn run_validators(
     worktree_path: &str,
     validators: &[String],
     attempt: u32,
+) -> Result<VerifyResult, String> {
+    run_validators_with_timeout(worktree_path, validators, attempt, VALIDATOR_TIMEOUT)
+}
+
+pub fn run_validators_with_timeout(
+    worktree_path: &str,
+    validators: &[String],
+    attempt: u32,
+    timeout: Duration,
 ) -> Result<VerifyResult, String> {
     let results_dir = Path::new(worktree_path)
         .join(".gmb")
@@ -20,31 +34,64 @@ pub fn run_validators(
     let mut all_passed = true;
 
     for (i, cmd) in validators.iter().enumerate() {
-        let output = if cfg!(target_os = "windows") {
+        let child = if cfg!(target_os = "windows") {
             Command::new("cmd")
                 .args(["/C", cmd])
                 .current_dir(worktree_path)
-                .output()
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .spawn()
         } else {
             Command::new("sh")
                 .args(["-c", cmd])
                 .current_dir(worktree_path)
-                .output()
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .spawn()
         };
 
-        let result = match output {
-            Ok(output) => {
-                let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-                let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-                let exit_code = output.status.code().unwrap_or(-1);
-                let success = output.status.success();
+        let result = match child {
+            Ok(mut child) => {
+                match child.wait_timeout(timeout) {
+                    Ok(Some(status)) => {
+                        let stdout = child.stdout.take().map(|mut s| {
+                            let mut buf = Vec::new();
+                            std::io::Read::read_to_end(&mut s, &mut buf).ok();
+                            String::from_utf8_lossy(&buf).to_string()
+                        }).unwrap_or_default();
+                        let stderr = child.stderr.take().map(|mut s| {
+                            let mut buf = Vec::new();
+                            std::io::Read::read_to_end(&mut s, &mut buf).ok();
+                            String::from_utf8_lossy(&buf).to_string()
+                        }).unwrap_or_default();
 
-                ValidatorResult {
-                    command: cmd.clone(),
-                    exit_code,
-                    stdout,
-                    stderr,
-                    success,
+                        ValidatorResult {
+                            command: cmd.clone(),
+                            exit_code: status.code().unwrap_or(-1),
+                            stdout,
+                            stderr,
+                            success: status.success(),
+                        }
+                    }
+                    Ok(None) => {
+                        // Timed out — kill the process
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        ValidatorResult {
+                            command: cmd.clone(),
+                            exit_code: -1,
+                            stdout: String::new(),
+                            stderr: format!("Timed out after {}s", timeout.as_secs()),
+                            success: false,
+                        }
+                    }
+                    Err(e) => ValidatorResult {
+                        command: cmd.clone(),
+                        exit_code: -1,
+                        stdout: String::new(),
+                        stderr: format!("Failed to wait: {}", e),
+                        success: false,
+                    },
                 }
             }
             Err(e) => ValidatorResult {
@@ -62,22 +109,28 @@ pub fn run_validators(
 
         // Write individual result files
         let prefix = format!("validator_{}", i);
-        let _ = fs::write(
+        if let Err(e) = fs::write(
             results_dir.join(format!("{}_stdout.txt", prefix)),
             &result.stdout,
-        );
-        let _ = fs::write(
+        ) {
+            log::warn!("Failed to write validator stdout: {}", e);
+        }
+        if let Err(e) = fs::write(
             results_dir.join(format!("{}_stderr.txt", prefix)),
             &result.stderr,
-        );
-        let _ = fs::write(
+        ) {
+            log::warn!("Failed to write validator stderr: {}", e);
+        }
+        if let Err(e) = fs::write(
             results_dir.join(format!("{}_exit_code.json", prefix)),
             serde_json::to_string(&serde_json::json!({
                 "command": result.command,
                 "exit_code": result.exit_code
             }))
             .unwrap_or_default(),
-        );
+        ) {
+            log::warn!("Failed to write validator exit code: {}", e);
+        }
 
         results.push(result);
     }
@@ -90,10 +143,12 @@ pub fn run_validators(
         timestamp: Utc::now(),
     };
 
-    let _ = fs::write(
+    if let Err(e) = fs::write(
         results_dir.join("summary.json"),
         serde_json::to_string_pretty(&verify_result).unwrap_or_default(),
-    );
+    ) {
+        log::warn!("Failed to write validator summary: {}", e);
+    }
 
     Ok(verify_result)
 }
@@ -182,5 +237,24 @@ mod tests {
         let result = run_validators(&worktree, &[], 1).unwrap();
         assert!(result.all_passed);
         assert!(result.results.is_empty());
+    }
+
+    #[test]
+    fn run_validators_timeout_kills_process() {
+        let dir = TempDir::new().unwrap();
+        let worktree = dir.path().to_string_lossy().to_string();
+
+        // Use a very short timeout with a long-running command
+        let result = run_validators_with_timeout(
+            &worktree,
+            &["sleep 60".to_string()],
+            1,
+            Duration::from_secs(1),
+        )
+        .unwrap();
+
+        assert!(!result.all_passed);
+        assert!(result.results[0].stderr.contains("Timed out"));
+        assert_eq!(result.results[0].exit_code, -1);
     }
 }
