@@ -167,7 +167,7 @@ mod tests {
 
     fn make_feature(mode: ExecutionMode) -> Feature {
         let mut f = Feature::new(
-            "repo-1".to_string(),
+            vec!["repo-1".to_string()],
             "Dark Mode".to_string(),
             "Add dark mode toggle to the app".to_string(),
             "feature/dark-mode-ab12".to_string(),

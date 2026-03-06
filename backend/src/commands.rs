@@ -122,29 +122,41 @@ pub fn delete_agent(repo_path: String, filename: String) -> Result<(), String> {
 #[tauri::command]
 pub fn start_feature(
     state: State<AppState>,
-    repo_id: String,
+    repo_ids: Vec<String>,
     name: String,
     description: String,
 ) -> Result<Feature, String> {
-    let repos = state.repositories.lock().unwrap();
-    let repo = repos
-        .get(&repo_id)
-        .ok_or("Repository not found")?
-        .clone();
-    drop(repos);
+    if repo_ids.is_empty() {
+        return Err("At least one repository must be selected".to_string());
+    }
 
-    // Create feature branch
+    let repos_lock = state.repositories.lock().unwrap();
+    let resolved_repos: Vec<Repository> = repo_ids
+        .iter()
+        .map(|id| {
+            repos_lock
+                .get(id)
+                .cloned()
+                .ok_or(format!("Repository not found: {}", id))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    drop(repos_lock);
+
+    // Create feature branch in all repos
     let feature_slug = slug::slugify(&name);
     let short_id = &uuid::Uuid::new_v4().to_string()[..4];
     let branch_name = format!("feature/{}-{}", feature_slug, short_id);
 
-    git::create_branch(&repo.path, &branch_name, &repo.base_branch)
-        .map_err(|e| format!("Failed to create branch: {}", e))?;
+    for repo in &resolved_repos {
+        git::create_branch(&repo.path, &branch_name, &repo.base_branch)
+            .map_err(|e| format!("Failed to create branch in {}: {}", repo.name, e))?;
+    }
 
-    let feature = Feature::new(repo_id, name, description, branch_name);
+    let feature = Feature::new(repo_ids, name, description, branch_name);
 
-    // Create ideation directory
-    let ideation_dir = Path::new(&repo.path)
+    // Create ideation directory in primary repo
+    let primary_repo = &resolved_repos[0];
+    let ideation_dir = Path::new(&primary_repo.path)
         .join(".gmb")
         .join("features")
         .join(&feature.id);
@@ -152,15 +164,31 @@ pub fn start_feature(
     std::fs::create_dir_all(&tasks_dir)
         .map_err(|e| format!("Failed to create feature dir: {}", e))?;
 
-    // Generate repo context
-    let repo_map = generate_context_pack_string(&repo.path);
+    // Generate repo context from all repos
+    let repo_map = generate_multi_repo_context(&resolved_repos);
 
-    // Build agents list from .claude/agents/ files
-    let agents = store::list_repo_agents(&repo.path).unwrap_or_default();
-    let global_agents = store::list_global_agents().unwrap_or_default();
-    let agent_list: String = agents
+    // Build agents list from all repos' .claude/agents/ files
+    let mut all_agents: Vec<AgentFile> = Vec::new();
+    let mut seen_filenames = std::collections::HashSet::new();
+    for repo in &resolved_repos {
+        if let Ok(agents) = store::list_repo_agents(&repo.path) {
+            for agent in agents {
+                if seen_filenames.insert(agent.filename.clone()) {
+                    all_agents.push(agent);
+                }
+            }
+        }
+    }
+    if let Ok(global_agents) = store::list_global_agents() {
+        for agent in global_agents {
+            if seen_filenames.insert(agent.filename.clone()) {
+                all_agents.push(agent);
+            }
+        }
+    }
+
+    let agent_list: String = all_agents
         .iter()
-        .chain(global_agents.iter())
         .map(|a| {
             let desc = if a.description.is_empty() {
                 String::new()
@@ -206,7 +234,7 @@ pub fn list_features(state: State<AppState>, repo_id: Option<String>) -> Vec<Fea
     match repo_id {
         Some(rid) => features
             .values()
-            .filter(|f| f.repo_id == rid)
+            .filter(|f| f.effective_repo_ids().contains(&rid))
             .cloned()
             .collect(),
         None => features.values().cloned().collect(),
@@ -240,19 +268,24 @@ pub fn delete_feature(
         let _ = pty::kill_pty_session(&pty_sessions, session_id);
     }
 
-    // Remove .gmb/features/<id> directory
-    let repo = get_repo(&state, &feature.repo_id);
-    if let Ok(repo) = repo {
-        let feature_dir = Path::new(&repo.path)
-            .join(".gmb")
-            .join("features")
-            .join(&feature.id);
-        if feature_dir.exists() {
-            let _ = std::fs::remove_dir_all(&feature_dir);
+    // Remove .gmb/features/<id> directory from primary repo
+    if let Some(primary_id) = feature.primary_repo_id() {
+        if let Ok(repo) = get_repo(&state, primary_id) {
+            let feature_dir = Path::new(&repo.path)
+                .join(".gmb")
+                .join("features")
+                .join(&feature.id);
+            if feature_dir.exists() {
+                let _ = std::fs::remove_dir_all(&feature_dir);
+            }
         }
+    }
 
-        // Try to delete the feature branch (best-effort, may fail if checked out)
-        let _ = git::delete_branch(&repo.path, &feature.branch);
+    // Try to delete the feature branch from all repos (best-effort)
+    for repo_id in &feature.effective_repo_ids() {
+        if let Ok(repo) = get_repo(&state, repo_id) {
+            let _ = git::delete_branch(&repo.path, &feature.branch);
+        }
     }
 
     // Remove from state and persist
@@ -272,7 +305,7 @@ pub fn get_ideation_prompt(state: State<AppState>, feature_id: String) -> Result
     let feature = features.get(&feature_id).ok_or("Feature not found")?.clone();
     drop(features);
 
-    let repo = get_repo(&state, &feature.repo_id)?;
+    let repo = get_primary_repo(&state, &feature)?;
 
     let path = Path::new(&repo.path)
         .join(".gmb")
@@ -291,7 +324,7 @@ pub fn get_ideation_terminal_command(
     let feature = features.get(&feature_id).ok_or("Feature not found")?.clone();
     drop(features);
 
-    let repo = get_repo(&state, &feature.repo_id)?;
+    let repo = get_primary_repo(&state, &feature)?;
 
     let feature_dir = Path::new(&repo.path)
         .join(".gmb")
@@ -318,7 +351,7 @@ pub fn poll_ideation_result(
     let feature = features.get(&feature_id).ok_or("Feature not found")?.clone();
     drop(features);
 
-    let repo = get_repo(&state, &feature.repo_id)?;
+    let repo = get_primary_repo(&state, &feature)?;
 
     let tasks_dir = Path::new(&repo.path)
         .join(".gmb")
@@ -406,7 +439,7 @@ pub fn get_launch_command(
     let feature = features.get(&feature_id).ok_or("Feature not found")?.clone();
     drop(features);
 
-    let repo = get_repo(&state, &feature.repo_id)?;
+    let repo = get_primary_repo(&state, &feature)?;
 
     // Read the system prompt (repo context + agents) written during ideation
     let feature_dir = Path::new(&repo.path)
@@ -478,21 +511,32 @@ pub fn run_feature_validators(
     let feature = features.get(&feature_id).ok_or("Feature not found")?.clone();
     drop(features);
 
-    let repo = get_repo(&state, &feature.repo_id)?;
+    let repos = get_all_repos(&state, &feature)?;
 
-    if repo.validators.is_empty() {
-        return Ok(VerifyResult {
-            attempt: 1,
-            all_passed: true,
-            results: vec![],
-            timestamp: Utc::now(),
-        });
+    let mut all_results = Vec::new();
+    let mut all_passed = true;
+
+    for repo in &repos {
+        if repo.validators.is_empty() {
+            continue;
+        }
+
+        // Run validators on the feature branch
+        git::checkout_branch(&repo.path, &feature.branch).map_err(|e| e.to_string())?;
+
+        let result = validators::run_validators(&repo.path, &repo.validators, 1)?;
+        if !result.all_passed {
+            all_passed = false;
+        }
+        all_results.extend(result.results);
     }
 
-    // Run validators on the feature branch
-    git::checkout_branch(&repo.path, &feature.branch).map_err(|e| e.to_string())?;
-
-    validators::run_validators(&repo.path, &repo.validators, 1)
+    Ok(VerifyResult {
+        attempt: 1,
+        all_passed,
+        results: all_results,
+        timestamp: Utc::now(),
+    })
 }
 
 // ── Diff Commands ──
@@ -506,26 +550,34 @@ pub fn get_feature_diff(
     let feature = features.get(&feature_id).ok_or("Feature not found")?.clone();
     drop(features);
 
-    let repo = get_repo(&state, &feature.repo_id)?;
+    let repos = get_all_repos(&state, &feature)?;
 
-    let file_diffs = git::diff_stat(&repo.path, &repo.base_branch, &feature.branch)
-        .map_err(|e| e.to_string())?;
+    let mut all_files = Vec::new();
+    for repo in &repos {
+        let file_diffs = git::diff_stat(&repo.path, &repo.base_branch, &feature.branch)
+            .map_err(|e| e.to_string())?;
 
-    let total_files = file_diffs.len() as u32;
-    let total_insertions: u32 = file_diffs.iter().map(|(_, ins, _)| ins).sum();
-    let total_deletions: u32 = file_diffs.iter().map(|(_, _, del)| del).sum();
+        let prefix = if repos.len() > 1 {
+            format!("[{}] ", repo.name)
+        } else {
+            String::new()
+        };
 
-    let files = file_diffs
-        .into_iter()
-        .map(|(path, insertions, deletions)| FileDiff {
-            path,
-            insertions,
-            deletions,
-        })
-        .collect();
+        for (path, insertions, deletions) in file_diffs {
+            all_files.push(FileDiff {
+                path: format!("{}{}", prefix, path),
+                insertions,
+                deletions,
+            });
+        }
+    }
+
+    let total_files = all_files.len() as u32;
+    let total_insertions: u32 = all_files.iter().map(|f| f.insertions).sum();
+    let total_deletions: u32 = all_files.iter().map(|f| f.deletions).sum();
 
     Ok(DiffSummary {
-        files,
+        files: all_files,
         total_files,
         total_insertions,
         total_deletions,
@@ -540,11 +592,17 @@ pub fn push_feature(state: State<AppState>, feature_id: String) -> Result<String
     let feature = features.get(&feature_id).ok_or("Feature not found")?.clone();
     drop(features);
 
-    let repo = get_repo(&state, &feature.repo_id)?;
+    let repos = get_all_repos(&state, &feature)?;
 
-    git::push_branch(&repo.path, &feature.branch)
-        .map(|output| format!("{}: pushed {}\n{}", repo.name, feature.branch, output))
-        .map_err(|e| format!("Failed to push: {}", e))
+    let mut outputs = Vec::new();
+    for repo in &repos {
+        let output = git::push_branch(&repo.path, &feature.branch)
+            .map(|o| format!("{}: pushed {}\n{}", repo.name, feature.branch, o))
+            .map_err(|e| format!("Failed to push in {}: {}", repo.name, e))?;
+        outputs.push(output);
+    }
+
+    Ok(outputs.join("\n"))
 }
 
 #[tauri::command]
@@ -553,18 +611,23 @@ pub fn get_pr_command(state: State<AppState>, feature_id: String) -> Result<Stri
     let feature = features.get(&feature_id).ok_or("Feature not found")?.clone();
     drop(features);
 
-    let repo = get_repo(&state, &feature.repo_id)?;
+    let repos = get_all_repos(&state, &feature)?;
 
-    let cmd = if let Some(pr_cmd) = &repo.pr_command {
-        pr_cmd.replace("{branch}", &feature.branch)
-    } else {
-        format!(
-            "cd {} && gh pr create --head {} --title '{}' --body '{}'",
-            repo.path, feature.branch, feature.name, feature.description
-        )
-    };
+    let commands: Vec<String> = repos
+        .iter()
+        .map(|repo| {
+            if let Some(pr_cmd) = &repo.pr_command {
+                pr_cmd.replace("{branch}", &feature.branch)
+            } else {
+                format!(
+                    "cd {} && gh pr create --head {} --title '{}' --body '{}'",
+                    repo.path, feature.branch, feature.name, feature.description
+                )
+            }
+        })
+        .collect();
 
-    Ok(cmd)
+    Ok(commands.join("\n"))
 }
 
 // ── PTY Commands ──
@@ -580,7 +643,8 @@ pub fn start_ideation_pty(
     let feature = features.get(&feature_id).ok_or("Feature not found")?.clone();
     drop(features);
 
-    let repo = get_repo(&state, &feature.repo_id)?;
+    let repo = get_primary_repo(&state, &feature)?;
+    let all_repos = get_all_repos(&state, &feature)?;
 
     let feature_dir = Path::new(&repo.path)
         .join(".gmb")
@@ -595,12 +659,27 @@ pub fn start_ideation_pty(
         std::fs::create_dir_all(&tasks_dir)
             .map_err(|e| format!("Failed to create feature dir: {}", e))?;
 
-        let repo_map = generate_context_pack_string(&repo.path);
-        let agents = store::list_repo_agents(&repo.path).unwrap_or_default();
-        let global_agents = store::list_global_agents().unwrap_or_default();
-        let agent_list: String = agents
+        let repo_map = generate_multi_repo_context(&all_repos);
+        let mut all_agents: Vec<AgentFile> = Vec::new();
+        let mut seen_filenames = std::collections::HashSet::new();
+        for r in &all_repos {
+            if let Ok(agents) = store::list_repo_agents(&r.path) {
+                for agent in agents {
+                    if seen_filenames.insert(agent.filename.clone()) {
+                        all_agents.push(agent);
+                    }
+                }
+            }
+        }
+        if let Ok(global_agents) = store::list_global_agents() {
+            for agent in global_agents {
+                if seen_filenames.insert(agent.filename.clone()) {
+                    all_agents.push(agent);
+                }
+            }
+        }
+        let agent_list: String = all_agents
             .iter()
-            .chain(global_agents.iter())
             .map(|a| {
                 let desc = if a.description.is_empty() {
                     String::new()
@@ -758,7 +837,7 @@ pub fn poll_execution_status(
     let feature = features.get(&feature_id).ok_or("Feature not found")?.clone();
     drop(features);
 
-    let repo = get_repo(&state, &feature.repo_id)?;
+    let repo = get_primary_repo(&state, &feature)?;
     observer::poll_execution_snapshot(&repo.path, &repo.base_branch, &feature.branch)
 }
 
@@ -773,10 +852,20 @@ pub fn analyze_feature_execution(
     let feature = features.get(&feature_id).ok_or("Feature not found")?.clone();
     drop(features);
 
-    let repo = get_repo(&state, &feature.repo_id)?;
-    let file_diffs = git::diff_stat(&repo.path, &repo.base_branch, &feature.branch)
-        .map_err(|e| e.to_string())?;
-    let changed_files: Vec<String> = file_diffs.into_iter().map(|(path, _, _)| path).collect();
+    let repos = get_all_repos(&state, &feature)?;
+    let mut changed_files: Vec<String> = Vec::new();
+    for repo in &repos {
+        let file_diffs = git::diff_stat(&repo.path, &repo.base_branch, &feature.branch)
+            .map_err(|e| e.to_string())?;
+        let prefix = if repos.len() > 1 {
+            format!("[{}] ", repo.name)
+        } else {
+            String::new()
+        };
+        for (path, _, _) in file_diffs {
+            changed_files.push(format!("{}{}", prefix, path));
+        }
+    }
 
     Ok(analytics::analyze_execution(&feature, &changed_files))
 }
@@ -794,7 +883,7 @@ pub fn add_guidance_note(
     let feature = features.get(&feature_id).ok_or("Feature not found")?.clone();
     drop(features);
 
-    let repo = get_repo(&state, &feature.repo_id)?;
+    let repo = get_primary_repo(&state, &feature)?;
     guidance::add_guidance_note(&repo.path, &feature.id, &content, priority)
 }
 
@@ -807,7 +896,7 @@ pub fn list_guidance_notes(
     let feature = features.get(&feature_id).ok_or("Feature not found")?.clone();
     drop(features);
 
-    let repo = get_repo(&state, &feature.repo_id)?;
+    let repo = get_primary_repo(&state, &feature)?;
     guidance::list_guidance_notes(&repo.path, &feature.id)
 }
 
@@ -828,6 +917,38 @@ fn get_repo(state: &State<AppState>, repo_id: &str) -> Result<Repository, String
         .get(repo_id)
         .cloned()
         .ok_or("Repository not found".to_string())
+}
+
+fn get_primary_repo(state: &State<AppState>, feature: &Feature) -> Result<Repository, String> {
+    let primary_id = feature
+        .primary_repo_id()
+        .ok_or("Feature has no repositories")?;
+    get_repo(state, primary_id)
+}
+
+fn get_all_repos(state: &State<AppState>, feature: &Feature) -> Result<Vec<Repository>, String> {
+    let repo_ids = feature.effective_repo_ids();
+    if repo_ids.is_empty() {
+        return Err("Feature has no repositories".to_string());
+    }
+    repo_ids
+        .iter()
+        .map(|id| get_repo(state, id))
+        .collect()
+}
+
+fn generate_multi_repo_context(repos: &[Repository]) -> String {
+    if repos.len() == 1 {
+        return generate_context_pack_string(&repos[0].path);
+    }
+
+    let mut context = String::from("# Repositories\n\nThis feature spans multiple repositories:\n\n");
+    for repo in repos {
+        context.push_str(&format!("## {} (`{}`)\n\n", repo.name, repo.path));
+        context.push_str(&generate_context_pack_string(&repo.path));
+        context.push_str("\n\n");
+    }
+    context
 }
 
 fn generate_context_pack_string(repo_path: &str) -> String {

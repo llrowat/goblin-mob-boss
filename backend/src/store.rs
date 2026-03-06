@@ -286,7 +286,7 @@ mod tests {
         let state = make_state(&dir);
 
         let feature = crate::models::Feature::new(
-            "r1".to_string(),
+            vec!["r1".to_string()],
             "Test Feature".to_string(),
             "A test feature".to_string(),
             "feature/test-1234".to_string(),

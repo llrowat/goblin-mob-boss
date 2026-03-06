@@ -15,7 +15,7 @@ describe("FeatureStatusPage", () => {
 
   const executingFeature = {
     id: "feat-1",
-    repo_id: "repo-1",
+    repo_ids: ["repo-1"],
     name: "Auth Feature",
     description: "Add authentication",
     branch: "feature/auth-ab12",

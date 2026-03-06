@@ -10,7 +10,7 @@ describe("LaunchConfigPage", () => {
 
   const mockFeature = {
     id: "feat-1",
-    repo_id: "repo-1",
+    repo_ids: ["repo-1"],
     name: "Dark Mode",
     description: "Add dark mode toggle",
     branch: "feature/dark-mode-ab12",
