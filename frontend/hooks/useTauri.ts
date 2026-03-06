@@ -9,6 +9,13 @@ import type {
   VerifyResult,
   DiffSummary,
   Preferences,
+  AgentTemplate,
+  FeatureRecipe,
+  ExecutionSnapshot,
+  ExecutionAnalysis,
+  GuidanceNote,
+  GuidancePriority,
+  ModeRecommendation,
 } from "../types";
 
 export function useTauri() {
@@ -148,5 +155,42 @@ export function useTauri() {
 
     killPty: (sessionId: string) =>
       invoke<void>("kill_pty", { sessionId }),
+
+    // Templates
+    listAgentTemplates: () =>
+      invoke<AgentTemplate[]>("list_agent_templates"),
+
+    listFeatureRecipes: () =>
+      invoke<FeatureRecipe[]>("list_feature_recipes"),
+
+    applyAgentTemplate: (repoPath: string, templateId: string) =>
+      invoke<AgentFile>("apply_agent_template", { repoPath, templateId }),
+
+    // Execution Observability
+    pollExecutionStatus: (featureId: string) =>
+      invoke<ExecutionSnapshot>("poll_execution_status", { featureId }),
+
+    // Analytics
+    analyzeFeatureExecution: (featureId: string) =>
+      invoke<ExecutionAnalysis>("analyze_feature_execution", { featureId }),
+
+    // Guidance
+    addGuidanceNote: (
+      featureId: string,
+      content: string,
+      priority: GuidancePriority,
+    ) =>
+      invoke<GuidanceNote>("add_guidance_note", {
+        featureId,
+        content,
+        priority,
+      }),
+
+    listGuidanceNotes: (featureId: string) =>
+      invoke<GuidanceNote[]>("list_guidance_notes", { featureId }),
+
+    // Heuristics
+    analyzeTaskGraph: (taskSpecs: TaskSpec[]) =>
+      invoke<ModeRecommendation>("analyze_task_graph", { taskSpecs }),
   };
 }

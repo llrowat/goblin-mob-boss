@@ -99,3 +99,118 @@ export interface RepoInfo {
 export interface Preferences {
   shell: string;
 }
+
+// ── Templates ──
+
+export interface AgentTemplate {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  agent: AgentFile;
+}
+
+export interface FeatureRecipe {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  suggested_mode: string;
+  task_templates: RecipeTask[];
+}
+
+export interface RecipeTask {
+  title: string;
+  description: string;
+  acceptance_criteria: string[];
+  dependencies: string[];
+  suggested_agent: string;
+}
+
+// ── Execution Observability ──
+
+export interface CommitInfo {
+  hash: string;
+  message: string;
+  time: string;
+}
+
+export interface ExecutionSnapshot {
+  commit_count: number;
+  files_changed: number;
+  insertions: number;
+  deletions: number;
+  last_commit_message: string;
+  last_commit_time: string | null;
+  recent_commits: CommitInfo[];
+  active_files: string[];
+  timestamp: string;
+}
+
+// ── Analytics ──
+
+export type CoverageStatus = "covered" | "partial" | "no_changes_detected";
+
+export interface TaskCoverage {
+  task_title: string;
+  agent: string;
+  likely_files: string[];
+  coverage_status: CoverageStatus;
+}
+
+export interface ModeAssessment {
+  mode_used: string | null;
+  was_appropriate: boolean;
+  reason: string;
+  suggestion: string | null;
+}
+
+export interface ExecutionAnalysis {
+  feature_id: string;
+  planned_task_count: number;
+  files_changed: number;
+  task_file_coverage: TaskCoverage[];
+  unplanned_files: string[];
+  execution_mode_used: ExecutionMode | null;
+  mode_assessment: ModeAssessment;
+}
+
+// ── Guidance ──
+
+export type GuidancePriority = "info" | "important" | "critical";
+
+export interface GuidanceNote {
+  id: string;
+  content: string;
+  priority: GuidancePriority;
+  created_at: string;
+}
+
+// ── Heuristics ──
+
+export interface TaskNode {
+  index: number;
+  title: string;
+  agent: string;
+  depth: number;
+}
+
+export interface TaskEdge {
+  from: number;
+  to: number;
+}
+
+export interface TaskGraph {
+  nodes: TaskNode[];
+  edges: TaskEdge[];
+  parallelism_score: number;
+  max_parallel: number;
+  critical_path_length: number;
+}
+
+export interface ModeRecommendation {
+  recommended_mode: ExecutionMode;
+  confidence: number;
+  reasoning: string[];
+  task_graph: TaskGraph;
+}

@@ -1,9 +1,14 @@
+use crate::analytics;
 use crate::git;
+use crate::guidance;
+use crate::heuristics;
 use crate::launch;
 use crate::models::*;
+use crate::observer;
 use crate::prompts;
 use crate::pty;
 use crate::store::{self, AppState};
+use crate::templates;
 use crate::validators;
 use chrono::Utc;
 use std::path::Path;
@@ -713,6 +718,106 @@ pub fn set_preferences(state: State<AppState>, shell: String) -> Preferences {
     drop(prefs);
     state.save_preferences();
     updated
+}
+
+// ── Template Commands ──
+
+#[tauri::command]
+pub fn list_agent_templates() -> Vec<templates::AgentTemplate> {
+    templates::list_agent_templates()
+}
+
+#[tauri::command]
+pub fn list_feature_recipes() -> Vec<templates::FeatureRecipe> {
+    templates::list_feature_recipes()
+}
+
+#[tauri::command]
+pub fn apply_agent_template(
+    repo_path: String,
+    template_id: String,
+) -> Result<AgentFile, String> {
+    let templates = templates::list_agent_templates();
+    let template = templates
+        .iter()
+        .find(|t| t.id == template_id)
+        .ok_or("Template not found")?;
+    let agent = template.agent.clone();
+    store::save_repo_agent(&repo_path, &agent)?;
+    Ok(agent)
+}
+
+// ── Execution Observability Commands ──
+
+#[tauri::command]
+pub fn poll_execution_status(
+    state: State<AppState>,
+    feature_id: String,
+) -> Result<observer::ExecutionSnapshot, String> {
+    let features = state.features.lock().unwrap();
+    let feature = features.get(&feature_id).ok_or("Feature not found")?.clone();
+    drop(features);
+
+    let repo = get_repo(&state, &feature.repo_id)?;
+    observer::poll_execution_snapshot(&repo.path, &repo.base_branch, &feature.branch)
+}
+
+// ── Analytics Commands ──
+
+#[tauri::command]
+pub fn analyze_feature_execution(
+    state: State<AppState>,
+    feature_id: String,
+) -> Result<analytics::ExecutionAnalysis, String> {
+    let features = state.features.lock().unwrap();
+    let feature = features.get(&feature_id).ok_or("Feature not found")?.clone();
+    drop(features);
+
+    let repo = get_repo(&state, &feature.repo_id)?;
+    let file_diffs = git::diff_stat(&repo.path, &repo.base_branch, &feature.branch)
+        .map_err(|e| e.to_string())?;
+    let changed_files: Vec<String> = file_diffs.into_iter().map(|(path, _, _)| path).collect();
+
+    Ok(analytics::analyze_execution(&feature, &changed_files))
+}
+
+// ── Guidance Commands ──
+
+#[tauri::command]
+pub fn add_guidance_note(
+    state: State<AppState>,
+    feature_id: String,
+    content: String,
+    priority: guidance::GuidancePriority,
+) -> Result<guidance::GuidanceNote, String> {
+    let features = state.features.lock().unwrap();
+    let feature = features.get(&feature_id).ok_or("Feature not found")?.clone();
+    drop(features);
+
+    let repo = get_repo(&state, &feature.repo_id)?;
+    guidance::add_guidance_note(&repo.path, &feature.id, &content, priority)
+}
+
+#[tauri::command]
+pub fn list_guidance_notes(
+    state: State<AppState>,
+    feature_id: String,
+) -> Result<Vec<guidance::GuidanceNote>, String> {
+    let features = state.features.lock().unwrap();
+    let feature = features.get(&feature_id).ok_or("Feature not found")?.clone();
+    drop(features);
+
+    let repo = get_repo(&state, &feature.repo_id)?;
+    guidance::list_guidance_notes(&repo.path, &feature.id)
+}
+
+// ── Heuristics Commands ──
+
+#[tauri::command]
+pub fn analyze_task_graph(
+    task_specs: Vec<TaskSpec>,
+) -> heuristics::ModeRecommendation {
+    heuristics::analyze_tasks(&task_specs)
 }
 
 // ── Helpers ──
