@@ -14,6 +14,7 @@ export function HomePage() {
   const [error, setError] = useState("");
   const [features, setFeatures] = useState<Feature[]>([]);
   const [filterRepoId, setFilterRepoId] = useState<string>("");
+  const [showNewFeature, setShowNewFeature] = useState(false);
 
   useEffect(() => {
     tauri.listRepositories().then((r) => {
@@ -41,11 +42,31 @@ export function HomePage() {
         name.trim(),
         description.trim(),
       );
+      setShowNewFeature(false);
+      setName("");
+      setDescription("");
       navigate(`/feature/${feature.id}/ideation`);
     } catch (e) {
       setError(String(e));
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleCloseModal = () => {
+    setShowNewFeature(false);
+    setName("");
+    setDescription("");
+    setError("");
+  };
+
+  const handleDeleteFeature = async (e: React.MouseEvent, featureId: string) => {
+    e.stopPropagation();
+    try {
+      await tauri.deleteFeature(featureId);
+      setFeatures((prev) => prev.filter((f) => f.id !== featureId));
+    } catch (err) {
+      setError(String(err));
     }
   };
 
@@ -88,73 +109,24 @@ export function HomePage() {
 
   return (
     <div>
-      <div className="page-header">
-        <h2>Start a Feature</h2>
-        <p>
-          Describe what you want to build. Claude will help you plan the work
-          and break it into tasks for parallel execution.
-        </p>
-      </div>
-
-      {error && <div className="error-banner">{error}</div>}
-
-      <div className="panel">
-        <div className="form-group">
-          <label className="form-label">Repository</label>
-          <select
-            className="form-select"
-            value={selectedRepoId}
-            onChange={(e) => setSelectedRepoId(e.target.value)}
-            style={{ maxWidth: 300 }}
-          >
-            {repos.map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.name}
-              </option>
-            ))}
-          </select>
+      <div className="page-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+        <div>
+          <h2>Features</h2>
+          <p>
+            Manage your features. Start a new one to plan and execute with
+            Claude.
+          </p>
         </div>
-
-        <div className="form-group">
-          <label className="form-label">Feature Name</label>
-          <input
-            className="form-input"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="User Authentication"
-          />
-          <div className="form-help">Short name for the feature branch.</div>
-        </div>
-
-        <div className="form-group">
-          <label className="form-label">What do you want to build?</label>
-          <textarea
-            className="form-textarea"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Add user authentication with OAuth2, including login page, callback handler, and session management..."
-            style={{ minHeight: 120 }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && e.metaKey) handleStartFeature();
-            }}
-          />
-          <div className="form-help">
-            Be specific. Claude will plan the work interactively with you.
-          </div>
-        </div>
-
         <button
-          className="btn btn-primary btn-lg"
-          onClick={handleStartFeature}
-          disabled={loading || !selectedRepoId || !name.trim() || !description.trim()}
-          style={{ width: "100%" }}
+          className="btn btn-primary"
+          onClick={() => setShowNewFeature(true)}
         >
-          {loading ? "Creating feature branch..." : "Start Feature"}
+          New Feature
         </button>
       </div>
 
       {/* Active features */}
-      <div style={{ marginTop: 24 }}>
+      <div>
         <div
           className="sidebar-section-label"
           style={{
@@ -180,15 +152,10 @@ export function HomePage() {
           </select>
         </div>
         {features.length === 0 ? (
-          <p
-            style={{
-              fontSize: 13,
-              color: "var(--text-secondary)",
-              fontStyle: "italic",
-            }}
-          >
-            No active features.
-          </p>
+          <div className="empty-state">
+            <h3>No active features</h3>
+            <p>Click "New Feature" to get started.</p>
+          </div>
         ) : (
           features.map((f) => (
             <div
@@ -213,17 +180,107 @@ export function HomePage() {
                     </span>
                   </div>
                 </div>
-                <span
-                  className={`status-badge ${f.status === "executing" ? "running" : f.status}`}
-                >
-                  <span className="status-dot" />
-                  {statusLabel[f.status] ?? f.status}
-                </span>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span
+                    className={`status-badge ${f.status === "executing" ? "running" : f.status}`}
+                  >
+                    <span className="status-dot" />
+                    {statusLabel[f.status] ?? f.status}
+                  </span>
+                  <button
+                    className="btn btn-secondary"
+                    style={{ padding: "2px 8px", fontSize: 11 }}
+                    onClick={(e) => handleDeleteFeature(e, f.id)}
+                    title="Delete feature"
+                  >
+                    Delete
+                  </button>
+                </div>
               </div>
             </div>
           ))
         )}
       </div>
+
+      {/* New Feature Modal */}
+      {showNewFeature && (
+        <div className="modal-overlay" onClick={handleCloseModal}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-title">New Feature</div>
+
+            {error && <div className="error-banner">{error}</div>}
+
+            <div className="form-group">
+              <label className="form-label">Repository</label>
+              <select
+                className="form-select"
+                value={selectedRepoId}
+                onChange={(e) => setSelectedRepoId(e.target.value)}
+              >
+                {repos.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Feature Name</label>
+              <input
+                className="form-input"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="User Authentication"
+              />
+              <div className="form-help">
+                Short name for the feature branch.
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">
+                What do you want to build?
+              </label>
+              <textarea
+                className="form-textarea"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Add user authentication with OAuth2, including login page, callback handler, and session management..."
+                style={{ minHeight: 120 }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && e.metaKey) handleStartFeature();
+                }}
+              />
+              <div className="form-help">
+                Be specific. Claude will plan the work interactively with
+                you.
+              </div>
+            </div>
+
+            <div className="modal-actions">
+              <button
+                className="btn btn-secondary"
+                onClick={handleCloseModal}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={handleStartFeature}
+                disabled={
+                  loading ||
+                  !selectedRepoId ||
+                  !name.trim() ||
+                  !description.trim()
+                }
+              >
+                {loading ? "Creating..." : "Start Feature"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -2,6 +2,7 @@ use crate::git;
 use crate::launch;
 use crate::models::*;
 use crate::prompts;
+use crate::pty;
 use crate::store::{self, AppState};
 use crate::validators;
 use chrono::Utc;
@@ -172,12 +173,19 @@ pub fn start_feature(
         .join("\n");
 
     let system_prompt = prompts::ideation_system_prompt(
-        &tasks_dir.to_string_lossy(),
         &repo_map,
         &agent_list,
     );
     std::fs::write(ideation_dir.join("system-prompt.md"), &system_prompt)
         .map_err(|e| format!("Failed to write system prompt: {}", e))?;
+
+    let user_prompt = prompts::ideation_user_prompt(
+        &feature.description,
+        &tasks_dir.to_string_lossy(),
+        &agent_list,
+    );
+    std::fs::write(ideation_dir.join("user-prompt.md"), &user_prompt)
+        .map_err(|e| format!("Failed to write user prompt: {}", e))?;
 
     let mut features = state.features.lock().unwrap();
     features.insert(feature.id.clone(), feature.clone());
@@ -211,6 +219,46 @@ pub fn get_feature(state: State<AppState>, feature_id: String) -> Result<Feature
         .ok_or("Feature not found".to_string())
 }
 
+#[tauri::command]
+pub fn delete_feature(
+    state: State<AppState>,
+    pty_sessions: State<pty::PtySessions>,
+    feature_id: String,
+) -> Result<(), String> {
+    let feature = {
+        let features = state.features.lock().unwrap();
+        features.get(&feature_id).cloned().ok_or("Feature not found")?
+    };
+
+    // Kill any active PTY session
+    if let Some(session_id) = &feature.pty_session_id {
+        let _ = pty::kill_pty_session(&pty_sessions, session_id);
+    }
+
+    // Remove .gmb/features/<id> directory
+    let repo = get_repo(&state, &feature.repo_id);
+    if let Ok(repo) = repo {
+        let feature_dir = Path::new(&repo.path)
+            .join(".gmb")
+            .join("features")
+            .join(&feature.id);
+        if feature_dir.exists() {
+            let _ = std::fs::remove_dir_all(&feature_dir);
+        }
+
+        // Try to delete the feature branch (best-effort, may fail if checked out)
+        let _ = git::delete_branch(&repo.path, &feature.branch);
+    }
+
+    // Remove from state and persist
+    let mut features = state.features.lock().unwrap();
+    features.remove(&feature_id);
+    drop(features);
+    state.save_features();
+
+    Ok(())
+}
+
 // ── Ideation Commands ──
 
 #[tauri::command]
@@ -240,19 +288,18 @@ pub fn get_ideation_terminal_command(
 
     let repo = get_repo(&state, &feature.repo_id)?;
 
-    let system_prompt_path = Path::new(&repo.path)
+    let feature_dir = Path::new(&repo.path)
         .join(".gmb")
         .join("features")
-        .join(&feature.id)
-        .join("system-prompt.md");
-
-    let escaped_desc = feature.description.replace('\'', "'\\''");
+        .join(&feature.id);
+    let system_prompt_path = feature_dir.join("system-prompt.md");
+    let user_prompt_path = feature_dir.join("user-prompt.md");
 
     Ok(format!(
-        "cd {} && claude --permission-mode plan --append-system-prompt-file '{}' '{}'",
+        "cd {} && claude --permission-mode plan --append-system-prompt \"$(cat '{}')\" \"$(cat '{}')\"",
         repo.path,
         system_prompt_path.display(),
-        escaped_desc
+        user_prompt_path.display()
     ))
 }
 
@@ -356,19 +403,16 @@ pub fn get_launch_command(
 
     let repo = get_repo(&state, &feature.repo_id)?;
 
-    // Write the launch system prompt
-    let prompt_dir = Path::new(&repo.path)
+    // Read the system prompt (repo context + agents) written during ideation
+    let feature_dir = Path::new(&repo.path)
         .join(".gmb")
         .join("features")
         .join(&feature.id);
-    std::fs::create_dir_all(&prompt_dir)
-        .map_err(|e| format!("Failed to create dir: {}", e))?;
+    let system_prompt_path = feature_dir.join("system-prompt.md");
+    let system_prompt_content = std::fs::read_to_string(&system_prompt_path)
+        .unwrap_or_default();
 
-    let prompt_path = prompt_dir.join("launch-prompt.md");
-    let (args, env, prompt) = launch::build_launch(&feature, &prompt_path.to_string_lossy());
-
-    std::fs::write(&prompt_path, &prompt)
-        .map_err(|e| format!("Failed to write launch prompt: {}", e))?;
+    let (args, env, _prompt) = launch::build_launch(&feature, &system_prompt_content);
 
     // Build the full command string
     let env_prefix: String = env
@@ -516,6 +560,142 @@ pub fn get_pr_command(state: State<AppState>, feature_id: String) -> Result<Stri
     };
 
     Ok(cmd)
+}
+
+// ── PTY Commands ──
+
+#[tauri::command]
+pub fn start_ideation_pty(
+    app_handle: tauri::AppHandle,
+    state: State<AppState>,
+    pty_sessions: State<pty::PtySessions>,
+    feature_id: String,
+) -> Result<String, String> {
+    let features = state.features.lock().unwrap();
+    let feature = features.get(&feature_id).ok_or("Feature not found")?.clone();
+    drop(features);
+
+    let repo = get_repo(&state, &feature.repo_id)?;
+
+    let feature_dir = Path::new(&repo.path)
+        .join(".gmb")
+        .join("features")
+        .join(&feature.id);
+    let tasks_dir = feature_dir.join("tasks");
+    let system_prompt_path = feature_dir.join("system-prompt.md");
+    let user_prompt_path = feature_dir.join("user-prompt.md");
+
+    // Regenerate prompt files if missing (e.g. feature created before prompt writing was added)
+    if !system_prompt_path.exists() || !user_prompt_path.exists() {
+        std::fs::create_dir_all(&tasks_dir)
+            .map_err(|e| format!("Failed to create feature dir: {}", e))?;
+
+        let repo_map = generate_context_pack_string(&repo.path);
+        let agents = store::list_repo_agents(&repo.path).unwrap_or_default();
+        let global_agents = store::list_global_agents().unwrap_or_default();
+        let agent_list: String = agents
+            .iter()
+            .chain(global_agents.iter())
+            .map(|a| {
+                let desc = if a.description.is_empty() {
+                    String::new()
+                } else {
+                    format!(": {}", a.description)
+                };
+                format!(
+                    "- **{}** ({}){}", a.name,
+                    a.filename.strip_suffix(".md").unwrap_or(&a.filename), desc
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        if !system_prompt_path.exists() {
+            let system_prompt = prompts::ideation_system_prompt(&repo_map, &agent_list);
+            std::fs::write(&system_prompt_path, &system_prompt)
+                .map_err(|e| format!("Failed to write system prompt: {}", e))?;
+        }
+        if !user_prompt_path.exists() {
+            let user_prompt = prompts::ideation_user_prompt(
+                &feature.description,
+                &tasks_dir.to_string_lossy(),
+                &agent_list,
+            );
+            std::fs::write(&user_prompt_path, &user_prompt)
+                .map_err(|e| format!("Failed to write user prompt: {}", e))?;
+        }
+    }
+
+    let session_id = uuid::Uuid::new_v4().to_string();
+
+    let system_prompt_content = std::fs::read_to_string(&system_prompt_path)
+        .map_err(|e| format!("Failed to read system prompt: {}", e))?;
+    let user_prompt_content = std::fs::read_to_string(&user_prompt_path)
+        .map_err(|e| format!("Failed to read user prompt: {}", e))?;
+
+    let mut claude_args = vec![
+        "--permission-mode".to_string(),
+        "plan".to_string(),
+        "--append-system-prompt".to_string(),
+        system_prompt_content,
+        user_prompt_content,
+    ];
+
+    let (cmd, args) = if cfg!(target_os = "windows") {
+        let mut full_args = vec!["/c".to_string(), "claude".to_string()];
+        full_args.append(&mut claude_args);
+        ("cmd.exe".to_string(), full_args)
+    } else {
+        ("claude".to_string(), claude_args)
+    };
+
+    pty::spawn_pty_session(
+        &app_handle,
+        &session_id,
+        &cmd,
+        &args,
+        &repo.path,
+        80,
+        24,
+        &pty_sessions,
+    )?;
+
+    // Store session_id on the feature
+    let mut features = state.features.lock().unwrap();
+    if let Some(f) = features.get_mut(&feature_id) {
+        f.pty_session_id = Some(session_id.clone());
+    }
+    drop(features);
+    state.save_features();
+
+    Ok(session_id)
+}
+
+#[tauri::command]
+pub fn write_pty(
+    pty_sessions: State<pty::PtySessions>,
+    session_id: String,
+    data: String,
+) -> Result<(), String> {
+    pty::write_to_pty(&pty_sessions, &session_id, &data)
+}
+
+#[tauri::command]
+pub fn resize_pty(
+    pty_sessions: State<pty::PtySessions>,
+    session_id: String,
+    cols: u16,
+    rows: u16,
+) -> Result<(), String> {
+    pty::resize_pty_session(&pty_sessions, &session_id, cols, rows)
+}
+
+#[tauri::command]
+pub fn kill_pty(
+    pty_sessions: State<pty::PtySessions>,
+    session_id: String,
+) -> Result<(), String> {
+    pty::kill_pty_session(&pty_sessions, &session_id)
 }
 
 // ── Preferences Commands ──

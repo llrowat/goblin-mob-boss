@@ -9,6 +9,16 @@ vi.mock("react-router-dom", async () => {
   return { ...actual, useNavigate: () => mockNavigate };
 });
 
+const mockRepo = {
+  id: "r1",
+  name: "my-app",
+  path: "/app",
+  base_branch: "main",
+  validators: [],
+  pr_command: null,
+  created_at: "2025-01-01T00:00:00Z",
+};
+
 describe("HomePage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -28,21 +38,9 @@ describe("HomePage", () => {
     });
   });
 
-  it("shows feature form when repos exist", async () => {
+  it("shows New Feature button when repos exist", async () => {
     vi.mocked(invoke).mockImplementation((cmd: string) => {
-      if (cmd === "list_repositories") {
-        return Promise.resolve([
-          {
-            id: "r1",
-            name: "my-app",
-            path: "/app",
-            base_branch: "main",
-            validators: [],
-            pr_command: null,
-            created_at: "2025-01-01T00:00:00Z",
-          },
-        ]);
-      }
+      if (cmd === "list_repositories") return Promise.resolve([mockRepo]);
       return Promise.resolve([]);
     });
 
@@ -53,26 +51,13 @@ describe("HomePage", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText("Start a Feature")).toBeInTheDocument();
+      expect(screen.getByText("New Feature")).toBeInTheDocument();
     });
-    expect(screen.getByPlaceholderText("User Authentication")).toBeInTheDocument();
   });
 
-  it("disables start button when fields are empty", async () => {
+  it("opens modal with form when New Feature is clicked", async () => {
     vi.mocked(invoke).mockImplementation((cmd: string) => {
-      if (cmd === "list_repositories") {
-        return Promise.resolve([
-          {
-            id: "r1",
-            name: "repo",
-            path: "/r",
-            base_branch: "main",
-            validators: [],
-            pr_command: null,
-            created_at: "2025-01-01T00:00:00Z",
-          },
-        ]);
-      }
+      if (cmd === "list_repositories") return Promise.resolve([mockRepo]);
       return Promise.resolve([]);
     });
 
@@ -83,11 +68,13 @@ describe("HomePage", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText("Start Feature")).toBeInTheDocument();
+      expect(screen.getByText("New Feature")).toBeInTheDocument();
     });
 
-    const btn = screen.getByText("Start Feature");
-    expect(btn).toBeDisabled();
+    fireEvent.click(screen.getByText("New Feature"));
+
+    expect(screen.getByPlaceholderText("User Authentication")).toBeInTheDocument();
+    expect(screen.getByText("Start Feature")).toBeDisabled();
   });
 
   it("navigates to repos page from empty state", async () => {
@@ -109,19 +96,7 @@ describe("HomePage", () => {
 
   it("shows active features list", async () => {
     vi.mocked(invoke).mockImplementation((cmd: string) => {
-      if (cmd === "list_repositories") {
-        return Promise.resolve([
-          {
-            id: "r1",
-            name: "repo",
-            path: "/r",
-            base_branch: "main",
-            validators: [],
-            pr_command: null,
-            created_at: "2025-01-01T00:00:00Z",
-          },
-        ]);
-      }
+      if (cmd === "list_repositories") return Promise.resolve([mockRepo]);
       if (cmd === "list_features") {
         return Promise.resolve([
           {
@@ -154,5 +129,72 @@ describe("HomePage", () => {
       expect(screen.getByText("Auth Feature")).toBeInTheDocument();
       expect(screen.getByText("Executing")).toBeInTheDocument();
     });
+  });
+
+  it("deletes a feature when Delete is clicked", async () => {
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "list_repositories") return Promise.resolve([mockRepo]);
+      if (cmd === "list_features") {
+        return Promise.resolve([
+          {
+            id: "f1",
+            repo_id: "r1",
+            name: "Auth Feature",
+            description: "Add authentication",
+            branch: "feature/auth",
+            status: "ideation",
+            execution_mode: null,
+            execution_rationale: null,
+            selected_agents: [],
+            task_specs: [],
+            pty_session_id: null,
+            created_at: "2025-01-01T00:00:00Z",
+            updated_at: "2025-01-01T00:00:00Z",
+          },
+        ]);
+      }
+      if (cmd === "delete_feature") return Promise.resolve();
+      return Promise.resolve([]);
+    });
+
+    render(
+      <MemoryRouter>
+        <HomePage />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Auth Feature")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText("Delete"));
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("delete_feature", { featureId: "f1" });
+      expect(screen.queryByText("Auth Feature")).not.toBeInTheDocument();
+    });
+  });
+
+  it("closes modal when Cancel is clicked", async () => {
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "list_repositories") return Promise.resolve([mockRepo]);
+      return Promise.resolve([]);
+    });
+
+    render(
+      <MemoryRouter>
+        <HomePage />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("New Feature")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText("New Feature"));
+    expect(screen.getByPlaceholderText("User Authentication")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("Cancel"));
+    expect(screen.queryByPlaceholderText("User Authentication")).not.toBeInTheDocument();
   });
 });

@@ -1,0 +1,237 @@
+use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
+use serde::Serialize;
+use std::collections::HashMap;
+use std::io::{Read, Write};
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
+use tauri::{AppHandle, Emitter};
+
+#[derive(Clone, Serialize)]
+struct PtyOutputPayload {
+    session_id: String,
+    data: String,
+}
+
+#[derive(Clone, Serialize)]
+struct PtyExitPayload {
+    session_id: String,
+    exit_code: Option<u32>,
+}
+
+pub struct PtySession {
+    #[allow(dead_code)]
+    master: Box<dyn portable_pty::MasterPty + Send>,
+    writer: Box<dyn Write + Send>,
+    child: Box<dyn portable_pty::Child + Send + Sync>,
+}
+
+pub struct PtySessions(pub Mutex<HashMap<String, PtySession>>);
+
+impl PtySessions {
+    pub fn new() -> Self {
+        Self(Mutex::new(HashMap::new()))
+    }
+}
+
+pub fn spawn_pty_session(
+    app_handle: &AppHandle,
+    session_id: &str,
+    cmd: &str,
+    args: &[String],
+    cwd: &str,
+    cols: u16,
+    rows: u16,
+    sessions: &PtySessions,
+) -> Result<(), String> {
+    let pty_system = NativePtySystem::default();
+    let pair = pty_system
+        .openpty(PtySize {
+            rows,
+            cols,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
+        .map_err(|e| format!("Failed to open PTY: {}", e))?;
+
+    let mut command = CommandBuilder::new(cmd);
+    for arg in args {
+        command.arg(arg);
+    }
+    command.cwd(cwd);
+
+    let child = pair
+        .slave
+        .spawn_command(command)
+        .map_err(|e| format!("Failed to spawn command: {}", e))?;
+
+    let reader = pair
+        .master
+        .try_clone_reader()
+        .map_err(|e| format!("Failed to clone PTY reader: {}", e))?;
+
+    let writer = pair
+        .master
+        .take_writer()
+        .map_err(|e| format!("Failed to get PTY writer: {}", e))?;
+
+    let session = PtySession {
+        master: pair.master,
+        writer,
+        child,
+    };
+
+    let mut map = sessions.0.lock().unwrap();
+    map.insert(session_id.to_string(), session);
+    drop(map);
+
+    // Start background reader thread
+    let app = app_handle.clone();
+    let sid = session_id.to_string();
+    start_reader_thread(app, sid, reader);
+
+    Ok(())
+}
+
+fn start_reader_thread(
+    app_handle: AppHandle,
+    session_id: String,
+    mut reader: Box<dyn Read + Send>,
+) {
+    std::thread::spawn(move || {
+        let mut buf = [0u8; 8192];
+        let mut pending = String::new();
+        let mut last_flush = Instant::now();
+        let flush_interval = Duration::from_millis(16); // ~60fps
+
+        // Use non-blocking-style polling: set a short read timeout by
+        // reading in a loop and flushing accumulated data periodically.
+        loop {
+            match reader.read(&mut buf) {
+                Ok(0) => {
+                    // EOF — flush remaining data and exit
+                    if !pending.is_empty() {
+                        let _ = app_handle.emit(
+                            "pty-output",
+                            PtyOutputPayload {
+                                session_id: session_id.clone(),
+                                data: std::mem::take(&mut pending),
+                            },
+                        );
+                    }
+                    break;
+                }
+                Ok(n) => {
+                    pending.push_str(&String::from_utf8_lossy(&buf[..n]));
+
+                    // Flush if enough time has passed or buffer is large
+                    if last_flush.elapsed() >= flush_interval || pending.len() > 32768 {
+                        let _ = app_handle.emit(
+                            "pty-output",
+                            PtyOutputPayload {
+                                session_id: session_id.clone(),
+                                data: std::mem::take(&mut pending),
+                            },
+                        );
+                        last_flush = Instant::now();
+                    }
+                }
+                Err(_) => {
+                    if !pending.is_empty() {
+                        let _ = app_handle.emit(
+                            "pty-output",
+                            PtyOutputPayload {
+                                session_id: session_id.clone(),
+                                data: std::mem::take(&mut pending),
+                            },
+                        );
+                    }
+                    break;
+                }
+            }
+        }
+        let _ = app_handle.emit(
+            "pty-exit",
+            PtyExitPayload {
+                session_id,
+                exit_code: None,
+            },
+        );
+    });
+}
+
+pub fn write_to_pty(sessions: &PtySessions, session_id: &str, data: &str) -> Result<(), String> {
+    let mut map = sessions.0.lock().unwrap();
+    let session = map.get_mut(session_id).ok_or("Session not found")?;
+    session
+        .writer
+        .write_all(data.as_bytes())
+        .map_err(|e| format!("Write failed: {}", e))?;
+    session
+        .writer
+        .flush()
+        .map_err(|e| format!("Flush failed: {}", e))?;
+    Ok(())
+}
+
+pub fn resize_pty_session(
+    sessions: &PtySessions,
+    session_id: &str,
+    cols: u16,
+    rows: u16,
+) -> Result<(), String> {
+    let map = sessions.0.lock().unwrap();
+    let session = map.get(session_id).ok_or("Session not found")?;
+    session
+        .master
+        .resize(PtySize {
+            rows,
+            cols,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
+        .map_err(|e| format!("Resize failed: {}", e))?;
+    Ok(())
+}
+
+pub fn kill_pty_session(sessions: &PtySessions, session_id: &str) -> Result<(), String> {
+    let mut map = sessions.0.lock().unwrap();
+    if let Some(mut session) = map.remove(session_id) {
+        let _ = session.child.kill();
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pty_sessions_new_is_empty() {
+        let sessions = PtySessions::new();
+        let map = sessions.0.lock().unwrap();
+        assert!(map.is_empty());
+    }
+
+    #[test]
+    fn write_to_missing_session_returns_error() {
+        let sessions = PtySessions::new();
+        let result = write_to_pty(&sessions, "nonexistent", "hello");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Session not found"));
+    }
+
+    #[test]
+    fn resize_missing_session_returns_error() {
+        let sessions = PtySessions::new();
+        let result = resize_pty_session(&sessions, "nonexistent", 80, 24);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Session not found"));
+    }
+
+    #[test]
+    fn kill_missing_session_succeeds() {
+        let sessions = PtySessions::new();
+        let result = kill_pty_session(&sessions, "nonexistent");
+        assert!(result.is_ok());
+    }
+}

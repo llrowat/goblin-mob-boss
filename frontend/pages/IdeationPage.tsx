@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useTauri } from "../hooks/useTauri";
+import { Terminal } from "../components/Terminal";
 import type { Feature, IdeationResult } from "../types";
 
 export function IdeationPage() {
@@ -17,6 +18,12 @@ export function IdeationPage() {
   const [error] = useState("");
   const [copied, setCopied] = useState(false);
 
+  // PTY state
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [ptyExited, setPtyExited] = useState(false);
+  const [ptyLoading, setPtyLoading] = useState(true);
+  const [ptyError, setPtyError] = useState("");
+
   useEffect(() => {
     if (!featureId) return;
 
@@ -27,6 +34,44 @@ export function IdeationPage() {
       .then(setTerminalCmd)
       .catch(() => {});
   }, [featureId]);
+
+  const startPty = useCallback(
+    async (oldSessionId?: string | null) => {
+      if (!featureId) return;
+      setPtyLoading(true);
+      setPtyError("");
+      setPtyExited(false);
+      setSessionId(null);
+
+      // Kill old session before starting new one
+      if (oldSessionId) {
+        await tauri.killPty(oldSessionId).catch(() => {});
+      }
+
+      try {
+        const sid = await tauri.startIdeationPty(featureId);
+        setSessionId(sid);
+        setPtyLoading(false);
+      } catch (err) {
+        setPtyError(String(err));
+        setPtyLoading(false);
+      }
+    },
+    [featureId],
+  );
+
+  // Start PTY session on mount
+  useEffect(() => {
+    startPty();
+  }, [startPty]);
+
+  const handlePtyExit = useCallback(() => {
+    setPtyExited(true);
+  }, []);
+
+  const handleRestart = useCallback(() => {
+    startPty(sessionId);
+  }, [startPty, sessionId]);
 
   // Poll for ideation result (plan.json)
   const pollResult = useCallback(() => {
@@ -90,17 +135,47 @@ export function IdeationPage() {
             lineHeight: 1.6,
           }}
         >
-          Open Claude Code in plan mode. Discuss your goals, refine the
-          approach, then ask Claude to create the plan. The plan includes task
-          specs and a recommended execution mode (teams vs subagents).
+          Claude Code is running in plan mode below. Discuss your goals, refine
+          the approach, then ask Claude to create the plan.
         </p>
 
-        <div className="actions-bar" style={{ marginTop: 0 }}>
-          <button className="btn btn-secondary" onClick={handleCopyCommand}>
+        {/* Embedded terminal */}
+        {ptyLoading && (
+          <div className="terminal-status">Starting terminal...</div>
+        )}
+        {ptyError && (
+          <div
+            className="terminal-status"
+            style={{ color: "var(--danger)" }}
+          >
+            Failed to start terminal: {ptyError}
+          </div>
+        )}
+        {sessionId && !ptyLoading && (
+          <Terminal sessionId={sessionId} onExit={handlePtyExit} />
+        )}
+        {ptyExited && (
+          <div className="terminal-status">
+            <span>Process exited.</span>
+          </div>
+        )}
+
+        <div className="actions-bar" style={{ marginTop: 12 }}>
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={handleRestart}
+            disabled={ptyLoading}
+          >
+            Restart
+          </button>
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={handleCopyCommand}
+          >
             {copied ? "Copied!" : "Copy Command"}
           </button>
           <button
-            className="btn btn-secondary"
+            className="btn btn-secondary btn-sm"
             onClick={() => setShowSystemPrompt(!showSystemPrompt)}
           >
             {showSystemPrompt ? "Hide Context" : "View Context"}

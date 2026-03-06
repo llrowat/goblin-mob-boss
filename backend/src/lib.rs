@@ -3,6 +3,7 @@ mod git;
 mod launch;
 mod models;
 mod prompts;
+mod pty;
 mod store;
 mod validators;
 
@@ -27,6 +28,7 @@ pub fn run() {
             Ok(())
         })
         .manage(state)
+        .manage(pty::PtySessions::new())
         .invoke_handler(tauri::generate_handler![
             // Repository
             commands::list_repositories,
@@ -42,6 +44,7 @@ pub fn run() {
             commands::start_feature,
             commands::list_features,
             commands::get_feature,
+            commands::delete_feature,
             // Ideation
             commands::get_ideation_prompt,
             commands::get_ideation_terminal_command,
@@ -58,6 +61,11 @@ pub fn run() {
             // Feature PR
             commands::push_feature,
             commands::get_pr_command,
+            // PTY
+            commands::start_ideation_pty,
+            commands::write_pty,
+            commands::resize_pty,
+            commands::kill_pty,
             // Preferences
             commands::get_preferences,
             commands::set_preferences,

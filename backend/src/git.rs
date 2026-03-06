@@ -64,6 +64,12 @@ pub fn merge_branch(repo_path: &str, target: &str, source: &str) -> GitResult<St
     }
 }
 
+/// Delete a local branch.
+pub fn delete_branch(repo_path: &str, branch: &str) -> GitResult<()> {
+    run_git(repo_path, &["branch", "-D", branch])?;
+    Ok(())
+}
+
 /// Push a branch to origin.
 pub fn push_branch(repo_path: &str, branch: &str) -> GitResult<String> {
     run_git(repo_path, &["push", "-u", "origin", branch])

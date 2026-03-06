@@ -77,6 +77,9 @@ export function useTauri() {
     getFeature: (featureId: string) =>
       invoke<Feature>("get_feature", { featureId }),
 
+    deleteFeature: (featureId: string) =>
+      invoke<void>("delete_feature", { featureId }),
+
     // Ideation
     getIdeationPrompt: (featureId: string) =>
       invoke<string>("get_ideation_prompt", { featureId }),
@@ -132,5 +135,18 @@ export function useTauri() {
 
     setPreferences: (shell: string) =>
       invoke<Preferences>("set_preferences", { shell }),
+
+    // PTY
+    startIdeationPty: (featureId: string) =>
+      invoke<string>("start_ideation_pty", { featureId }),
+
+    writePty: (sessionId: string, data: string) =>
+      invoke<void>("write_pty", { sessionId, data }),
+
+    resizePty: (sessionId: string, cols: number, rows: number) =>
+      invoke<void>("resize_pty", { sessionId, cols, rows }),
+
+    killPty: (sessionId: string) =>
+      invoke<void>("kill_pty", { sessionId }),
   };
 }

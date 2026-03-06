@@ -181,6 +181,35 @@ pub fn delete_repo_agent(repo_path: &str, filename: &str) -> Result<(), String> 
     }
 }
 
+/// Save an agent file to the global `~/.claude/agents/` directory.
+pub fn save_global_agent(agent: &AgentFile) -> Result<(), String> {
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .map_err(|_| "Could not determine home directory".to_string())?;
+    let agents_dir = Path::new(&home).join(".claude").join("agents");
+    std::fs::create_dir_all(&agents_dir)
+        .map_err(|e| format!("Failed to create agents dir: {}", e))?;
+    let path = agents_dir.join(&agent.filename);
+    let content = agent.to_markdown();
+    std::fs::write(&path, content).map_err(|e| format!("Failed to write agent file: {}", e))
+}
+
+/// Delete an agent file from the global `~/.claude/agents/` directory.
+pub fn delete_global_agent(filename: &str) -> Result<(), String> {
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .map_err(|_| "Could not determine home directory".to_string())?;
+    let path = Path::new(&home)
+        .join(".claude")
+        .join("agents")
+        .join(filename);
+    if path.exists() {
+        std::fs::remove_file(&path).map_err(|e| format!("Failed to delete agent file: {}", e))
+    } else {
+        Err("Agent file not found".to_string())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

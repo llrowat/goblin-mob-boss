@@ -32,3 +32,5 @@ backend/gen/
 *.pem
 *.key
 credentials.json
+
+.gmb

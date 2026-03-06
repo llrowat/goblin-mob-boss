@@ -2,9 +2,10 @@ use crate::models::{ExecutionMode, Feature, TaskSpec};
 
 /// Build the launch command and environment for executing a feature.
 /// Returns (command_args, env_vars, initial_prompt_content).
+/// `system_prompt_content` is the system prompt text to append (passed inline via --append-system-prompt).
 pub fn build_launch(
     feature: &Feature,
-    system_prompt_path: &str,
+    system_prompt_content: &str,
 ) -> (Vec<String>, Vec<(String, String)>, String) {
     let mode = feature
         .execution_mode
@@ -24,15 +25,15 @@ pub fn build_launch(
             args.extend([
                 "--teammate-mode".to_string(),
                 "tmux".to_string(),
-                "--append-system-prompt-file".to_string(),
-                system_prompt_path.to_string(),
+                "--append-system-prompt".to_string(),
+                system_prompt_content.to_string(),
                 prompt.clone(),
             ]);
         }
         ExecutionMode::Subagents => {
             args.extend([
-                "--append-system-prompt-file".to_string(),
-                system_prompt_path.to_string(),
+                "--append-system-prompt".to_string(),
+                system_prompt_content.to_string(),
                 prompt.clone(),
             ]);
         }
@@ -177,7 +178,7 @@ mod tests {
     #[test]
     fn build_launch_teams_mode() {
         let feature = make_feature(ExecutionMode::Teams);
-        let (args, env, prompt) = build_launch(&feature, "/tmp/prompt.md");
+        let (args, env, prompt) = build_launch(&feature, "System prompt content here");
 
         assert!(env.iter().any(|(k, _)| k == "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"));
         assert!(args.contains(&"--teammate-mode".to_string()));
@@ -190,7 +191,7 @@ mod tests {
     #[test]
     fn build_launch_subagents_mode() {
         let feature = make_feature(ExecutionMode::Subagents);
-        let (args, env, prompt) = build_launch(&feature, "/tmp/prompt.md");
+        let (args, env, prompt) = build_launch(&feature, "System prompt content here");
 
         assert!(env.is_empty());
         assert!(!args.contains(&"--teammate-mode".to_string()));
@@ -203,7 +204,7 @@ mod tests {
     fn build_launch_defaults_to_subagents() {
         let mut feature = make_feature(ExecutionMode::Subagents);
         feature.execution_mode = None;
-        let (_, env, prompt) = build_launch(&feature, "/tmp/prompt.md");
+        let (_, env, prompt) = build_launch(&feature, "System prompt content here");
 
         assert!(env.is_empty());
         assert!(prompt.contains("lead agent"));

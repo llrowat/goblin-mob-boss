@@ -1035,3 +1035,19 @@ body {
   font-size: 12px;
   color: var(--muted);
 }
+
+/* Terminal */
+.terminal-container {
+  height: 400px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.terminal-status {
+  font-size: 13px;
+  color: var(--text-secondary);
+  padding: 8px 0;
+  display: flex;
+  align-items: center;
+}
