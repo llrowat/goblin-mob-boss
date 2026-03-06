@@ -737,6 +737,17 @@ body {
   box-shadow: var(--shadow);
 }
 
+/* Template card (greyed out) */
+.agent-card-template {
+  opacity: 0.55;
+  border-style: dashed;
+  transition: opacity 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+
+.agent-card-template:hover {
+  opacity: 0.85;
+}
+
 .agent-card-color-bar {
   height: 4px;
 }
@@ -826,9 +837,19 @@ body {
 
 /* Agent Form Modal */
 .agent-form-modal {
-  max-width: 560px;
+  max-width: 640px;
+  max-height: 85vh;
   padding: 0;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.agent-form-body {
+  padding: 20px 24px 0;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
 }
 
 .agent-form-header {
@@ -875,9 +896,7 @@ body {
   text-overflow: ellipsis;
 }
 
-.agent-form-body {
-  padding: 20px 24px 0;
-}
+/* padding merged into .agent-form-body above */
 
 .agent-form-footer {
   padding: 16px 24px 20px;
