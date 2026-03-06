@@ -119,6 +119,21 @@ pub fn delete_agent(repo_path: String, filename: String) -> Result<(), String> {
 
 // ── Feature Commands ──
 
+/// Validate a feature name: must not be empty, not too long, no path traversal.
+fn validate_feature_name(name: &str) -> Result<(), String> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err("Feature name cannot be empty".to_string());
+    }
+    if name.len() > 200 {
+        return Err("Feature name too long (max 200 chars)".to_string());
+    }
+    if name.contains("..") || name.contains('/') || name.contains('\\') {
+        return Err("Feature name contains invalid characters".to_string());
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub fn start_feature(
     state: State<AppState>,
@@ -129,6 +144,7 @@ pub fn start_feature(
     if repo_ids.is_empty() {
         return Err("At least one repository must be selected".to_string());
     }
+    validate_feature_name(&name)?;
 
     let repos_lock = state.repositories.lock().unwrap();
     let resolved_repos: Vec<Repository> = repo_ids
@@ -142,17 +158,49 @@ pub fn start_feature(
         .collect::<Result<Vec<_>, _>>()?;
     drop(repos_lock);
 
-    // Create feature branch in all repos
+    // Create feature branch in all repos, with rollback on failure
     let feature_slug = slug::slugify(&name);
     let short_id = &uuid::Uuid::new_v4().to_string()[..4];
     let branch_name = format!("feature/{}-{}", feature_slug, short_id);
 
+    let mut created_branches: Vec<&Repository> = Vec::new();
     for repo in &resolved_repos {
-        git::create_branch(&repo.path, &branch_name, &repo.base_branch)
-            .map_err(|e| format!("Failed to create branch in {}: {}", repo.name, e))?;
+        match git::create_branch(&repo.path, &branch_name, &repo.base_branch) {
+            Ok(()) => created_branches.push(repo),
+            Err(e) => {
+                // Rollback: delete branches created so far
+                for created_repo in &created_branches {
+                    let _ = git::delete_branch(&created_repo.path, &branch_name);
+                }
+                return Err(format!(
+                    "Failed to create branch in {} (rolled back {}): {}",
+                    repo.name,
+                    created_branches.len(),
+                    e
+                ));
+            }
+        }
     }
 
-    let feature = Feature::new(repo_ids, name, description, branch_name);
+    let mut feature = Feature::new(repo_ids, name, description, branch_name);
+
+    // Create worktrees for each repo so features can run in parallel
+    for repo in &resolved_repos {
+        match git::create_worktree(&repo.path, &feature.branch, &feature.id, &repo.name) {
+            Ok(wt_path) => {
+                feature
+                    .worktree_paths
+                    .insert(repo.id.clone(), wt_path.to_string_lossy().to_string());
+            }
+            Err(e) => {
+                log::warn!(
+                    "Could not create worktree for {} (will use main checkout): {}",
+                    repo.name,
+                    e
+                );
+            }
+        }
+    }
 
     // Create ideation directory in primary repo
     let primary_repo = &resolved_repos[0];
@@ -281,9 +329,11 @@ pub fn delete_feature(
         }
     }
 
-    // Try to delete the feature branch from all repos (best-effort)
+    // Clean up worktrees and branches from all repos (best-effort)
     for repo_id in &feature.effective_repo_ids() {
         if let Ok(repo) = get_repo(&state, repo_id) {
+            // Remove worktrees first (they hold a reference to the branch)
+            let _ = git::cleanup_feature_worktrees(&repo.path, &feature.id);
             let _ = git::delete_branch(&repo.path, &feature.branch);
         }
     }
@@ -333,11 +383,21 @@ pub fn get_ideation_terminal_command(
     let system_prompt_path = feature_dir.join("system-prompt.md");
     let user_prompt_path = feature_dir.join("user-prompt.md");
 
+    // Use worktree path if available
+    let work_dir = feature
+        .worktree_paths
+        .get(&repo.id)
+        .map(|s| s.as_str())
+        .unwrap_or(&repo.path);
+
+    // Shell-quote paths to prevent injection
+    let escaped_work_dir = shell_quote(work_dir);
+    let escaped_sys = shell_quote(&system_prompt_path.to_string_lossy());
+    let escaped_usr = shell_quote(&user_prompt_path.to_string_lossy());
+
     Ok(format!(
-        "cd {} && claude --permission-mode plan --append-system-prompt \"$(cat '{}')\" \"$(cat '{}')\"",
-        repo.path,
-        system_prompt_path.display(),
-        user_prompt_path.display()
+        "cd {} && claude --permission-mode plan --append-system-prompt \"$(cat {})\" \"$(cat {})\"",
+        escaped_work_dir, escaped_sys, escaped_usr
     ))
 }
 
@@ -362,9 +422,15 @@ pub fn poll_ideation_result(
     // Try plan.json first (new format with execution_mode)
     let plan_path = tasks_dir.join("plan.json");
     if plan_path.exists() {
-        if let Ok(data) = std::fs::read_to_string(&plan_path) {
-            if let Ok(result) = serde_json::from_str::<IdeationResult>(&data) {
-                return Ok(result);
+        match std::fs::read_to_string(&plan_path) {
+            Ok(data) => match serde_json::from_str::<IdeationResult>(&data) {
+                Ok(result) => return Ok(result),
+                Err(e) => {
+                    log::warn!("Malformed plan.json for feature {}: {}", feature_id, e);
+                }
+            },
+            Err(e) => {
+                log::warn!("Failed to read plan.json for feature {}: {}", feature_id, e);
             }
         }
     }
@@ -388,9 +454,15 @@ pub fn poll_ideation_result(
             .collect();
         files.sort_by_key(|e| e.file_name());
         for entry in files {
-            if let Ok(data) = std::fs::read_to_string(entry.path()) {
-                if let Ok(spec) = serde_json::from_str::<TaskSpec>(&data) {
-                    specs.push(spec);
+            match std::fs::read_to_string(entry.path()) {
+                Ok(data) => match serde_json::from_str::<TaskSpec>(&data) {
+                    Ok(spec) => specs.push(spec),
+                    Err(e) => {
+                        log::warn!("Skipping malformed task file {}: {}", entry.path().display(), e);
+                    }
+                },
+                Err(e) => {
+                    log::warn!("Failed to read task file {}: {}", entry.path().display(), e);
                 }
             }
         }
@@ -452,6 +524,13 @@ pub fn get_launch_command(
 
     let (args, env, _prompt) = launch::build_launch(&feature, &system_prompt_content);
 
+    // Use worktree path if available (allows concurrent features)
+    let work_dir = feature
+        .worktree_paths
+        .get(&repo.id)
+        .map(|s| s.as_str())
+        .unwrap_or(&repo.path);
+
     // Build the full command string
     let env_prefix: String = env
         .iter()
@@ -460,9 +539,9 @@ pub fn get_launch_command(
         .join(" ");
 
     let cmd = if env_prefix.is_empty() {
-        format!("cd {} && {}", repo.path, args.join(" "))
+        format!("cd {} && {}", work_dir, args.join(" "))
     } else {
-        format!("cd {} && {} {}", repo.path, env_prefix, args.join(" "))
+        format!("cd {} && {} {}", work_dir, env_prefix, args.join(" "))
     };
 
     Ok(cmd)
@@ -521,14 +600,35 @@ pub fn run_feature_validators(
             continue;
         }
 
-        // Run validators on the feature branch
-        git::checkout_branch(&repo.path, &feature.branch).map_err(|e| e.to_string())?;
+        // Use worktree if available, otherwise create a temporary one.
+        // This avoids modifying the main working directory.
+        let (validator_path, is_temp_worktree) =
+            if let Some(wt_path) = feature.worktree_paths.get(&repo.id) {
+                (wt_path.clone(), false)
+            } else {
+                // Create a temporary worktree for validation
+                match git::create_worktree(&repo.path, &feature.branch, &feature.id, &repo.name) {
+                    Ok(wt) => (wt.to_string_lossy().to_string(), true),
+                    Err(e) => {
+                        // Last resort: checkout the branch (old behavior)
+                        log::warn!("Worktree creation failed for {}, falling back to checkout: {}", repo.name, e);
+                        git::checkout_branch(&repo.path, &feature.branch)
+                            .map_err(|e| format!("Failed to checkout {}: {}", feature.branch, e))?;
+                        (repo.path.clone(), false)
+                    }
+                }
+            };
 
-        let result = validators::run_validators(&repo.path, &repo.validators, 1)?;
+        let result = validators::run_validators(&validator_path, &repo.validators, 1)?;
         if !result.all_passed {
             all_passed = false;
         }
         all_results.extend(result.results);
+
+        // Clean up temp worktree if we created one
+        if is_temp_worktree {
+            let _ = git::cleanup_feature_worktrees(&repo.path, &feature.id);
+        }
     }
 
     Ok(VerifyResult {
@@ -733,12 +833,19 @@ pub fn start_ideation_pty(
         ("claude".to_string(), claude_args)
     };
 
+    // Use worktree path if available
+    let work_dir = feature
+        .worktree_paths
+        .get(&repo.id)
+        .map(|s| s.as_str())
+        .unwrap_or(&repo.path);
+
     pty::spawn_pty_session(
         &app_handle,
         &session_id,
         &cmd,
         &args,
-        &repo.path,
+        work_dir,
         80,
         24,
         &pty_sessions,
@@ -910,6 +1017,15 @@ pub fn analyze_task_graph(
 
 // ── Helpers ──
 
+/// Shell-quote a string for safe inclusion in shell commands.
+fn shell_quote(s: &str) -> String {
+    if s.chars().all(|c| c.is_alphanumeric() || c == '/' || c == '.' || c == '-' || c == '_') {
+        s.to_string()
+    } else {
+        format!("'{}'", s.replace('\'', "'\\''"))
+    }
+}
+
 fn get_repo(state: &State<AppState>, repo_id: &str) -> Result<Repository, String> {
     let repos = state.repositories.lock().unwrap();
     repos
@@ -1032,5 +1148,47 @@ mod tests {
         let result = generate_context_pack_string(&dir.path().to_string_lossy());
         assert!(result.contains("**Languages:**"));
         assert!(result.contains("**Structure:**"));
+    }
+
+    #[test]
+    fn validate_feature_name_rejects_empty() {
+        assert!(validate_feature_name("").is_err());
+        assert!(validate_feature_name("   ").is_err());
+    }
+
+    #[test]
+    fn validate_feature_name_rejects_path_traversal() {
+        assert!(validate_feature_name("../../etc/passwd").is_err());
+        assert!(validate_feature_name("foo/bar").is_err());
+        assert!(validate_feature_name("foo\\bar").is_err());
+    }
+
+    #[test]
+    fn validate_feature_name_rejects_too_long() {
+        let long_name = "a".repeat(201);
+        assert!(validate_feature_name(&long_name).is_err());
+    }
+
+    #[test]
+    fn validate_feature_name_accepts_valid() {
+        assert!(validate_feature_name("Add dark mode toggle").is_ok());
+        assert!(validate_feature_name("Fix bug #123").is_ok());
+        assert!(validate_feature_name("a").is_ok());
+    }
+
+    #[test]
+    fn shell_quote_simple_path() {
+        assert_eq!(shell_quote("/home/user/repo"), "/home/user/repo");
+        assert_eq!(shell_quote("simple-path"), "simple-path");
+    }
+
+    #[test]
+    fn shell_quote_path_with_spaces() {
+        assert_eq!(shell_quote("/home/user/my repo"), "'/home/user/my repo'");
+    }
+
+    #[test]
+    fn shell_quote_path_with_quotes() {
+        assert_eq!(shell_quote("it's"), "'it'\\''s'");
     }
 }

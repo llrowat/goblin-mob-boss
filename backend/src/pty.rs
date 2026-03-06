@@ -25,11 +25,11 @@ pub struct PtySession {
     child: Box<dyn portable_pty::Child + Send + Sync>,
 }
 
-pub struct PtySessions(pub Mutex<HashMap<String, PtySession>>);
+pub struct PtySessions(pub std::sync::Arc<Mutex<HashMap<String, PtySession>>>);
 
 impl PtySessions {
     pub fn new() -> Self {
-        Self(Mutex::new(HashMap::new()))
+        Self(std::sync::Arc::new(Mutex::new(HashMap::new())))
     }
 }
 
@@ -84,10 +84,11 @@ pub fn spawn_pty_session(
     map.insert(session_id.to_string(), session);
     drop(map);
 
-    // Start background reader thread
+    // Start background reader thread with shared session map for cleanup
     let app = app_handle.clone();
     let sid = session_id.to_string();
-    start_reader_thread(app, sid, reader);
+    let sessions_arc = sessions.0.clone();
+    start_reader_thread(app, sid, reader, sessions_arc);
 
     Ok(())
 }
@@ -96,6 +97,7 @@ fn start_reader_thread(
     app_handle: AppHandle,
     session_id: String,
     mut reader: Box<dyn Read + Send>,
+    sessions: std::sync::Arc<Mutex<HashMap<String, PtySession>>>,
 ) {
     std::thread::spawn(move || {
         let mut buf = [0u8; 8192];
@@ -149,11 +151,32 @@ fn start_reader_thread(
                 }
             }
         }
+
+        // Get the exit code from the child process before removing the session
+        let exit_code = {
+            let mut map = sessions.lock().unwrap();
+            if let Some(session) = map.get_mut(&session_id) {
+                // Try to wait for the child to get exit code
+                session.child.wait().ok().map(|s| s.exit_code())
+            } else {
+                None
+            }
+        };
+
+        // Remove the session from the map to prevent leaks
+        {
+            let mut map = sessions.lock().unwrap();
+            if let Some(mut session) = map.remove(&session_id) {
+                // Ensure child is killed if still running
+                let _ = session.child.kill();
+            }
+        }
+
         let _ = app_handle.emit(
             "pty-exit",
             PtyExitPayload {
                 session_id,
-                exit_code: None,
+                exit_code,
             },
         );
     });
