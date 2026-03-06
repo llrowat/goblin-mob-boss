@@ -125,7 +125,7 @@ export function HomePage() {
         <div>
           <h2>Features</h2>
           <p>
-            Rally your mob. Start a new feature to plan and execute with
+            Round up your mob. Start a new feature to plan and execute with
             Claude.
           </p>
         </div>

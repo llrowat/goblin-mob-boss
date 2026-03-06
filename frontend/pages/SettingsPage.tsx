@@ -30,7 +30,7 @@ export function SettingsPage() {
     <div>
       <div className="page-header">
         <h2>Settings</h2>
-        <p>Tune the war machine to your liking.</p>
+        <p>Tune things to your liking.</p>
       </div>
 
       <div className="panel">

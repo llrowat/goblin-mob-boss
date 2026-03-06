@@ -14,7 +14,7 @@ describe("SettingsPage", () => {
 
     expect(screen.getByText("Settings")).toBeInTheDocument();
     expect(
-      screen.getByText("Tune the war machine to your liking."),
+      screen.getByText("Tune things to your liking."),
     ).toBeInTheDocument();
   });
 

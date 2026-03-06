@@ -63,7 +63,7 @@ export function ReposPage() {
 
       {repos.length === 0 ? (
         <div className="empty-state">
-          <p>No territories claimed yet. Add a repository to stake your ground.</p>
+          <p>No lairs claimed yet. Add a repository to set up shop.</p>
         </div>
       ) : (
         repos.map((repo) => (

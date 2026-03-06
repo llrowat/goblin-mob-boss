@@ -158,7 +158,7 @@ export function LaunchConfigPage() {
       <div className="page-header">
         <h2>Launch: {feature.name}</h2>
         <p>
-          Review the battle plan and rally your agents before launching.
+          Review the plan and pick your crew before launching.
         </p>
       </div>
 
@@ -388,8 +388,8 @@ export function LaunchConfigPage() {
               fontStyle: "italic",
             }}
           >
-            No goblins recruited. Add agent files to .claude/agents/ in your repo, or
-            visit the Guide page to recruit built-in agents.
+            No goblins hired yet. Add agent files to .claude/agents/ in your repo, or
+            visit the Guide page to pick up built-in agents.
           </p>
         )}
       </div>

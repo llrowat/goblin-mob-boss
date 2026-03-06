@@ -272,7 +272,7 @@ describe("LaunchConfigPage", () => {
     renderWithRouter("feat-1");
 
     await waitFor(() => {
-      expect(screen.getByText(/Guide page to recruit/)).toBeInTheDocument();
+      expect(screen.getByText(/Guide page to pick up/)).toBeInTheDocument();
     });
   });
 

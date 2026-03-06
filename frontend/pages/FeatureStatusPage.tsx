@@ -376,7 +376,7 @@ export function FeatureStatusPage() {
                 marginBottom: 8,
               }}
             >
-              Send orders to the mob mid-raid. Notes are
+              Pass notes to the mob while they work. Notes are
               written to the feature directory for agents to read.
             </p>
             <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
