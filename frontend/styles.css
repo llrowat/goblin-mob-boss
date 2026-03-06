@@ -1070,3 +1070,258 @@ body {
   display: flex;
   align-items: center;
 }
+
+/* ── System Map — Goblin Treasure Map ── */
+
+.system-map-page {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 64px);
+}
+
+.map-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  margin-bottom: 8px;
+}
+
+.map-canvas-container {
+  display: flex;
+  gap: 16px;
+  flex: 1;
+  min-height: 0;
+}
+
+.map-canvas-wrapper {
+  flex: 1;
+  background: var(--bg);
+  border: 2px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  position: relative;
+  /* Parchment-like border feel */
+  box-shadow:
+    inset 0 0 40px rgba(42, 37, 32, 0.5),
+    0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.map-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  user-select: none;
+}
+
+/* ── Service nodes ── */
+.map-service-node {
+  transition: opacity 0.15s;
+}
+
+.map-service-node:hover .map-node-border {
+  stroke-width: 4;
+  filter: brightness(1.2);
+}
+
+.map-service-node.selected .map-node-border {
+  stroke-width: 4;
+}
+
+.map-node-glow {
+  animation: map-glow-pulse 2s ease-in-out infinite;
+}
+
+@keyframes map-glow-pulse {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 0.6; }
+}
+
+.map-node-icon {
+  pointer-events: none;
+}
+
+.map-node-name {
+  font-size: 13px;
+  font-weight: 600;
+  font-family: var(--font-sans);
+  pointer-events: none;
+}
+
+.map-node-type {
+  font-size: 10px;
+  font-family: var(--font-sans);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  pointer-events: none;
+}
+
+.map-node-data {
+  font-size: 9px;
+  font-family: var(--font-sans);
+  pointer-events: none;
+}
+
+/* ── Connection trails ── */
+.map-trail {
+  transition: opacity 0.15s;
+}
+
+.map-connection-group:hover .map-trail {
+  opacity: 1;
+  stroke-width: 3.5;
+}
+
+.map-connection-label {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  pointer-events: none;
+}
+
+.map-async-badge {
+  font-size: 8px;
+  font-family: var(--font-mono);
+  font-style: italic;
+  pointer-events: none;
+}
+
+/* ── Map title ── */
+.map-title-text {
+  font-size: 18px;
+  font-weight: 700;
+  font-family: var(--font-sans);
+  letter-spacing: 1px;
+  opacity: 0.6;
+}
+
+/* ── Side panels ── */
+.map-side-panels {
+  width: 260px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+}
+
+.map-detail-panel {
+  animation: map-panel-in 0.15s ease-out;
+}
+
+@keyframes map-panel-in {
+  from { opacity: 0; transform: translateX(8px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+/* ── Legend ── */
+.map-legend {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+  font-size: 11px;
+}
+
+.map-legend-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+.map-legend-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.map-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+}
+
+.map-legend-icon {
+  width: 24px;
+  text-align: center;
+  font-size: 14px;
+}
+
+.map-legend-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 8px 0;
+}
+
+/* ── Explore / Discovery ── */
+
+.explore-repo-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 240px;
+  overflow-y: auto;
+  margin-bottom: 16px;
+}
+
+.explore-repo-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.explore-repo-item:hover {
+  border-color: var(--accent-brass);
+}
+
+.discovery-progress {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-bottom: 12px;
+}
+
+.discovery-command {
+  margin-bottom: 12px;
+}
+
+.discovery-command pre.command-display {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  font-size: 12px;
+  color: var(--text);
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 0;
+}
+
+.discovery-status {
+  padding-top: 8px;
+}
+
+.discovery-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent-brass);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

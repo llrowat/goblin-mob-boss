@@ -1,4 +1,4 @@
-use crate::models::{AgentFile, Feature, Preferences, Repository};
+use crate::models::{AgentFile, Feature, Preferences, Repository, SystemMap};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Mutex;
@@ -6,6 +6,7 @@ use std::sync::Mutex;
 pub struct AppState {
     pub repositories: Mutex<HashMap<String, Repository>>,
     pub features: Mutex<HashMap<String, Feature>>,
+    pub system_maps: Mutex<HashMap<String, SystemMap>>,
     pub preferences: Mutex<Preferences>,
     pub config_path: String,
 }
@@ -15,11 +16,13 @@ impl AppState {
         let state = Self {
             repositories: Mutex::new(HashMap::new()),
             features: Mutex::new(HashMap::new()),
+            system_maps: Mutex::new(HashMap::new()),
             preferences: Mutex::new(Preferences::default()),
             config_path,
         };
         state.load_repos();
         state.load_features();
+        state.load_system_maps();
         state.load_preferences();
         state
     }
@@ -70,7 +73,12 @@ impl AppState {
         let data = match serde_json::to_string_pretty(&items) {
             Ok(d) => d,
             Err(e) => {
-                log::error!("Failed to serialize {} for {}: {}", std::any::type_name::<T>(), filename, e);
+                log::error!(
+                    "Failed to serialize {} for {}: {}",
+                    std::any::type_name::<T>(),
+                    filename,
+                    e
+                );
                 return;
             }
         };
@@ -81,7 +89,12 @@ impl AppState {
             return;
         }
         if let Err(e) = std::fs::rename(&tmp_path, &path) {
-            log::error!("Failed to rename {} -> {}: {}", tmp_path.display(), path.display(), e);
+            log::error!(
+                "Failed to rename {} -> {}: {}",
+                tmp_path.display(),
+                path.display(),
+                e
+            );
             // Try direct write as fallback
             let _ = std::fs::write(&path, &data);
         }
@@ -117,6 +130,22 @@ impl AppState {
         let features = self.features.lock().unwrap();
         let list: Vec<&Feature> = features.values().collect();
         self.save_json_list("features.json", &list);
+    }
+
+    // ── System Map persistence ──
+
+    fn load_system_maps(&self) {
+        let maps = self.load_json_list::<SystemMap>("system_maps.json");
+        let mut map = self.system_maps.lock().unwrap();
+        for sm in maps {
+            map.insert(sm.id.clone(), sm);
+        }
+    }
+
+    pub fn save_system_maps(&self) {
+        let maps = self.system_maps.lock().unwrap();
+        let list: Vec<&SystemMap> = maps.values().collect();
+        self.save_json_list("system_maps.json", &list);
     }
 
     // ── Preferences persistence ──
@@ -193,8 +222,8 @@ fn read_agents_from_dir(agents_dir: &Path, is_global: bool) -> Result<Vec<AgentF
         return Ok(vec![]);
     }
     let mut agents = Vec::new();
-    let entries = std::fs::read_dir(agents_dir)
-        .map_err(|e| format!("Failed to read agents dir: {}", e))?;
+    let entries =
+        std::fs::read_dir(agents_dir).map_err(|e| format!("Failed to read agents dir: {}", e))?;
 
     let mut files: Vec<_> = entries.flatten().collect();
     files.sort_by_key(|e| e.file_name());
@@ -202,11 +231,7 @@ fn read_agents_from_dir(agents_dir: &Path, is_global: bool) -> Result<Vec<AgentF
     for entry in files {
         let path = entry.path();
         if path.extension().map(|e| e == "md").unwrap_or(false) {
-            let filename = path
-                .file_name()
-                .unwrap()
-                .to_string_lossy()
-                .to_string();
+            let filename = path.file_name().unwrap().to_string_lossy().to_string();
             if let Ok(content) = std::fs::read_to_string(&path) {
                 if let Ok(mut agent) = AgentFile::parse(&filename, &content) {
                     agent.is_global = is_global;
@@ -280,6 +305,7 @@ mod tests {
         AppState {
             repositories: Mutex::new(HashMap::new()),
             features: Mutex::new(HashMap::new()),
+            system_maps: Mutex::new(HashMap::new()),
             preferences: Mutex::new(Preferences::default()),
             config_path,
         }
@@ -478,5 +504,75 @@ mod tests {
         assert!(!dir.path().join("repositories.json.tmp").exists());
         // The actual file should exist
         assert!(dir.path().join("repositories.json").exists());
+    }
+
+    #[test]
+    fn save_and_load_system_maps_roundtrip() {
+        let dir = TempDir::new().unwrap();
+        let state = make_state(&dir);
+
+        let map = crate::models::SystemMap::new("Platform".to_string(), "Overview".to_string());
+        let map_id = map.id.clone();
+
+        {
+            let mut maps = state.system_maps.lock().unwrap();
+            maps.insert(map.id.clone(), map);
+        }
+        state.save_system_maps();
+
+        assert!(dir.path().join("system_maps.json").exists());
+
+        let state2 = make_state(&dir);
+        state2.load_system_maps();
+        let maps = state2.system_maps.lock().unwrap();
+        assert_eq!(maps.len(), 1);
+        assert_eq!(maps.get(&map_id).unwrap().name, "Platform");
+    }
+
+    #[test]
+    fn save_system_maps_with_services_and_connections() {
+        let dir = TempDir::new().unwrap();
+        let state = make_state(&dir);
+
+        let mut map = crate::models::SystemMap::new("Full Map".to_string(), String::new());
+        map.services.push(crate::models::MapService {
+            id: "s1".to_string(),
+            name: "API".to_string(),
+            service_type: crate::models::ServiceType::Backend,
+            repo_id: None,
+            runtime: "rust".to_string(),
+            framework: "actix".to_string(),
+            description: String::new(),
+            exposes: vec![],
+            consumes: vec![],
+            owns_data: vec!["users".to_string()],
+            position: (100.0, 200.0),
+            color: "#5a8a5c".to_string(),
+        });
+        map.connections.push(crate::models::MapConnection {
+            id: "c1".to_string(),
+            from_service: "s1".to_string(),
+            to_service: "s2".to_string(),
+            connection_type: crate::models::ConnectionType::Rest,
+            sync: true,
+            label: "/api".to_string(),
+            description: String::new(),
+        });
+        let map_id = map.id.clone();
+
+        {
+            let mut maps = state.system_maps.lock().unwrap();
+            maps.insert(map.id.clone(), map);
+        }
+        state.save_system_maps();
+
+        let state2 = make_state(&dir);
+        state2.load_system_maps();
+        let maps = state2.system_maps.lock().unwrap();
+        let loaded = maps.get(&map_id).unwrap();
+        assert_eq!(loaded.services.len(), 1);
+        assert_eq!(loaded.services[0].owns_data, vec!["users"]);
+        assert_eq!(loaded.connections.len(), 1);
+        assert_eq!(loaded.connections[0].label, "/api");
     }
 }

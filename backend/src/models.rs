@@ -329,6 +329,184 @@ pub struct DiffSummary {
     pub total_deletions: u32,
 }
 
+// ── System Map ──
+// Structural model of how services/components communicate across a system.
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum ServiceType {
+    Backend,
+    Frontend,
+    Worker,
+    Gateway,
+    Database,
+    Queue,
+    Cache,
+    External,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum ConnectionType {
+    Rest,
+    Grpc,
+    Graphql,
+    Websocket,
+    Event,
+    SharedDb,
+    FileSystem,
+    Ipc,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServiceEndpoint {
+    #[serde(rename = "type")]
+    pub endpoint_type: ConnectionType,
+    #[serde(default)]
+    pub path: String,
+    #[serde(default)]
+    pub description: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServiceDependency {
+    #[serde(rename = "type")]
+    pub dep_type: ConnectionType,
+    pub target: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default = "default_sync")]
+    pub sync: bool,
+}
+
+fn default_sync() -> bool {
+    true
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MapService {
+    pub id: String,
+    pub name: String,
+    pub service_type: ServiceType,
+    #[serde(default)]
+    pub repo_id: Option<String>,
+    #[serde(default)]
+    pub runtime: String,
+    #[serde(default)]
+    pub framework: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub exposes: Vec<ServiceEndpoint>,
+    #[serde(default)]
+    pub consumes: Vec<ServiceDependency>,
+    #[serde(default)]
+    pub owns_data: Vec<String>,
+    /// Position on the map canvas (x, y)
+    #[serde(default)]
+    pub position: (f64, f64),
+    /// Hex color for the service node
+    #[serde(default = "default_service_color")]
+    pub color: String,
+}
+
+fn default_service_color() -> String {
+    "#5a8a5c".to_string()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MapConnection {
+    pub id: String,
+    pub from_service: String,
+    pub to_service: String,
+    pub connection_type: ConnectionType,
+    #[serde(default = "default_sync")]
+    pub sync: bool,
+    #[serde(default)]
+    pub label: String,
+    #[serde(default)]
+    pub description: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SystemMap {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub description: String,
+    pub services: Vec<MapService>,
+    pub connections: Vec<MapConnection>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+/// Raw discovery result from a single repo scan — parsed from the agent's JSON output.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiscoveryResult {
+    #[serde(default)]
+    pub repo_name: String,
+    #[serde(default)]
+    pub services: Vec<DiscoveredService>,
+    #[serde(default)]
+    pub connections: Vec<DiscoveredConnection>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiscoveredService {
+    pub name: String,
+    #[serde(default = "default_backend_type")]
+    pub service_type: String,
+    #[serde(default)]
+    pub runtime: String,
+    #[serde(default)]
+    pub framework: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub owns_data: Vec<String>,
+    #[serde(default)]
+    pub exposes: Vec<ServiceEndpoint>,
+    #[serde(default)]
+    pub consumes: Vec<ServiceDependency>,
+}
+
+fn default_backend_type() -> String {
+    "backend".to_string()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiscoveredConnection {
+    pub from: String,
+    pub to: String,
+    #[serde(default = "default_rest_type")]
+    pub connection_type: String,
+    #[serde(default = "default_sync")]
+    pub sync: bool,
+    #[serde(default)]
+    pub label: String,
+    #[serde(default)]
+    pub description: String,
+}
+
+fn default_rest_type() -> String {
+    "rest".to_string()
+}
+
+impl SystemMap {
+    pub fn new(name: String, description: String) -> Self {
+        let now = Utc::now();
+        Self {
+            id: uuid::Uuid::new_v4().to_string(),
+            name,
+            description,
+            services: vec![],
+            connections: vec![],
+            created_at: now,
+            updated_at: now,
+        }
+    }
+}
+
 // ── Preferences ──
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -460,10 +638,7 @@ You are a frontend specialist. Focus on UI components, styling, and accessibilit
         assert_eq!(agent.name, "Frontend Developer");
         assert_eq!(agent.description, "Specializes in React and CSS");
         assert_eq!(agent.tools, Some("Read, Edit, Write, Bash".to_string()));
-        assert_eq!(
-            agent.model,
-            Some("claude-sonnet-4-5-20250514".to_string())
-        );
+        assert_eq!(agent.model, Some("claude-sonnet-4-5-20250514".to_string()));
         assert!(agent.system_prompt.contains("frontend specialist"));
     }
 
@@ -671,5 +846,170 @@ You are a backend developer."#;
         };
         let md = agent.to_markdown();
         assert!(!md.contains("color:"));
+    }
+
+    // ── System Map Tests ──
+
+    #[test]
+    fn system_map_new_creates_empty_map() {
+        let map = SystemMap::new("Platform".to_string(), "Overview".to_string());
+        assert_eq!(map.name, "Platform");
+        assert_eq!(map.description, "Overview");
+        assert!(map.services.is_empty());
+        assert!(map.connections.is_empty());
+        assert!(!map.id.is_empty());
+    }
+
+    #[test]
+    fn service_type_serializes() {
+        let json = serde_json::to_string(&ServiceType::Backend).unwrap();
+        assert_eq!(json, "\"backend\"");
+        let parsed: ServiceType = serde_json::from_str("\"frontend\"").unwrap();
+        assert_eq!(parsed, ServiceType::Frontend);
+    }
+
+    #[test]
+    fn connection_type_serializes() {
+        let json = serde_json::to_string(&ConnectionType::Event).unwrap();
+        assert_eq!(json, "\"event\"");
+        let parsed: ConnectionType = serde_json::from_str("\"shared_db\"").unwrap();
+        assert_eq!(parsed, ConnectionType::SharedDb);
+    }
+
+    #[test]
+    fn map_service_serializes_roundtrip() {
+        let svc = MapService {
+            id: "svc-1".to_string(),
+            name: "Auth Service".to_string(),
+            service_type: ServiceType::Backend,
+            repo_id: Some("repo-1".to_string()),
+            runtime: "node".to_string(),
+            framework: "express".to_string(),
+            description: "Handles auth".to_string(),
+            exposes: vec![ServiceEndpoint {
+                endpoint_type: ConnectionType::Rest,
+                path: "/api/auth".to_string(),
+                description: "Auth API".to_string(),
+            }],
+            consumes: vec![ServiceDependency {
+                dep_type: ConnectionType::SharedDb,
+                target: "postgres".to_string(),
+                description: "User store".to_string(),
+                sync: true,
+            }],
+            owns_data: vec!["users".to_string(), "sessions".to_string()],
+            position: (100.0, 200.0),
+            color: "#5a8a5c".to_string(),
+        };
+        let json = serde_json::to_string(&svc).unwrap();
+        let parsed: MapService = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.name, "Auth Service");
+        assert_eq!(parsed.service_type, ServiceType::Backend);
+        assert_eq!(parsed.owns_data.len(), 2);
+        assert_eq!(parsed.position, (100.0, 200.0));
+        assert_eq!(parsed.exposes.len(), 1);
+        assert_eq!(parsed.consumes.len(), 1);
+    }
+
+    #[test]
+    fn map_connection_serializes_roundtrip() {
+        let conn = MapConnection {
+            id: "conn-1".to_string(),
+            from_service: "svc-1".to_string(),
+            to_service: "svc-2".to_string(),
+            connection_type: ConnectionType::Event,
+            sync: false,
+            label: "user.created".to_string(),
+            description: "New user event".to_string(),
+        };
+        let json = serde_json::to_string(&conn).unwrap();
+        let parsed: MapConnection = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.from_service, "svc-1");
+        assert_eq!(parsed.to_service, "svc-2");
+        assert_eq!(parsed.connection_type, ConnectionType::Event);
+        assert!(!parsed.sync);
+        assert_eq!(parsed.label, "user.created");
+    }
+
+    #[test]
+    fn system_map_full_roundtrip() {
+        let mut map = SystemMap::new("Test".to_string(), "Test map".to_string());
+        map.services.push(MapService {
+            id: "s1".to_string(),
+            name: "API".to_string(),
+            service_type: ServiceType::Gateway,
+            repo_id: None,
+            runtime: String::new(),
+            framework: String::new(),
+            description: String::new(),
+            exposes: vec![],
+            consumes: vec![],
+            owns_data: vec![],
+            position: (0.0, 0.0),
+            color: "#b8944a".to_string(),
+        });
+        map.services.push(MapService {
+            id: "s2".to_string(),
+            name: "DB".to_string(),
+            service_type: ServiceType::Database,
+            repo_id: None,
+            runtime: String::new(),
+            framework: String::new(),
+            description: String::new(),
+            exposes: vec![],
+            consumes: vec![],
+            owns_data: vec!["all".to_string()],
+            position: (300.0, 200.0),
+            color: "#d4aa5a".to_string(),
+        });
+        map.connections.push(MapConnection {
+            id: "c1".to_string(),
+            from_service: "s1".to_string(),
+            to_service: "s2".to_string(),
+            connection_type: ConnectionType::SharedDb,
+            sync: true,
+            label: String::new(),
+            description: String::new(),
+        });
+
+        let json = serde_json::to_string_pretty(&map).unwrap();
+        let parsed: SystemMap = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.name, "Test");
+        assert_eq!(parsed.services.len(), 2);
+        assert_eq!(parsed.connections.len(), 1);
+        assert_eq!(
+            parsed.connections[0].connection_type,
+            ConnectionType::SharedDb
+        );
+    }
+
+    #[test]
+    fn map_service_defaults_for_missing_fields() {
+        let json = r#"{
+            "id": "s1",
+            "name": "Minimal",
+            "service_type": "worker"
+        }"#;
+        let svc: MapService = serde_json::from_str(json).unwrap();
+        assert_eq!(svc.name, "Minimal");
+        assert_eq!(svc.service_type, ServiceType::Worker);
+        assert!(svc.repo_id.is_none());
+        assert!(svc.runtime.is_empty());
+        assert!(svc.exposes.is_empty());
+        assert!(svc.consumes.is_empty());
+        assert!(svc.owns_data.is_empty());
+        assert_eq!(svc.position, (0.0, 0.0));
+        assert_eq!(svc.color, "#5a8a5c");
+    }
+
+    #[test]
+    fn service_dependency_defaults_sync_true() {
+        let json = r#"{
+            "type": "rest",
+            "target": "other-svc",
+            "description": ""
+        }"#;
+        let dep: ServiceDependency = serde_json::from_str(json).unwrap();
+        assert!(dep.sync);
     }
 }

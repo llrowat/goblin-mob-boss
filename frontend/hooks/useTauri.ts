@@ -15,6 +15,8 @@ import type {
   GuidanceNote,
   GuidancePriority,
   ModeRecommendation,
+  SystemMap,
+  DiscoveryStatus,
 } from "../types";
 
 export function useTauri() {
@@ -191,5 +193,27 @@ export function useTauri() {
     // Heuristics
     analyzeTaskGraph: (taskSpecs: TaskSpec[]) =>
       invoke<ModeRecommendation>("analyze_task_graph", { taskSpecs }),
+
+    // System Map
+    listSystemMaps: () =>
+      invoke<SystemMap[]>("list_system_maps"),
+
+    getSystemMap: (mapId: string) =>
+      invoke<SystemMap>("get_system_map", { mapId }),
+
+    createSystemMap: (name: string, description: string) =>
+      invoke<SystemMap>("create_system_map", { name, description }),
+
+    updateSystemMap: (map: SystemMap) =>
+      invoke<SystemMap>("update_system_map", { map }),
+
+    deleteSystemMap: (mapId: string) =>
+      invoke<void>("delete_system_map", { mapId }),
+
+    startMapDiscovery: (mapId: string, repoIds: string[]) =>
+      invoke<string>("start_map_discovery", { mapId, repoIds }),
+
+    pollMapDiscovery: (mapId: string, repoIds: string[]) =>
+      invoke<DiscoveryStatus>("poll_map_discovery", { mapId, repoIds }),
   };
 }
