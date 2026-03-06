@@ -89,7 +89,7 @@ export function HomePage() {
     return (
       <div className="empty-state">
         <h3>No repositories yet</h3>
-        <p>Add a repository to get started.</p>
+        <p>The mob is ready, but there&apos;s no turf to claim. Add a repository to get started.</p>
         <button
           className="btn btn-primary btn-lg"
           onClick={() => navigate("/repos")}
@@ -125,7 +125,7 @@ export function HomePage() {
         <div>
           <h2>Features</h2>
           <p>
-            Manage your features. Start a new one to plan and execute with
+            Round up your mob. Start a new feature to plan and execute with
             Claude.
           </p>
         </div>
@@ -166,7 +166,7 @@ export function HomePage() {
         {features.length === 0 ? (
           <div className="empty-state">
             <h3>No active features</h3>
-            <p>Click "New Feature" to get started.</p>
+            <p>Your mob is waiting for orders. Click &quot;New Feature&quot; to give them something to build.</p>
           </div>
         ) : (
           features.map((f) => (

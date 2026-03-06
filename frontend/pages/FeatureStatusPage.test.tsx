@@ -103,7 +103,7 @@ describe("FeatureStatusPage", () => {
   it("shows loading state initially", () => {
     vi.mocked(invoke).mockImplementation(() => new Promise(() => {}));
     renderWithRouter("feat-1");
-    expect(screen.getByText("Loading feature...")).toBeInTheDocument();
+    expect(screen.getByText(/Loading feature/)).toBeInTheDocument();
   });
 
   it("displays executing feature with live progress", async () => {

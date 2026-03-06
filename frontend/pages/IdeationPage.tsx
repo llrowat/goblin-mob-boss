@@ -229,8 +229,8 @@ export function IdeationPage() {
               fontStyle: "italic",
             }}
           >
-            No plan yet. Once you and Claude agree on a plan, Claude will create
-            a plan.json that appears here automatically.
+            No plan yet. The mob awaits a scheme. Once you and Claude agree on a plan,
+            a plan.json will appear here automatically.
           </p>
         ) : (
           <>

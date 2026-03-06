@@ -88,6 +88,16 @@ npm run test:watch
 - **Verify before committing**: Run `cd backend && cargo test --lib` and `npm test` to ensure all tests pass before committing.
 - **CI**: Tests run automatically on every push to `main` and on pull requests via GitHub Actions (`.github/workflows/tests.yml`). Both Rust and frontend test jobs must pass.
 
+## Voice & Tone
+
+The app has a light **goblin mob-boss personality** woven into UI copy — empty states, page descriptions, and status messages use playful mob/heist/crew language (e.g., "Your mob is waiting for orders," "No lairs claimed yet"). Follow these guidelines:
+
+- **Keep it subtle** — One short phrase per empty state or description. Never let flavor text crowd out functional guidance.
+- **No war or military language** — Avoid words like battle, war, raid, rally, recruit, orders, troops, deploy. Prefer crew/mob/heist/scheme/lair/hustle framing instead.
+- **Usability first** — Every themed message must still clearly communicate what the user should do. If in doubt, lead with the practical instruction and add a touch of character around it.
+- **Consistent vocabulary** — Agents are "goblins" or "the mob/crew." Repos are "lairs" or "turf." Features are "schemes" or "jobs." Planning is "scheming." Execution is "the mob at work."
+- **Don't overdo it** — Headers, button labels, form fields, and error messages stay plain and functional. Character belongs in descriptions, empty states, and confirmations.
+
 ## Documentation
 
 - **Update README after each change** — When a change affects project structure, features, configuration, commands, or public-facing behavior, update the README (and any other relevant documentation) to reflect the change. Documentation should stay in sync with the code at all times.
