@@ -42,38 +42,26 @@ describe("AgentsPage", () => {
     },
   ];
 
-  const mockTemplates = [
+  const mockBuiltInAgents = [
     {
-      id: "frontend-developer",
+      filename: "frontend-developer.md",
       name: "Frontend Developer",
       description: "React/TypeScript UI specialist",
-      category: "development",
-      agent: {
-        filename: "frontend-developer.md",
-        name: "Frontend Developer",
-        description: "React/TypeScript UI specialist",
-        tools: "Read, Edit, Write, Bash, Glob, Grep",
-        model: null,
-        system_prompt: "You are a frontend development specialist.",
-        is_global: false,
-        color: "#5b8abd",
-      },
+      tools: "Read, Edit, Write, Bash, Glob, Grep",
+      model: null,
+      system_prompt: "You are a frontend development specialist.",
+      is_global: true,
+      color: "#5b8abd",
     },
     {
-      id: "test-engineer",
+      filename: "test-engineer.md",
       name: "Test Engineer",
-      description: "Testing specialist",
-      category: "quality",
-      agent: {
-        filename: "test-engineer.md",
-        name: "Test Engineer",
-        description: "Testing and quality assurance specialist",
-        tools: "Read, Edit, Write, Bash, Glob, Grep",
-        model: null,
-        system_prompt: "You are a testing specialist.",
-        is_global: false,
-        color: "#c9a84c",
-      },
+      description: "Testing and quality assurance specialist",
+      tools: "Read, Edit, Write, Bash, Glob, Grep",
+      model: null,
+      system_prompt: "You are a testing specialist.",
+      is_global: true,
+      color: "#c9a84c",
     },
   ];
 
@@ -81,7 +69,7 @@ describe("AgentsPage", () => {
     vi.mocked(invoke).mockImplementation((cmd: string) => {
       if (cmd === "list_repositories") return Promise.resolve(mockRepos);
       if (cmd === "list_agents") return Promise.resolve(mockAgents);
-      if (cmd === "list_agent_templates") return Promise.resolve(mockTemplates);
+      if (cmd === "list_built_in_agents") return Promise.resolve(mockBuiltInAgents);
       return Promise.resolve([]);
     });
   }
@@ -89,7 +77,7 @@ describe("AgentsPage", () => {
   it("renders page header", async () => {
     vi.mocked(invoke).mockImplementation((cmd: string) => {
       if (cmd === "list_repositories") return Promise.resolve([]);
-      if (cmd === "list_agent_templates") return Promise.resolve([]);
+      if (cmd === "list_built_in_agents") return Promise.resolve([]);
       return Promise.resolve([]);
     });
 
@@ -108,7 +96,7 @@ describe("AgentsPage", () => {
 
     await waitFor(() => {
       expect(screen.getByText("Full-Stack Developer")).toBeInTheDocument();
-      // "Frontend Developer" appears in both agent list and template section
+      // "Frontend Developer" appears in both agent list and built-in section
       expect(screen.getAllByText("Frontend Developer").length).toBeGreaterThanOrEqual(1);
       expect(screen.getByText("Repository Agents")).toBeInTheDocument();
     });
@@ -243,11 +231,11 @@ describe("AgentsPage", () => {
     });
   });
 
-  it("shows empty state when no agents and no templates exist", async () => {
+  it("shows empty state when no agents and no built-in agents exist", async () => {
     vi.mocked(invoke).mockImplementation((cmd: string) => {
       if (cmd === "list_repositories") return Promise.resolve(mockRepos);
       if (cmd === "list_agents") return Promise.resolve([]);
-      if (cmd === "list_agent_templates") return Promise.resolve([]);
+      if (cmd === "list_built_in_agents") return Promise.resolve([]);
       return Promise.resolve([]);
     });
 
@@ -270,80 +258,80 @@ describe("AgentsPage", () => {
     });
   });
 
-  it("shows unapplied templates as greyed-out cards", async () => {
+  it("shows unapplied built-in agents as greyed-out cards", async () => {
     mockInvokeForAgents();
 
     render(<AgentsPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("Built-in Templates")).toBeInTheDocument();
+      expect(screen.getByText("Built-in Agents")).toBeInTheDocument();
     });
 
-    // test-engineer template is not in agents, so should appear
+    // test-engineer built-in is not in agents, so should appear
     expect(screen.getByText("Test Engineer")).toBeInTheDocument();
 
-    // template cards have "Add to Repo" buttons
+    // built-in cards have "Add to Repo" buttons
     const addButtons = screen.getAllByText("+ Add to Repo");
     expect(addButtons.length).toBeGreaterThan(0);
 
-    // The template card should have the template badge
-    const templateBadges = screen.getAllByText("template");
-    expect(templateBadges.length).toBeGreaterThan(0);
+    // The built-in card should have the built-in badge
+    const builtInBadges = screen.getAllByText("built-in");
+    expect(builtInBadges.length).toBeGreaterThan(0);
   });
 
-  it("hides templates already added as agents", async () => {
-    // frontend-developer.md template has a different filename than "frontend-dev.md" in agents
-    // so both templates should show (neither matches agent filenames exactly)
+  it("hides built-in agents already added as agents", async () => {
+    // frontend-developer.md built-in has a different filename than "frontend-dev.md" in agents
+    // so both built-ins should show (neither matches agent filenames exactly)
     mockInvokeForAgents();
 
     render(<AgentsPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("Built-in Templates")).toBeInTheDocument();
+      expect(screen.getByText("Built-in Agents")).toBeInTheDocument();
     });
 
-    // Both templates should show since agent filenames are "fullstack-dev.md" and "frontend-dev.md"
-    // but template filenames are "frontend-developer.md" and "test-engineer.md"
+    // Both built-ins should show since agent filenames are "fullstack-dev.md" and "frontend-dev.md"
+    // but built-in filenames are "frontend-developer.md" and "test-engineer.md"
     const addButtons = screen.getAllByText("+ Add to Repo");
     expect(addButtons).toHaveLength(2);
   });
 
-  it("calls applyAgentTemplate when Add to Repo is clicked", async () => {
+  it("calls addBuiltInAgent when Add to Repo is clicked", async () => {
     mockInvokeForAgents();
 
     render(<AgentsPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("Built-in Templates")).toBeInTheDocument();
+      expect(screen.getByText("Built-in Agents")).toBeInTheDocument();
     });
 
     const addButtons = screen.getAllByText("+ Add to Repo");
     fireEvent.click(addButtons[0]);
 
     await waitFor(() => {
-      expect(invoke).toHaveBeenCalledWith("apply_agent_template", {
+      expect(invoke).toHaveBeenCalledWith("add_built_in_agent", {
         repoPath: "/home/user/my-project",
-        templateId: "frontend-developer",
+        filename: "frontend-developer.md",
       });
     });
   });
 
-  it("shows templates section when no agents but templates exist", async () => {
+  it("shows built-in agents section when no agents but built-ins exist", async () => {
     vi.mocked(invoke).mockImplementation((cmd: string) => {
       if (cmd === "list_repositories") return Promise.resolve(mockRepos);
       if (cmd === "list_agents") return Promise.resolve([]);
-      if (cmd === "list_agent_templates") return Promise.resolve(mockTemplates);
+      if (cmd === "list_built_in_agents") return Promise.resolve(mockBuiltInAgents);
       return Promise.resolve([]);
     });
 
     render(<AgentsPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("Built-in Templates")).toBeInTheDocument();
+      expect(screen.getByText("Built-in Agents")).toBeInTheDocument();
       expect(screen.getAllByText("+ Add to Repo")).toHaveLength(2);
     });
 
-    // Empty state should NOT show when templates are available
+    // Empty state should NOT show when built-in agents are available
     expect(screen.queryByText("No Agents")).not.toBeInTheDocument();
   });
 

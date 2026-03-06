@@ -4,7 +4,7 @@ A desktop app for agent-based AI development workflows. Configure agents, plan f
 
 ## How It Works
 
-1. **Configure Agents** — Agents are defined as `.claude/agents/*.md` files with YAML frontmatter (name, description, tools, model, system prompt, color). Manage them per-repo or globally via the built-in form editor, or apply starter templates from the Guide page.
+1. **Configure Agents** — Agents are defined as `.claude/agents/*.md` files with YAML frontmatter (name, description, tools, model, system prompt, color). Manage them per-repo or globally via the built-in form editor. Built-in agents (Frontend Developer, Backend Developer, Test Engineer, etc.) appear as greyed-out cards and can be added to any repo with one click.
 2. **Start a Feature** — Describe what you want to build and select one or more repositories. A feature branch is created from each repo's base branch. Cross-repo features span multiple repositories with a shared branch name.
 3. **Plan with Claude** — An interactive Claude Code session in plan mode helps you refine the approach and break it into task specs, each with assigned agents. The ideation prompt includes repo context (languages, structure, available agents).
 4. **Configure Launch** — GMB analyzes your task dependency graph and recommends an execution mode with confidence scoring:
@@ -25,8 +25,8 @@ A desktop app for agent-based AI development workflows. Configure agents, plan f
 - **Launch command generation** — GMB builds the appropriate Claude Code command with environment variables, agent configs, and system prompts for the chosen execution mode
 - **Feature lifecycle** — Features progress through statuses: Ideation → Configuring → Executing → Ready (or Failed)
 
-### Guide & Templates
-- **Agent templates** — Built-in starter templates for common roles: Frontend Developer, Backend Developer, Test Engineer, Code Reviewer, DevOps Engineer, Documentation Writer. One-click apply to any repository.
+### Guide & Built-in Agents
+- **Built-in agents** — Starter agents for common roles: Frontend Developer, Backend Developer, Test Engineer, Code Reviewer, DevOps Engineer, Documentation Writer. Shown as greyed-out cards in the Agents page; one-click add to any repository.
 - **Feature recipes** — Pre-built task breakdowns for common patterns: CRUD API Endpoint, New UI Page, Full-Stack Feature, Refactor Module. Each recipe includes suggested execution mode and agent assignments.
 
 ### Execution Observability
@@ -67,7 +67,7 @@ goblin-mob-boss/
 │   │   ├── git.rs              # Git operations (branches, merge, push, diff)
 │   │   ├── prompts.rs          # Ideation prompt templates
 │   │   ├── validators.rs       # Validator execution and result aggregation
-│   │   ├── templates.rs        # Built-in agent templates and feature recipes
+│   │   ├── templates.rs        # Built-in agent definitions and feature recipes
 │   │   ├── observer.rs         # Execution observability (git activity polling)
 │   │   ├── analytics.rs        # Post-execution analysis (plan vs reality)
 │   │   ├── guidance.rs         # Mid-execution guidance notes

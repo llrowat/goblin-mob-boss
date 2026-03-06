@@ -389,7 +389,7 @@ export function LaunchConfigPage() {
             }}
           >
             No agents found. Add agent files to .claude/agents/ in your repo, or
-            use the Guide page to apply starter templates.
+            use the Guide page to add built-in agents.
           </p>
         )}
       </div>

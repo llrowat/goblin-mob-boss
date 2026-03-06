@@ -103,15 +103,7 @@ export interface Preferences {
   shell: string;
 }
 
-// ── Templates ──
-
-export interface AgentTemplate {
-  id: string;
-  name: string;
-  description: string;
-  category: string;
-  agent: AgentFile;
-}
+// ── Recipes ──
 
 export interface FeatureRecipe {
   id: string;

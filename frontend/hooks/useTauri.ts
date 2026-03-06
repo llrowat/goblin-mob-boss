@@ -9,7 +9,6 @@ import type {
   VerifyResult,
   DiffSummary,
   Preferences,
-  AgentTemplate,
   FeatureRecipe,
   ExecutionSnapshot,
   ExecutionAnalysis,
@@ -156,15 +155,15 @@ export function useTauri() {
     killPty: (sessionId: string) =>
       invoke<void>("kill_pty", { sessionId }),
 
-    // Templates
-    listAgentTemplates: () =>
-      invoke<AgentTemplate[]>("list_agent_templates"),
+    // Built-in Agents & Recipes
+    listBuiltInAgents: () =>
+      invoke<AgentFile[]>("list_built_in_agents"),
+
+    addBuiltInAgent: (repoPath: string, filename: string) =>
+      invoke<AgentFile>("add_built_in_agent", { repoPath, filename }),
 
     listFeatureRecipes: () =>
       invoke<FeatureRecipe[]>("list_feature_recipes"),
-
-    applyAgentTemplate: (repoPath: string, templateId: string) =>
-      invoke<AgentFile>("apply_agent_template", { repoPath, templateId }),
 
     // Execution Observability
     pollExecutionStatus: (featureId: string) =>
