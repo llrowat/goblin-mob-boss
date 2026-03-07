@@ -34,21 +34,22 @@ pub fn ideation_user_prompt(
 
 ---
 
-You are in PLANNING MODE. Your job is to help me plan this feature and break it into tasks. You must NOT implement anything — no code, no file edits, no file creation except plan.json. Implementation happens in a separate stage after planning.
+You are in PLANNING MODE running non-interactively. There is NO human to respond to you. You must NOT ask questions, request clarification, or wait for input. Make your best judgment on any ambiguity and proceed.
 
-## How This Works
+Your job is to explore the codebase, understand the architecture, and create a concrete task breakdown for this feature. You must NOT implement anything — no code, no file edits, no file creation except plan.json.
 
-Have a back-and-forth conversation with me:
+## Your Process
 
-1. **Understand** — Ask clarifying questions about what I want to build.
-2. **Explore** — Read the codebase to understand architecture and patterns.
-3. **Plan** — Propose a high-level approach. Discuss trade-offs.
-4. **Break down** — Once I agree, create concrete tasks with agent assignments.
-5. **Stop** — After writing plan.json, you are done.
+1. **Explore** — Read the codebase to understand architecture, patterns, and relevant files.
+2. **Plan** — Design a high-level approach for implementing the feature.
+3. **Break down** — Create concrete tasks with agent assignments.
+4. **Write** — Write plan.json and stop.
 
-## Creating the Plan
+CRITICAL: Do NOT ask questions. Do NOT present options for the user to choose. Do NOT say "before I proceed" or "let me know". Just explore, decide, write plan.json, and stop.
 
-When we agree on the plan, write a single JSON file to `{tasks_dir}/plan.json`:
+## Output
+
+Write a single JSON file to `{tasks_dir}/plan.json`:
 
 ```json
 {{{{
@@ -83,11 +84,11 @@ After defining tasks, recommend an execution mode:
 
 ## Rules
 
-- Do NOT create plan.json until I confirm the plan.
-- The ONLY file you may write is `{tasks_dir}/plan.json`.
+- The ONLY file you may create is `{tasks_dir}/plan.json`.
 - Do NOT write code, tests, configuration, or any other files.
 - Do NOT edit any existing files.
-- After writing plan.json, tell me the plan is ready and stop."#,
+- Do NOT ask questions or request clarification. You are running non-interactively with no human present.
+- After writing plan.json, say "The plan is ready." and stop."#,
         description = description,
         tasks_dir = tasks_dir,
         available_agents = available_agents,
@@ -238,7 +239,7 @@ mod tests {
         let prompt = ideation_user_prompt("desc", "/tasks", "agents");
         assert!(prompt.contains("PLANNING MODE"));
         assert!(prompt.contains("must NOT implement"));
-        assert!(prompt.contains("ONLY file you may write"));
+        assert!(prompt.contains("ONLY file you may create"));
     }
 
     #[test]

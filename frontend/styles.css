@@ -414,70 +414,229 @@ body {
   line-height: 1.5;
 }
 
-/* Task Spec (ideation discovered tasks) */
-.task-spec-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
+/* ── Execution mode recommendation card ── */
 
-.task-spec-card {
+.exec-mode-card {
   display: flex;
-  gap: 12px;
-  padding: 12px;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px 28px;
+  margin-bottom: 16px;
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-}
-
-.task-spec-number {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--muted);
-  min-width: 24px;
-  padding-top: 2px;
-}
-
-.task-spec-content {
-  flex: 1;
-}
-
-.task-spec-title {
-  font-weight: 600;
-  font-size: 14px;
-  margin-bottom: 4px;
-}
-
-.task-spec-description {
-  font-size: 13px;
-  color: var(--text-secondary);
-  margin-bottom: 8px;
-}
-
-.task-spec-criteria {
-  list-style: none;
-  padding: 0;
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-
-.task-spec-criteria li {
-  padding: 2px 0;
-  padding-left: 16px;
+  border-radius: var(--radius);
   position: relative;
 }
 
-.task-spec-criteria li::before {
-  content: "\2713";
+.exec-mode-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.exec-mode-teams {
+  background: rgba(90, 138, 92, 0.12);
+  color: var(--accent);
+}
+
+.exec-mode-sub {
+  background: rgba(184, 148, 74, 0.12);
+  color: var(--accent-brass);
+}
+
+.exec-mode-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.exec-mode-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.exec-mode-desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+.exec-mode-confidence {
   position: absolute;
-  left: 0;
+  bottom: 8px;
+  right: 14px;
+  font-size: 11px;
   color: var(--muted);
 }
 
-.task-spec-deps {
+/* ── JIRA-style task table ── */
+
+.jira-table {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.jira-header {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  background: var(--panel-hover);
+  border-bottom: 1px solid var(--border);
   font-size: 11px;
-  color: var(--warning);
-  margin-top: 4px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--muted);
+}
+
+.jira-row-group {
+  border-bottom: 1px solid var(--border);
+}
+
+.jira-row-group:last-child {
+  border-bottom: none;
+}
+
+.jira-row {
+  display: flex;
+  align-items: center;
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.jira-row:hover {
+  background: var(--panel-hover);
+}
+
+.jira-row-expanded {
+  background: rgba(90, 138, 92, 0.04);
+}
+
+.jira-col-key {
+  width: 90px;
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.jira-task-icon {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 2px;
+  background: var(--accent);
+  flex-shrink: 0;
+}
+
+.jira-col-summary {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 500;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jira-col-assignee {
+  width: 130px;
+  flex-shrink: 0;
+  font-size: 12px;
+  text-align: center;
+}
+
+.jira-assignee-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 10px;
+  background: rgba(90, 138, 92, 0.12);
+  color: var(--accent);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.jira-col-deps {
+  width: 110px;
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.jira-col-ac {
+  width: 40px;
+  flex-shrink: 0;
+  text-align: center;
+}
+
+.jira-ac-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(184, 148, 74, 0.15);
+  color: var(--accent-brass);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* Expanded detail panel */
+.jira-detail {
+  padding: 0 12px 12px 108px;
+  animation: jira-expand 0.15s ease-out;
+}
+
+@keyframes jira-expand {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.jira-detail-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.jira-checklist {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.jira-checklist li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.4;
+}
+
+.jira-check-box {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border);
+  border-radius: 2px;
+  flex-shrink: 0;
+  margin-top: 2px;
 }
 
 /* Progress bar */
@@ -519,6 +678,15 @@ body {
 }
 
 /* Code/log display */
+.context-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
 .code-block {
   background: var(--bg);
   border: 1px solid var(--border);
@@ -663,12 +831,7 @@ body {
   white-space: nowrap;
 }
 
-/* Agent label in task spec cards */
-.task-spec-agent {
-  font-size: 11px;
-  color: var(--accent);
-  margin-bottom: 4px;
-}
+/* (task-spec-agent moved to .jira-assignee-badge) */
 
 /* Agent/subagent section in expanded task cards */
 .task-agents-section {
@@ -1312,7 +1475,8 @@ body {
   padding-top: 8px;
 }
 
-.discovery-spinner {
+.discovery-spinner,
+.spinner {
   display: inline-block;
   width: 14px;
   height: 14px;

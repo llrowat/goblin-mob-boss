@@ -1,115 +1,202 @@
-import { render, screen, cleanup } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { invoke } from "@tauri-apps/api/core";
 import { IdeationPage } from "./IdeationPage";
+import type { Feature, IdeationResult } from "../types";
+
+const mockedInvoke = vi.mocked(invoke);
 
 // Mock react-router-dom
 const mockNavigate = vi.fn();
 vi.mock("react-router-dom", () => ({
-  useParams: () => ({ featureId: "feat-123" }),
+  useParams: () => ({ featureId: "f1" }),
   useNavigate: () => mockNavigate,
 }));
 
-// Mock Terminal component
-vi.mock("../components/Terminal", () => ({
-  Terminal: ({ sessionId }: { sessionId: string }) => (
-    <div data-testid="embedded-terminal" data-session-id={sessionId} />
-  ),
-}));
-
-const mockFeature = {
-  id: "feat-123",
-  repo_ids: ["repo-1"],
+const mockFeature: Feature = {
+  id: "f1",
+  repo_ids: ["r1"],
   name: "Test Feature",
   description: "A test feature",
-  branch: "feature/test-ab12",
+  branch: "feat/test",
   status: "ideation",
   execution_mode: null,
   execution_rationale: null,
   selected_agents: [],
   task_specs: [],
   pty_session_id: null,
-  created_at: "2025-01-01T00:00:00Z",
-  updated_at: "2025-01-01T00:00:00Z",
+  worktree_paths: {},
+  created_at: "2026-01-01T00:00:00Z",
+  updated_at: "2026-01-01T00:00:00Z",
+};
+
+const mockIdeationResult: IdeationResult = {
+  tasks: [
+    {
+      title: "Add auth module",
+      description: "Implement authentication",
+      acceptance_criteria: ["Login works", "Logout works"],
+      dependencies: [],
+      agent: "backend-dev",
+    },
+    {
+      title: "Add auth UI",
+      description: "Build login form",
+      acceptance_criteria: ["Form renders"],
+      dependencies: ["1"],
+      agent: "frontend-dev",
+    },
+  ],
+  execution_mode: {
+    recommended: "teams",
+    rationale: "Tasks can run in parallel",
+    confidence: 0.9,
+  },
+};
+
+const emptyIdeationResult: IdeationResult = {
+  tasks: [],
+  execution_mode: null,
 };
 
 describe("IdeationPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    (invoke as ReturnType<typeof vi.fn>).mockImplementation((cmd: string) => {
-      switch (cmd) {
-        case "get_feature":
-          return Promise.resolve(mockFeature);
-        case "get_ideation_prompt":
-          return Promise.resolve("System prompt content");
-        case "get_ideation_terminal_command":
-          return Promise.resolve("claude --permission-mode plan ...");
-        case "start_ideation_pty":
-          return Promise.resolve("session-abc");
-        case "poll_ideation_result":
-          return Promise.resolve({ tasks: [], execution_mode: null });
-        default:
-          return Promise.resolve(undefined);
-      }
+    mockedInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "get_feature") return mockFeature;
+      if (cmd === "get_ideation_prompt") return "system prompt";
+      if (cmd === "poll_ideation_result") return emptyIdeationResult;
+      if (cmd === "run_ideation") return undefined;
+      return undefined;
     });
   });
 
-  afterEach(cleanup);
-
-  it("renders feature name and description", async () => {
+  it("shows feature name after loading", async () => {
     render(<IdeationPage />);
-    expect(await screen.findByText("Planning: Test Feature")).toBeInTheDocument();
-    expect(screen.getByText("A test feature")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText(/Test Feature/)).toBeInTheDocument();
+    });
   });
 
-  it("shows embedded terminal after PTY starts", async () => {
+  it("shows spinner while planning", async () => {
     render(<IdeationPage />);
-    const terminal = await screen.findByTestId("embedded-terminal");
-    expect(terminal).toBeInTheDocument();
-    expect(terminal).toHaveAttribute("data-session-id", "session-abc");
+    await waitFor(() => {
+      expect(screen.getByText(/Planning in progress/)).toBeInTheDocument();
+    });
+    expect(mockedInvoke).toHaveBeenCalledWith("run_ideation", { featureId: "f1" });
   });
 
-  it("shows copy command fallback button", async () => {
+  it("displays plan when polling returns tasks", async () => {
+    mockedInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "get_feature") return mockFeature;
+      if (cmd === "get_ideation_prompt") return "system prompt";
+      if (cmd === "poll_ideation_result") return mockIdeationResult;
+      return undefined;
+    });
+
     render(<IdeationPage />);
-    expect(await screen.findByText("Copy Command")).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(screen.getByText("Add auth module")).toBeInTheDocument();
+    });
+    expect(screen.getByText("Add auth UI")).toBeInTheDocument();
+    // Verify task keys render (TASK-1 appears in both key and deps columns)
+    expect(screen.getAllByText("TASK-1").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText("TASK-2")).toBeInTheDocument();
+    expect(screen.getByText(/Approve & Configure Launch/)).toBeInTheDocument();
+    expect(screen.getByText(/Request Changes/)).toBeInTheDocument();
+  });
+
+  it("shows execution mode recommendation", async () => {
+    mockedInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "get_feature") return mockFeature;
+      if (cmd === "get_ideation_prompt") return "system prompt";
+      if (cmd === "poll_ideation_result") return mockIdeationResult;
+      return undefined;
+    });
+
+    render(<IdeationPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Agent Teams")).toBeInTheDocument();
+    });
+    expect(screen.getByText("90% confidence")).toBeInTheDocument();
+    expect(screen.getByText("Tasks can run in parallel")).toBeInTheDocument();
+  });
+
+  it("opens feedback form on Request Changes click", async () => {
+    mockedInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "get_feature") return mockFeature;
+      if (cmd === "get_ideation_prompt") return "system prompt";
+      if (cmd === "poll_ideation_result") return mockIdeationResult;
+      return undefined;
+    });
+
+    render(<IdeationPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Request Changes/)).toBeInTheDocument();
+    });
+
+    await userEvent.click(screen.getByText(/Request Changes/));
+
+    expect(
+      screen.getByPlaceholderText(/Describe what you'd like changed/),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Revise Plan")).toBeInTheDocument();
+  });
+
+  it("submits revision feedback", async () => {
+    mockedInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "get_feature") return mockFeature;
+      if (cmd === "get_ideation_prompt") return "system prompt";
+      if (cmd === "poll_ideation_result") return mockIdeationResult;
+      if (cmd === "revise_ideation") return undefined;
+      return undefined;
+    });
+
+    render(<IdeationPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Request Changes/)).toBeInTheDocument();
+    });
+
+    await userEvent.click(screen.getByText(/Request Changes/));
+
+    const textarea = screen.getByPlaceholderText(/Describe what you'd like changed/);
+    await userEvent.type(textarea, "Split auth into login and registration");
+    await userEvent.click(screen.getByText("Revise Plan"));
+
+    expect(mockedInvoke).toHaveBeenCalledWith("revise_ideation", {
+      featureId: "f1",
+      feedback: "Split auth into login and registration",
+    });
+  });
+
+  it("skips ideation if plan already exists", async () => {
+    mockedInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "get_feature") return mockFeature;
+      if (cmd === "get_ideation_prompt") return "system prompt";
+      if (cmd === "poll_ideation_result") return mockIdeationResult;
+      return undefined;
+    });
+
+    render(<IdeationPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Add auth module")).toBeInTheDocument();
+    });
+
+    // run_ideation should NOT have been called since poll returned tasks
+    expect(mockedInvoke).not.toHaveBeenCalledWith(
+      "run_ideation",
+      expect.anything(),
+    );
   });
 
   it("shows view context toggle", async () => {
     render(<IdeationPage />);
     const btn = await screen.findByText("View Context");
     expect(btn).toBeInTheDocument();
-  });
-
-  it("shows pty error when start fails", async () => {
-    (invoke as ReturnType<typeof vi.fn>).mockImplementation((cmd: string) => {
-      switch (cmd) {
-        case "get_feature":
-          return Promise.resolve(mockFeature);
-        case "get_ideation_prompt":
-          return Promise.resolve("");
-        case "get_ideation_terminal_command":
-          return Promise.resolve("");
-        case "start_ideation_pty":
-          return Promise.reject("claude not found");
-        case "poll_ideation_result":
-          return Promise.resolve({ tasks: [], execution_mode: null });
-        default:
-          return Promise.resolve(undefined);
-      }
-    });
-
-    render(<IdeationPage />);
-    expect(
-      await screen.findByText(/Failed to start terminal/),
-    ).toBeInTheDocument();
-  });
-
-  it("shows restart button when pty exits", async () => {
-    // This test verifies the restart button appears.
-    // In real usage, the Terminal component calls onExit when the process exits.
-    // Since Terminal is mocked, we test the initial render states.
-    render(<IdeationPage />);
-    // Terminal should be shown (PTY started successfully)
-    expect(await screen.findByTestId("embedded-terminal")).toBeInTheDocument();
   });
 });

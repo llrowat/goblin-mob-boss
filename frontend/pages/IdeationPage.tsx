@@ -1,121 +1,106 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useTauri } from "../hooks/useTauri";
-import { Terminal } from "../components/Terminal";
 import type { Feature, IdeationResult } from "../types";
+
+type IdeationStatus = "idle" | "running" | "done" | "error";
 
 export function IdeationPage() {
   const { featureId } = useParams<{ featureId: string }>();
   const tauri = useTauri();
   const navigate = useNavigate();
   const [feature, setFeature] = useState<Feature | null>(null);
-  const [systemPrompt, setSystemPrompt] = useState("");
-  const [terminalCmd, setTerminalCmd] = useState("");
   const [ideationResult, setIdeationResult] = useState<IdeationResult | null>(
     null,
   );
-  const [showSystemPrompt, setShowSystemPrompt] = useState(false);
-  const [error] = useState("");
-  const [copied, setCopied] = useState(false);
+  const [status, setStatus] = useState<IdeationStatus>("idle");
+  const [error, setError] = useState("");
+  const [feedback, setFeedback] = useState("");
+  const [showFeedback, setShowFeedback] = useState(false);
+  const [showContext, setShowContext] = useState(false);
+  const [systemPrompt, setSystemPrompt] = useState("");
+  const [expandedTask, setExpandedTask] = useState<number | null>(null);
 
-  // PTY state
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [ptyExited, setPtyExited] = useState(false);
-  const [ptyLoading, setPtyLoading] = useState(true);
-  const [ptyError, setPtyError] = useState("");
-
+  // Load feature data
   useEffect(() => {
     if (!featureId) return;
-
-    tauri.getFeature(featureId).then(setFeature).catch((e) => {
-      console.error("Failed to load feature:", e);
-    });
-    tauri.getIdeationPrompt(featureId).then(setSystemPrompt).catch((e) => {
-      console.error("Failed to load system prompt:", e);
-    });
-    tauri
-      .getIdeationTerminalCommand(featureId)
-      .then(setTerminalCmd)
-      .catch((e) => {
-        console.error("Failed to load terminal command:", e);
-      });
+    tauri.getFeature(featureId).then(setFeature).catch(console.error);
+    tauri.getIdeationPrompt(featureId).then(setSystemPrompt).catch(() => {});
   }, [featureId]);
 
-  const startPty = useCallback(
-    async (oldSessionId?: string | null) => {
-      if (!featureId) return;
-      setPtyLoading(true);
-      setPtyError("");
-      setPtyExited(false);
-      setSessionId(null);
-
-      // Kill old session before starting new one
-      if (oldSessionId) {
-        await tauri.killPty(oldSessionId).catch(() => {});
-      }
-
-      try {
-        const sid = await tauri.startIdeationPty(featureId);
-        setSessionId(sid);
-        setPtyLoading(false);
-      } catch (err) {
-        setPtyError(String(err));
-        setPtyLoading(false);
-      }
-    },
-    [featureId],
-  );
-
-  // Start PTY session on mount
-  useEffect(() => {
-    startPty();
-  }, [startPty]);
-
-  const handlePtyExit = useCallback(() => {
-    setPtyExited(true);
-  }, []);
-
-  const handleRestart = useCallback(() => {
-    startPty(sessionId);
-  }, [startPty, sessionId]);
-
-  // Poll for ideation result (plan.json) with backoff
-  const pollCountRef = React.useRef(0);
-  const MAX_POLLS = 600; // Stop after ~30 min (3s * 600)
-  const pollResult = useCallback(() => {
+  // Start ideation on mount
+  const startIdeation = useCallback(async () => {
     if (!featureId) return;
-    pollCountRef.current += 1;
-    tauri
-      .pollIdeationResult(featureId)
-      .then((result) => {
+    setStatus("running");
+    setError("");
+    setIdeationResult(null);
+    try {
+      await tauri.runIdeation(featureId);
+    } catch (err) {
+      setStatus("error");
+      setError(String(err));
+    }
+  }, [featureId]);
+
+  useEffect(() => {
+    // Check if plan already exists before starting
+    if (!featureId) return;
+    tauri.pollIdeationResult(featureId).then((result) => {
+      if (result.tasks.length > 0) {
+        setIdeationResult(result);
+        setStatus("done");
+      } else {
+        startIdeation();
+      }
+    }).catch(() => {
+      startIdeation();
+    });
+  }, [featureId]);
+
+  // Poll for plan.json while running
+  const pollCountRef = React.useRef(0);
+  useEffect(() => {
+    if (status !== "running" || !featureId) return;
+    pollCountRef.current = 0;
+
+    const poll = () => {
+      pollCountRef.current += 1;
+      tauri.pollIdeationResult(featureId).then((result) => {
         if (result.tasks.length > 0) {
           setIdeationResult(result);
+          setStatus("done");
         }
-      })
-      .catch(() => {});
-  }, [featureId]);
-
-  useEffect(() => {
-    pollCountRef.current = 0;
-    pollResult();
-    // Use adaptive polling: 3s initially, slows to 10s after 60 polls (~3 min)
-    let pollTimer: ReturnType<typeof setTimeout>;
-    const schedulePoll = () => {
-      const interval = pollCountRef.current > 60 ? 10000 : 3000;
-      if (pollCountRef.current >= MAX_POLLS) return; // Stop polling
-      pollTimer = setTimeout(() => {
-        pollResult();
-        schedulePoll();
-      }, interval);
+      }).catch(() => {});
     };
-    schedulePoll();
-    return () => clearTimeout(pollTimer);
-  }, [pollResult]);
 
-  const handleCopyCommand = async () => {
-    await navigator.clipboard.writeText(terminalCmd);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    const interval = setInterval(() => {
+      poll();
+      if (pollCountRef.current > 600) {
+        setStatus("error");
+        setError("Planning timed out. Try restarting.");
+      }
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [status, featureId]);
+
+  const handleRevise = async () => {
+    if (!featureId || !feedback.trim()) return;
+    setStatus("running");
+    setError("");
+    setShowFeedback(false);
+    try {
+      await tauri.reviseIdeation(featureId, feedback.trim());
+      setFeedback("");
+      setIdeationResult(null);
+    } catch (err) {
+      setStatus("error");
+      setError(String(err));
+    }
+  };
+
+  const handleRestart = () => {
+    startIdeation();
   };
 
   const handleProceedToLaunch = () => {
@@ -142,194 +127,209 @@ export function IdeationPage() {
 
       {error && <div className="error-banner">{error}</div>}
 
-      {/* Step 1: Interactive planning conversation */}
+      {/* Planning status */}
       <div className="panel" style={{ marginBottom: 16 }}>
-        <div className="panel-title" style={{ marginBottom: 12 }}>
-          Step 1: Plan with Claude
+        <div className="panel-header" style={{ marginBottom: 0 }}>
+          <div className="panel-title">
+            {status === "running" ? "Planning in progress..." : "Plan"}
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            {status !== "running" && (
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={handleRestart}
+              >
+                Restart
+              </button>
+            )}
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={() => setShowContext(!showContext)}
+            >
+              {showContext ? "Hide Context" : "View Context"}
+            </button>
+          </div>
         </div>
-        <p
-          style={{
-            fontSize: 13,
+
+        {status === "running" && (
+          <div style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            padding: "24px 0",
             color: "var(--text-secondary)",
-            marginBottom: 16,
-            lineHeight: 1.6,
-          }}
-        >
-          Claude Code is running in plan mode below. Discuss your goals, refine
-          the approach, then ask Claude to create the plan.
-        </p>
-
-        {/* Embedded terminal */}
-        {ptyLoading && (
-          <div className="terminal-status">Starting terminal...</div>
-        )}
-        {ptyError && (
-          <div
-            className="terminal-status"
-            style={{ color: "var(--danger)" }}
-          >
-            Failed to start terminal: {ptyError}
-          </div>
-        )}
-        {sessionId && !ptyLoading && (
-          <Terminal sessionId={sessionId} onExit={handlePtyExit} />
-        )}
-        {ptyExited && (
-          <div className="terminal-status">
-            <span>Process exited.</span>
+            fontSize: 13,
+          }}>
+            <div className="spinner" />
+            Claude is exploring the codebase and creating a plan. This
+            usually takes 1-3 minutes.
           </div>
         )}
 
-        <div className="actions-bar" style={{ marginTop: 12 }}>
-          <button
-            className="btn btn-secondary btn-sm"
-            onClick={handleRestart}
-            disabled={ptyLoading}
-          >
-            Restart
-          </button>
-          <button
-            className="btn btn-secondary btn-sm"
-            onClick={handleCopyCommand}
-          >
-            {copied ? "Copied!" : "Copy Command"}
-          </button>
-          <button
-            className="btn btn-secondary btn-sm"
-            onClick={() => setShowSystemPrompt(!showSystemPrompt)}
-          >
-            {showSystemPrompt ? "Hide Context" : "View Context"}
-          </button>
-        </div>
+        {status === "error" && !error && (
+          <p style={{ color: "var(--danger)", fontSize: 13 }}>
+            Something went wrong. Try restarting.
+          </p>
+        )}
 
-        {showSystemPrompt && (
+        {showContext && (
           <div className="code-block" style={{ marginTop: 12 }}>
             {systemPrompt}
           </div>
         )}
       </div>
 
-      {/* Step 2: Discovered Tasks + Execution Mode */}
-      <div className="panel">
-        <div className="panel-header">
-          <div className="panel-title">
-            Step 2: Review plan (
-            {ideationResult?.tasks.length ?? 0} tasks)
+      {/* Plan result */}
+      {status === "done" && ideationResult && ideationResult.tasks.length > 0 && (
+        <div className="panel">
+          <div className="panel-header">
+            <div className="panel-title">
+              Plan ({ideationResult.tasks.length} tasks)
+            </div>
           </div>
-          <button className="btn btn-secondary btn-sm" onClick={pollResult}>
-            Refresh
-          </button>
-        </div>
 
-        {!ideationResult || ideationResult.tasks.length === 0 ? (
-          <p
-            style={{
-              fontSize: 13,
-              color: "var(--text-secondary)",
-              fontStyle: "italic",
-            }}
-          >
-            No plan yet. The mob awaits a scheme. Once you and Claude agree on a plan,
-            a plan.json will appear here automatically.
-          </p>
-        ) : (
-          <>
-            {/* Execution mode recommendation */}
-            {recommendation && (
-              <div
-                style={{
-                  marginBottom: 16,
-                  padding: 12,
-                  background: "var(--surface-hover)",
-                  borderRadius: 6,
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: 11,
-                    color: "var(--text-secondary)",
-                    textTransform: "uppercase",
-                    marginBottom: 4,
-                  }}
-                >
-                  Recommended Execution Mode
-                </div>
-                <div
-                  style={{
-                    fontSize: 15,
-                    fontWeight: 600,
-                    marginBottom: 4,
-                  }}
-                >
+          {/* Execution mode recommendation */}
+          {recommendation && (
+            <div className="exec-mode-card">
+              <div className={`exec-mode-icon ${recommendation.recommended === "teams" ? "exec-mode-teams" : "exec-mode-sub"}`}>
+                {recommendation.recommended === "teams" ? (
+                  <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                    <rect x="1" y="1" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.5" />
+                    <rect x="12" y="1" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.5" />
+                    <rect x="1" y="12" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.5" />
+                    <rect x="12" y="12" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.5" />
+                  </svg>
+                ) : (
+                  <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                    <circle cx="10" cy="4" r="3" stroke="currentColor" strokeWidth="1.5" />
+                    <line x1="10" y1="7" x2="10" y2="12" stroke="currentColor" strokeWidth="1.5" />
+                    <line x1="10" y1="12" x2="4" y2="17" stroke="currentColor" strokeWidth="1.5" />
+                    <line x1="10" y1="12" x2="16" y2="17" stroke="currentColor" strokeWidth="1.5" />
+                    <circle cx="4" cy="17" r="2" fill="currentColor" opacity="0.4" />
+                    <circle cx="16" cy="17" r="2" fill="currentColor" opacity="0.4" />
+                  </svg>
+                )}
+              </div>
+              <div className="exec-mode-body">
+                <div className="exec-mode-title">
                   {recommendation.recommended === "teams"
-                    ? "Agent Teams (tmux)"
-                    : "Subagents (single lead)"}
-                  <span
-                    style={{
-                      fontSize: 12,
-                      fontWeight: 400,
-                      color: "var(--text-secondary)",
-                      marginLeft: 8,
-                    }}
-                  >
-                    {Math.round(recommendation.confidence * 100)}% confidence
-                  </span>
+                    ? "Agent Teams"
+                    : "Subagents"}
                 </div>
-                <div
-                  style={{
-                    fontSize: 13,
-                    color: "var(--text-secondary)",
-                    lineHeight: 1.5,
-                  }}
-                >
+                <div className="exec-mode-desc">
                   {recommendation.rationale}
                 </div>
               </div>
-            )}
+              <span className="exec-mode-confidence">
+                {Math.round(recommendation.confidence * 100)}% confidence
+              </span>
+            </div>
+          )}
 
-            {/* Task list */}
-            <div className="task-spec-list">
-              {ideationResult.tasks.map((spec, i) => (
-                <div key={i} className="task-spec-card">
-                  <div className="task-spec-number">
-                    {String(i + 1).padStart(2, "0")}
+          {/* Task list — JIRA-style table */}
+          <div className="jira-table">
+            <div className="jira-header">
+              <div className="jira-col-key">Key</div>
+              <div className="jira-col-summary">Summary</div>
+              <div className="jira-col-assignee">Assignee</div>
+              <div className="jira-col-deps">Blocked by</div>
+              <div className="jira-col-ac">AC</div>
+            </div>
+            {ideationResult.tasks.map((spec, i) => (
+              <div key={i} className="jira-row-group">
+                <div
+                  className={`jira-row${expandedTask === i ? " jira-row-expanded" : ""}`}
+                  onClick={() => setExpandedTask(expandedTask === i ? null : i)}
+                >
+                  <div className="jira-col-key">
+                    <span className="jira-task-icon" />
+                    TASK-{i + 1}
                   </div>
-                  <div className="task-spec-content">
-                    <div className="task-spec-title">{spec.title}</div>
-                    <div className="task-spec-description">
-                      {spec.description}
-                    </div>
+                  <div className="jira-col-summary">{spec.title}</div>
+                  <div className="jira-col-assignee">
                     {spec.agent && (
-                      <div className="task-spec-agent">Agent: {spec.agent}</div>
+                      <span className="jira-assignee-badge">{spec.agent}</span>
                     )}
+                  </div>
+                  <div className="jira-col-deps">
+                    {spec.dependencies.length > 0
+                      ? spec.dependencies.map((d) => `TASK-${d}`).join(", ")
+                      : "\u2014"}
+                  </div>
+                  <div className="jira-col-ac">
                     {spec.acceptance_criteria.length > 0 && (
-                      <ul className="task-spec-criteria">
-                        {spec.acceptance_criteria.map((c, j) => (
-                          <li key={j}>{c}</li>
-                        ))}
-                      </ul>
-                    )}
-                    {spec.dependencies.length > 0 && (
-                      <div className="task-spec-deps">
-                        Depends on:{" "}
-                        {spec.dependencies.map((d) => `#${d}`).join(", ")}
-                      </div>
+                      <span className="jira-ac-count">
+                        {spec.acceptance_criteria.length}
+                      </span>
                     )}
                   </div>
                 </div>
-              ))}
-            </div>
+                {expandedTask === i && spec.acceptance_criteria.length > 0 && (
+                  <div className="jira-detail">
+                    <div className="jira-detail-label">Acceptance Criteria</div>
+                    <ul className="jira-checklist">
+                      {spec.acceptance_criteria.map((c, j) => (
+                        <li key={j}>
+                          <span className="jira-check-box" />
+                          {c}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
 
+          {/* Actions */}
+          <div style={{ marginTop: 16, display: "flex", gap: 8 }}>
             <button
               className="btn btn-primary btn-lg"
               onClick={handleProceedToLaunch}
-              style={{ width: "100%", marginTop: 16 }}
+              style={{ flex: 1 }}
             >
-              Configure & Launch
+              Approve & Configure Launch
             </button>
-          </>
-        )}
-      </div>
+            <button
+              className="btn btn-secondary btn-lg"
+              onClick={() => setShowFeedback(!showFeedback)}
+            >
+              Request Changes
+            </button>
+          </div>
+
+          {/* Feedback form */}
+          {showFeedback && (
+            <div style={{ marginTop: 12 }}>
+              <textarea
+                className="form-textarea"
+                value={feedback}
+                onChange={(e) => setFeedback(e.target.value)}
+                placeholder="Describe what you'd like changed. E.g., 'Split the auth task into separate login and registration tasks' or 'Add a task for database migrations'"
+                style={{ minHeight: 80 }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && e.metaKey) handleRevise();
+                }}
+              />
+              <div style={{ marginTop: 8, display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => { setShowFeedback(false); setFeedback(""); }}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="btn btn-primary btn-sm"
+                  onClick={handleRevise}
+                  disabled={!feedback.trim()}
+                >
+                  Revise Plan
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

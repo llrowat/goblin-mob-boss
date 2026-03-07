@@ -52,6 +52,7 @@ pub fn run() {
             commands::delete_feature,
             // Ideation
             commands::get_ideation_prompt,
+            commands::get_ideation_user_prompt,
             commands::get_ideation_terminal_command,
             commands::poll_ideation_result,
             // Launch Configuration
@@ -66,8 +67,10 @@ pub fn run() {
             // Feature PR
             commands::push_feature,
             commands::get_pr_command,
+            // Ideation (background)
+            commands::run_ideation,
+            commands::revise_ideation,
             // PTY
-            commands::start_ideation_pty,
             commands::write_pty,
             commands::resize_pty,
             commands::kill_pty,

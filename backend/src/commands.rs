@@ -369,6 +369,25 @@ pub fn get_ideation_prompt(state: State<AppState>, feature_id: String) -> Result
 }
 
 #[tauri::command]
+pub fn get_ideation_user_prompt(state: State<AppState>, feature_id: String) -> Result<String, String> {
+    let features = state.features.lock().unwrap();
+    let feature = features
+        .get(&feature_id)
+        .ok_or("Feature not found")?
+        .clone();
+    drop(features);
+
+    let repo = get_primary_repo(&state, &feature)?;
+
+    let path = Path::new(&repo.path)
+        .join(".gmb")
+        .join("features")
+        .join(&feature.id)
+        .join("user-prompt.md");
+    std::fs::read_to_string(&path).map_err(|e| format!("Failed to read user prompt: {}", e))
+}
+
+#[tauri::command]
 pub fn get_ideation_terminal_command(
     state: State<AppState>,
     feature_id: String,
@@ -402,7 +421,7 @@ pub fn get_ideation_terminal_command(
     let escaped_usr = shell_quote(&user_prompt_path.to_string_lossy());
 
     Ok(format!(
-        "cd {} && claude --permission-mode plan --append-system-prompt \"$(cat {})\" \"$(cat {})\"",
+        "cd {} && claude --permission-mode bypassPermissions --allowedTools 'Read,Glob,Grep,Write' --append-system-prompt \"$(cat {})\" \"$(cat {})\"",
         escaped_work_dir, escaped_sys, escaped_usr
     ))
 }
@@ -752,24 +771,15 @@ pub fn get_pr_command(state: State<AppState>, feature_id: String) -> Result<Stri
     Ok(commands.join("\n"))
 }
 
-// ── PTY Commands ──
+// ── Ideation Background Commands ──
 
-#[tauri::command]
-pub fn start_ideation_pty(
-    app_handle: tauri::AppHandle,
-    state: State<AppState>,
-    pty_sessions: State<pty::PtySessions>,
-    feature_id: String,
-) -> Result<String, String> {
-    let features = state.features.lock().unwrap();
-    let feature = features
-        .get(&feature_id)
-        .ok_or("Feature not found")?
-        .clone();
-    drop(features);
-
-    let repo = get_primary_repo(&state, &feature)?;
-    let all_repos = get_all_repos(&state, &feature)?;
+/// Ensure prompt files exist for a feature, regenerating if needed.
+fn ensure_ideation_prompts(
+    state: &State<AppState>,
+    feature: &Feature,
+) -> Result<(std::path::PathBuf, std::path::PathBuf), String> {
+    let repo = get_primary_repo(state, feature)?;
+    let all_repos = get_all_repos(state, feature)?;
 
     let feature_dir = Path::new(&repo.path)
         .join(".gmb")
@@ -779,47 +789,12 @@ pub fn start_ideation_pty(
     let system_prompt_path = feature_dir.join("system-prompt.md");
     let user_prompt_path = feature_dir.join("user-prompt.md");
 
-    // Regenerate prompt files if missing (e.g. feature created before prompt writing was added)
     if !system_prompt_path.exists() || !user_prompt_path.exists() {
         std::fs::create_dir_all(&tasks_dir)
             .map_err(|e| format!("Failed to create feature dir: {}", e))?;
 
         let repo_map = generate_multi_repo_context(&all_repos);
-        let mut all_agents: Vec<AgentFile> = Vec::new();
-        let mut seen_filenames = std::collections::HashSet::new();
-        for r in &all_repos {
-            if let Ok(agents) = store::list_repo_agents(&r.path) {
-                for agent in agents {
-                    if seen_filenames.insert(agent.filename.clone()) {
-                        all_agents.push(agent);
-                    }
-                }
-            }
-        }
-        if let Ok(global_agents) = store::list_global_agents() {
-            for agent in global_agents {
-                if seen_filenames.insert(agent.filename.clone()) {
-                    all_agents.push(agent);
-                }
-            }
-        }
-        let agent_list: String = all_agents
-            .iter()
-            .map(|a| {
-                let desc = if a.description.is_empty() {
-                    String::new()
-                } else {
-                    format!(": {}", a.description)
-                };
-                format!(
-                    "- **{}** ({}){}",
-                    a.name,
-                    a.filename.strip_suffix(".md").unwrap_or(&a.filename),
-                    desc
-                )
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
+        let agent_list = build_agent_list(&all_repos);
 
         if !system_prompt_path.exists() {
             let system_prompt = prompts::ideation_system_prompt(&repo_map, &agent_list);
@@ -837,57 +812,188 @@ pub fn start_ideation_pty(
         }
     }
 
-    let session_id = uuid::Uuid::new_v4().to_string();
+    Ok((system_prompt_path, user_prompt_path))
+}
+
+/// Build a formatted agent list string from all repos + globals.
+fn build_agent_list(repos: &[Repository]) -> String {
+    let mut all_agents: Vec<AgentFile> = Vec::new();
+    let mut seen_filenames = std::collections::HashSet::new();
+    for r in repos {
+        if let Ok(agents) = store::list_repo_agents(&r.path) {
+            for agent in agents {
+                if seen_filenames.insert(agent.filename.clone()) {
+                    all_agents.push(agent);
+                }
+            }
+        }
+    }
+    if let Ok(global_agents) = store::list_global_agents() {
+        for agent in global_agents {
+            if seen_filenames.insert(agent.filename.clone()) {
+                all_agents.push(agent);
+            }
+        }
+    }
+    all_agents
+        .iter()
+        .map(|a| {
+            let desc = if a.description.is_empty() {
+                String::new()
+            } else {
+                format!(": {}", a.description)
+            };
+            format!(
+                "- **{}** ({}){}", a.name,
+                a.filename.strip_suffix(".md").unwrap_or(&a.filename), desc
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Spawn Claude in --print mode as a background process.
+/// Pipes the full prompt (system context + user prompt) via stdin to avoid
+/// Windows command-line length limits.
+fn spawn_ideation_process(
+    feature_dir: &std::path::Path,
+    work_dir: &str,
+    system_prompt: &str,
+    user_prompt: &str,
+) -> Result<(), String> {
+    use std::io::Write as IoWrite;
+
+    // Log file for debugging — captures Claude's stdout/stderr
+    let log_file_path = feature_dir.join("claude-ideation.log");
+    let log_file = std::fs::File::create(&log_file_path)
+        .map_err(|e| format!("Failed to create log file: {}", e))?;
+    let stderr_file = log_file.try_clone()
+        .map_err(|e| format!("Failed to clone log file handle: {}", e))?;
+
+    // Combine system context + user prompt into a single stdin payload
+    // to avoid passing large strings as CLI arguments
+    let full_prompt = format!(
+        "{}\n\n---\n\n{}",
+        system_prompt, user_prompt
+    );
+
+    let mut cmd = std::process::Command::new("claude");
+    cmd.arg("--print")
+        .arg("--permission-mode").arg("bypassPermissions")
+        .arg("--allowedTools").arg("Read,Glob,Grep,Write")
+        .stdin(std::process::Stdio::piped())
+        .stdout(log_file)
+        .stderr(stderr_file)
+        .current_dir(work_dir);
+
+    let mut child = cmd.spawn()
+        .map_err(|e| format!("Failed to start Claude: {}", e))?;
+
+    // Write prompt to stdin, then close it so Claude begins processing
+    if let Some(mut stdin) = child.stdin.take() {
+        std::thread::spawn(move || {
+            let _ = stdin.write_all(full_prompt.as_bytes());
+            // stdin is dropped here, closing the pipe
+        });
+    }
+
+    Ok(())
+}
+
+/// Start the ideation process (non-interactive, background).
+/// Claude runs with --print, writes plan.json, then exits.
+/// Frontend polls plan.json to detect completion.
+#[tauri::command]
+pub fn run_ideation(
+    state: State<AppState>,
+    feature_id: String,
+) -> Result<(), String> {
+    let features = state.features.lock().unwrap();
+    let feature = features
+        .get(&feature_id)
+        .ok_or("Feature not found")?
+        .clone();
+    drop(features);
+
+    let (system_prompt_path, user_prompt_path) = ensure_ideation_prompts(&state, &feature)?;
 
     let system_prompt_content = std::fs::read_to_string(&system_prompt_path)
         .map_err(|e| format!("Failed to read system prompt: {}", e))?;
     let user_prompt_content = std::fs::read_to_string(&user_prompt_path)
         .map_err(|e| format!("Failed to read user prompt: {}", e))?;
 
-    let mut claude_args = vec![
-        "--permission-mode".to_string(),
-        "plan".to_string(),
-        "--append-system-prompt".to_string(),
-        system_prompt_content,
-        user_prompt_content,
-    ];
-
-    let (cmd, args) = if cfg!(target_os = "windows") {
-        let mut full_args = vec!["/c".to_string(), "claude".to_string()];
-        full_args.append(&mut claude_args);
-        ("cmd.exe".to_string(), full_args)
-    } else {
-        ("claude".to_string(), claude_args)
-    };
-
-    // Use worktree path if available
+    let repo = get_primary_repo(&state, &feature)?;
+    let feature_dir = Path::new(&repo.path)
+        .join(".gmb")
+        .join("features")
+        .join(&feature.id);
     let work_dir = feature
         .worktree_paths
         .get(&repo.id)
         .map(|s| s.as_str())
         .unwrap_or(&repo.path);
 
-    pty::spawn_pty_session(
-        &app_handle,
-        &session_id,
-        &cmd,
-        &args,
-        work_dir,
-        80,
-        24,
-        &pty_sessions,
-    )?;
-
-    // Store session_id on the feature
-    let mut features = state.features.lock().unwrap();
-    if let Some(f) = features.get_mut(&feature_id) {
-        f.pty_session_id = Some(session_id.clone());
+    // Delete old plan.json so polling starts fresh
+    let plan_path = feature_dir.join("tasks").join("plan.json");
+    if plan_path.exists() {
+        let _ = std::fs::remove_file(&plan_path);
     }
-    drop(features);
-    state.save_features();
 
-    Ok(session_id)
+    spawn_ideation_process(&feature_dir, work_dir, &system_prompt_content, &user_prompt_content)
 }
+
+/// Re-run ideation with user feedback appended to the prompt.
+/// Deletes the old plan.json, appends feedback to the user prompt, and re-runs.
+#[tauri::command]
+pub fn revise_ideation(
+    state: State<AppState>,
+    feature_id: String,
+    feedback: String,
+) -> Result<(), String> {
+    let features = state.features.lock().unwrap();
+    let feature = features
+        .get(&feature_id)
+        .ok_or("Feature not found")?
+        .clone();
+    drop(features);
+
+    let (system_prompt_path, user_prompt_path) = ensure_ideation_prompts(&state, &feature)?;
+
+    let system_prompt_content = std::fs::read_to_string(&system_prompt_path)
+        .map_err(|e| format!("Failed to read system prompt: {}", e))?;
+    let user_prompt_content = std::fs::read_to_string(&user_prompt_path)
+        .map_err(|e| format!("Failed to read user prompt: {}", e))?;
+
+    // Read old plan so Claude knows what to revise
+    let repo = get_primary_repo(&state, &feature)?;
+    let feature_dir = Path::new(&repo.path)
+        .join(".gmb")
+        .join("features")
+        .join(&feature.id);
+    let plan_path = feature_dir.join("tasks").join("plan.json");
+    let old_plan = std::fs::read_to_string(&plan_path).unwrap_or_default();
+
+    // Delete old plan.json so polling detects fresh result
+    if plan_path.exists() {
+        let _ = std::fs::remove_file(&plan_path);
+    }
+
+    // Build revised prompt with feedback
+    let revised_prompt = format!(
+        "{}\n\n---\n\n## Previous Plan\n\n```json\n{}\n```\n\n## Requested Changes\n\n{}\n\nRevise the plan based on this feedback. Write the updated plan.json and stop.",
+        user_prompt_content, old_plan, feedback
+    );
+
+    let work_dir = feature
+        .worktree_paths
+        .get(&repo.id)
+        .map(|s| s.as_str())
+        .unwrap_or(&repo.path);
+
+    spawn_ideation_process(&feature_dir, work_dir, &system_prompt_content, &revised_prompt)
+}
+
+// ── PTY Commands ──
 
 #[tauri::command]
 pub fn write_pty(

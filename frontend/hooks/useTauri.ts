@@ -92,6 +92,9 @@ export function useTauri() {
     getIdeationPrompt: (featureId: string) =>
       invoke<string>("get_ideation_prompt", { featureId }),
 
+    getIdeationUserPrompt: (featureId: string) =>
+      invoke<string>("get_ideation_user_prompt", { featureId }),
+
     getIdeationTerminalCommand: (featureId: string) =>
       invoke<string>("get_ideation_terminal_command", { featureId }),
 
@@ -144,10 +147,14 @@ export function useTauri() {
     setPreferences: (shell: string) =>
       invoke<Preferences>("set_preferences", { shell }),
 
-    // PTY
-    startIdeationPty: (featureId: string) =>
-      invoke<string>("start_ideation_pty", { featureId }),
+    // Ideation (background)
+    runIdeation: (featureId: string) =>
+      invoke<void>("run_ideation", { featureId }),
 
+    reviseIdeation: (featureId: string, feedback: string) =>
+      invoke<void>("revise_ideation", { featureId, feedback }),
+
+    // PTY
     writePty: (sessionId: string, data: string) =>
       invoke<void>("write_pty", { sessionId, data }),
 
