@@ -145,6 +145,7 @@ describe("AddRepoModal", () => {
 
     await waitFor(() => {
       expect(screen.getByText("Generating CLAUDE.md...")).toBeInTheDocument();
+      expect(screen.getByText("Goblins exploring the lair")).toBeInTheDocument();
     });
   });
 });

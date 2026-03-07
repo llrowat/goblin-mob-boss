@@ -181,7 +181,7 @@ export function AddRepoModal({ onClose, onAdded }: Props) {
                     <span
                       style={{ color: "var(--text-secondary)", fontSize: 12 }}
                     >
-                      — freshly conjured
+                      — fresh loot from the goblins
                     </span>
                   )}
                 </div>
@@ -197,7 +197,7 @@ export function AddRepoModal({ onClose, onAdded }: Props) {
                       fontSize: 12,
                     }}
                   >
-                    Claude is casing the joint
+                    Goblins exploring the lair
                   </span>
                 </div>
               ) : (
