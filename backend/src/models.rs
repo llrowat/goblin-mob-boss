@@ -9,6 +9,8 @@ pub struct Repository {
     pub name: String,
     pub path: String,
     pub base_branch: String,
+    #[serde(default)]
+    pub description: String,
     pub validators: Vec<String>,
     pub pr_command: Option<String>,
     pub created_at: DateTime<Utc>,
@@ -19,6 +21,7 @@ impl Repository {
         name: String,
         path: String,
         base_branch: String,
+        description: String,
         validators: Vec<String>,
         pr_command: Option<String>,
     ) -> Self {
@@ -27,6 +30,7 @@ impl Repository {
             name,
             path,
             base_branch,
+            description,
             validators,
             pr_command,
             created_at: Utc::now(),
@@ -1216,5 +1220,51 @@ You are a backend developer."#;
         let result: IdeationResult = serde_json::from_str(json).unwrap();
         assert!(result.questions.is_none());
         assert!(result.answered_questions.is_none());
+    }
+
+    #[test]
+    fn repository_new_stores_description() {
+        let repo = Repository::new(
+            "my-app".to_string(),
+            "/tmp/my-app".to_string(),
+            "main".to_string(),
+            "A React + Rust desktop app".to_string(),
+            vec!["cargo test".to_string()],
+            None,
+        );
+        assert_eq!(repo.name, "my-app");
+        assert_eq!(repo.description, "A React + Rust desktop app");
+        assert_eq!(repo.base_branch, "main");
+    }
+
+    #[test]
+    fn repository_description_defaults_on_deserialize() {
+        let json = r#"{
+            "id": "repo-1",
+            "name": "legacy",
+            "path": "/tmp/legacy",
+            "base_branch": "main",
+            "validators": [],
+            "pr_command": null,
+            "created_at": "2025-01-01T00:00:00Z"
+        }"#;
+        let repo: Repository = serde_json::from_str(json).unwrap();
+        assert_eq!(repo.description, "");
+    }
+
+    #[test]
+    fn repository_description_roundtrips() {
+        let repo = Repository::new(
+            "app".to_string(),
+            "/tmp/app".to_string(),
+            "develop".to_string(),
+            "My cool project".to_string(),
+            vec![],
+            Some("gh pr create".to_string()),
+        );
+        let json = serde_json::to_string(&repo).unwrap();
+        let parsed: Repository = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.description, "My cool project");
+        assert_eq!(parsed.pr_command, Some("gh pr create".to_string()));
     }
 }

@@ -3,6 +3,7 @@ export interface Repository {
   name: string;
   path: string;
   base_branch: string;
+  description: string;
   validators: string[];
   pr_command: string | null;
   created_at: string;

@@ -55,6 +55,7 @@ describe("useTauri", () => {
       name: "test",
       path: "/test",
       baseBranch: "main",
+      description: null,
       validators: ["npm test"],
       prCommand: null,
     });

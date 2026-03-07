@@ -62,6 +62,7 @@ describe("AddRepoModal", () => {
     await waitFor(() => {
       expect(screen.getByDisplayValue("my-project")).toBeInTheDocument();
       expect(screen.getByDisplayValue("main")).toBeInTheDocument();
+      expect(screen.getByPlaceholderText("Brief description of this repo")).toBeInTheDocument();
     });
   });
 
