@@ -69,7 +69,7 @@ fn build_prompt(feature: &Feature, mode: &ExecutionMode, repo_path: Option<&str>
     match mode {
         ExecutionMode::Teams => {
             format!(
-                r#"Implement this feature using your team of agents:
+                r#"You MUST use an agent team to implement this feature. Spawn teammates for each agent and coordinate the work across the team.
 
 ## Feature: {name}
 
@@ -81,9 +81,10 @@ fn build_prompt(feature: &Feature, mode: &ExecutionMode, repo_path: Option<&str>
 
 ## Instructions
 
+- Use an agent team — spawn a teammate for each agent listed above
 - Work on the feature branch: {branch}
 - Coordinate via the shared task list
-- Each teammate should work on their assigned tasks
+- Each teammate should work on their assigned tasks in parallel
 - When all tasks pass, signal completion{guidance_note}"#,
                 name = feature.name,
                 description = feature.description,
@@ -204,7 +205,7 @@ mod tests {
         assert!(env.iter().any(|(k, _)| k == "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"));
         assert!(args.contains(&"--teammate-mode".to_string()));
         assert!(args.contains(&"tmux".to_string()));
-        assert!(prompt.contains("using your team of agents"));
+        assert!(prompt.contains("MUST use an agent team"));
         assert!(prompt.contains("Add theme context"));
         assert!(prompt.contains("frontend-dev"));
     }
