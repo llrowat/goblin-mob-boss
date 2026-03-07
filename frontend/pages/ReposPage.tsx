@@ -9,6 +9,7 @@ export function ReposPage() {
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
+  const [editDescription, setEditDescription] = useState("");
   const [editBranch, setEditBranch] = useState("");
   const [editValidators, setEditValidators] = useState("");
   const [editPrCommand, setEditPrCommand] = useState("");
@@ -22,6 +23,7 @@ export function ReposPage() {
   const handleEdit = (repo: Repository) => {
     setEditingId(repo.id);
     setEditName(repo.name);
+    setEditDescription(repo.description || "");
     setEditBranch(repo.base_branch);
     setEditValidators(repo.validators.join("\n"));
     setEditPrCommand(repo.pr_command || "");
@@ -32,6 +34,7 @@ export function ReposPage() {
     await tauri.updateRepository({
       id: editingId,
       name: editName,
+      description: editDescription.trim() || undefined,
       baseBranch: editBranch,
       validators: editValidators
         .split("\n")
@@ -76,6 +79,15 @@ export function ReposPage() {
                     className="form-input"
                     value={editName}
                     onChange={(e) => setEditName(e.target.value)}
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Description</label>
+                  <input
+                    className="form-input"
+                    value={editDescription}
+                    onChange={(e) => setEditDescription(e.target.value)}
+                    placeholder="Brief description of this repo"
                   />
                 </div>
                 <div className="form-group">
@@ -126,6 +138,14 @@ export function ReposPage() {
                     >
                       {repo.path}
                     </div>
+                    {repo.description && (
+                      <div
+                        className="form-help"
+                        style={{ marginTop: 4 }}
+                      >
+                        {repo.description}
+                      </div>
+                    )}
                   </div>
                   <div className="actions-bar">
                     <button

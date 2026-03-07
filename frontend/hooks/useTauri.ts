@@ -29,6 +29,7 @@ export function useTauri() {
       name: string;
       path: string;
       baseBranch: string;
+      description?: string;
       validators: string[];
       prCommand: string | null;
     }) =>
@@ -36,6 +37,7 @@ export function useTauri() {
         name: args.name,
         path: args.path,
         baseBranch: args.baseBranch,
+        description: args.description || null,
         validators: args.validators,
         prCommand: args.prCommand,
       }),
@@ -44,6 +46,7 @@ export function useTauri() {
       id: string;
       name: string;
       baseBranch: string;
+      description?: string;
       validators: string[];
       prCommand: string | null;
     }) =>
@@ -51,6 +54,7 @@ export function useTauri() {
         id: args.id,
         name: args.name,
         baseBranch: args.baseBranch,
+        description: args.description || null,
         validators: args.validators,
         prCommand: args.prCommand,
       }),

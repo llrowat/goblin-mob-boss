@@ -436,6 +436,7 @@ mod tests {
             "test-repo".to_string(),
             "/tmp/test".to_string(),
             "main".to_string(),
+            String::new(),
             vec!["cargo test".to_string()],
             None,
         );
@@ -581,6 +582,7 @@ mod tests {
             "test".to_string(),
             "/tmp/t".to_string(),
             "main".to_string(),
+            String::new(),
             vec![],
             None,
         );

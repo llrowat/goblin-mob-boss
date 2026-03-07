@@ -13,6 +13,7 @@ export function AddRepoModal({ onClose, onAdded }: Props) {
   const [name, setName] = useState("");
   const [baseBranch, setBaseBranch] = useState("main");
   const [validators, setValidators] = useState("");
+  const [description, setDescription] = useState("");
   const [prCommand, setPrCommand] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -97,6 +98,7 @@ export function AddRepoModal({ onClose, onAdded }: Props) {
         name: name.trim(),
         path: path.trim(),
         baseBranch: baseBranch.trim() || "main",
+        description: description.trim() || undefined,
         validators: validatorList,
         prCommand: prCommand.trim() || null,
       });
@@ -247,6 +249,17 @@ export function AddRepoModal({ onClose, onAdded }: Props) {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
               />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Description</label>
+              <input
+                className="form-input"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Brief description of this repo"
+              />
+              <div className="form-help">Optional — helps give agents context about the lair</div>
             </div>
 
             <div className="form-group">

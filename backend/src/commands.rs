@@ -33,6 +33,7 @@ pub fn add_repository(
     name: String,
     path: String,
     base_branch: String,
+    description: Option<String>,
     validators: Vec<String>,
     pr_command: Option<String>,
 ) -> Result<Repository, String> {
@@ -42,7 +43,7 @@ pub fn add_repository(
     if !git::is_git_repo(&path) {
         return Err("Path is not a git repository".to_string());
     }
-    let repo = Repository::new(name, path, base_branch, validators, pr_command);
+    let repo = Repository::new(name, path, base_branch, description.unwrap_or_default(), validators, pr_command);
     let mut repos = state.repositories.lock().unwrap();
     repos.insert(repo.id.clone(), repo.clone());
     drop(repos);
@@ -56,6 +57,7 @@ pub fn update_repository(
     id: String,
     name: String,
     base_branch: String,
+    description: Option<String>,
     validators: Vec<String>,
     pr_command: Option<String>,
 ) -> Result<Repository, String> {
@@ -63,6 +65,7 @@ pub fn update_repository(
     let repo = repos.get_mut(&id).ok_or("Repository not found")?;
     repo.name = name;
     repo.base_branch = base_branch;
+    repo.description = description.unwrap_or_default();
     repo.validators = validators;
     repo.pr_command = pr_command;
     let updated = repo.clone();
@@ -126,17 +129,16 @@ pub fn generate_claude_md(path: String) -> Result<(), String> {
         return Err("Path is not a git repository".to_string());
     }
 
-    let prompt = r#"Analyze this codebase and generate a CLAUDE.md file in the project root. The CLAUDE.md should contain:
+    let prompt = r#"Analyze this codebase and generate a lean CLAUDE.md file in the project root. Keep it focused — only include what an AI coding agent actually needs to work here. No filler, no generic advice.
 
-1. **Project overview** — what the project is, its tech stack, and structure
-2. **Development commands** — how to install dependencies, run the app, build, lint, and test
-3. **Testing requirements** — how to run tests, what frameworks are used, where test files live
-4. **Code style and conventions** — naming conventions, file organization, patterns used
-5. **Important architecture notes** — key design decisions, data flow, module boundaries
+Include ONLY these sections if they apply:
 
-Look at package.json, Cargo.toml, Makefile, pyproject.toml, or any build config files to discover commands. Look at existing code to understand conventions.
+1. **What this is** — one-liner: tech stack and purpose
+2. **Commands** — exact install, build, test, lint commands (from package.json, Cargo.toml, Makefile, etc.)
+3. **Testing** — how to run tests, framework used, where test files go
+4. **Conventions** — only non-obvious patterns: naming, file layout, architectural rules that would trip up an agent
 
-Write the file to `CLAUDE.md` at the repository root. Be concise and practical — focus on what an AI coding agent needs to know to work effectively in this codebase. Do not include generic advice; only include project-specific information you can verify from the code."#;
+Skip any section where there's nothing project-specific to say. Aim for under 80 lines total. Write the file to `CLAUDE.md` at the repository root."#;
 
     let log_path = repo_path.join(".gmb");
     let _ = std::fs::create_dir_all(&log_path);
