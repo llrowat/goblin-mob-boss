@@ -9,6 +9,8 @@ export interface Repository {
   created_at: string;
 }
 
+export type AgentRole = "developer" | "quality" | "infrastructure" | "documentation" | "explorer";
+
 export interface AgentFile {
   filename: string;
   name: string;
@@ -18,6 +20,7 @@ export interface AgentFile {
   system_prompt: string;
   is_global: boolean;
   color: string;
+  role: AgentRole;
 }
 
 export type ExecutionMode = "teams" | "subagents";

@@ -311,21 +311,25 @@ pub fn start_feature(
         }
     }
 
-    let agent_list: String = all_agents
+    let format_agent = |a: &AgentFile| {
+        let desc = if a.description.is_empty() {
+            String::new()
+        } else {
+            format!(": {}", a.description)
+        };
+        format!(
+            "- **{}** ({}){}",
+            a.name,
+            a.filename.strip_suffix(".md").unwrap_or(&a.filename),
+            desc
+        )
+    };
+
+    let agent_list: String = all_agents.iter().map(&format_agent).collect::<Vec<_>>().join("\n");
+    let quality_agent_list: String = all_agents
         .iter()
-        .map(|a| {
-            let desc = if a.description.is_empty() {
-                String::new()
-            } else {
-                format!(": {}", a.description)
-            };
-            format!(
-                "- **{}** ({}){}",
-                a.name,
-                a.filename.strip_suffix(".md").unwrap_or(&a.filename),
-                desc
-            )
-        })
+        .filter(|a| a.role == "quality")
+        .map(&format_agent)
         .collect::<Vec<_>>()
         .join("\n");
 
@@ -337,6 +341,7 @@ pub fn start_feature(
         &feature.description,
         &tasks_dir.to_string_lossy(),
         &agent_list,
+        &quality_agent_list,
     );
     std::fs::write(ideation_dir.join("user-prompt.md"), &user_prompt)
         .map_err(|e| format!("Failed to write user prompt: {}", e))?;
@@ -1019,7 +1024,7 @@ fn ensure_ideation_prompts(
             .map_err(|e| format!("Failed to create feature dir: {}", e))?;
 
         let repo_map = generate_multi_repo_context(&all_repos);
-        let agent_list = build_agent_list(&all_repos);
+        let (agent_list, quality_agent_list) = build_agent_lists(&all_repos);
 
         if !system_prompt_path.exists() {
             let system_prompt = prompts::ideation_system_prompt(&repo_map, &agent_list);
@@ -1031,6 +1036,7 @@ fn ensure_ideation_prompts(
                 &feature.description,
                 &tasks_dir.to_string_lossy(),
                 &agent_list,
+                &quality_agent_list,
             );
             std::fs::write(&user_prompt_path, &user_prompt)
                 .map_err(|e| format!("Failed to write user prompt: {}", e))?;
@@ -1042,6 +1048,12 @@ fn ensure_ideation_prompts(
 
 /// Build a formatted agent list string from all repos + globals.
 fn build_agent_list(repos: &[Repository]) -> String {
+    build_agent_lists(repos).0
+}
+
+/// Build formatted agent list and quality agent list strings from all repos + globals.
+/// Returns (all_agents_list, quality_agents_list).
+fn build_agent_lists(repos: &[Repository]) -> (String, String) {
     let mut all_agents: Vec<AgentFile> = Vec::new();
     let mut seen_filenames = std::collections::HashSet::new();
     for r in repos {
@@ -1060,21 +1072,29 @@ fn build_agent_list(repos: &[Repository]) -> String {
             }
         }
     }
-    all_agents
+
+    let format_agent = |a: &AgentFile| {
+        let desc = if a.description.is_empty() {
+            String::new()
+        } else {
+            format!(": {}", a.description)
+        };
+        format!(
+            "- **{}** ({}){}", a.name,
+            a.filename.strip_suffix(".md").unwrap_or(&a.filename), desc
+        )
+    };
+
+    let agent_list = all_agents.iter().map(&format_agent).collect::<Vec<_>>().join("\n");
+
+    let quality_list = all_agents
         .iter()
-        .map(|a| {
-            let desc = if a.description.is_empty() {
-                String::new()
-            } else {
-                format!(": {}", a.description)
-            };
-            format!(
-                "- **{}** ({}){}", a.name,
-                a.filename.strip_suffix(".md").unwrap_or(&a.filename), desc
-            )
-        })
+        .filter(|a| a.role == "quality")
+        .map(&format_agent)
         .collect::<Vec<_>>()
-        .join("\n")
+        .join("\n");
+
+    (agent_list, quality_list)
 }
 
 /// Spawn Claude in --print mode as a background process.
@@ -1289,12 +1309,13 @@ pub fn submit_planning_answers(
         .filter_map(|id| repos.get(id).cloned())
         .collect();
     drop(repos);
-    let agent_list = build_agent_list(&all_repos);
+    let (agent_list, quality_agent_list) = build_agent_lists(&all_repos);
 
     let user_prompt = prompts::ideation_user_prompt_with_answers(
         &feature.description,
         &tasks_dir.to_string_lossy(),
         &agent_list,
+        &quality_agent_list,
         &all_answers,
     );
 

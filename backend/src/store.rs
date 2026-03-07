@@ -521,6 +521,7 @@ mod tests {
             system_prompt: "You are a frontend dev.".to_string(),
             is_global: false,
             color: "#5b8abd".to_string(),
+            role: "developer".to_string(),
         };
 
         save_repo_agent(&repo_path, &agent).unwrap();
@@ -546,6 +547,7 @@ mod tests {
             system_prompt: "test".to_string(),
             is_global: false,
             color: "#5a8a5c".to_string(),
+            role: "developer".to_string(),
         };
 
         save_repo_agent(&repo_path, &agent).unwrap();

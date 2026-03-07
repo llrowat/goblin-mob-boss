@@ -4,7 +4,7 @@ A desktop app for agent-based AI development workflows. Configure agents, plan f
 
 ## How It Works
 
-1. **Configure Agents** — Agents are defined as `.claude/agents/*.md` files with YAML frontmatter (name, description, tools, model, system prompt, color). Manage them per-repo or globally via the built-in form editor. Built-in agents (Frontend Developer, Backend Developer, Test Engineer, etc.) appear as greyed-out cards and can be added to any repo with one click.
+1. **Configure Agents** — Agents are defined as `.claude/agents/*.md` files with YAML frontmatter (name, description, tools, model, system prompt, color, role). Manage them per-repo or globally via the built-in form editor. Built-in agents (Frontend Developer, Backend Developer, Test Engineer, etc.) appear as greyed-out cards and can be added to any repo with one click. Agents with the **quality** role (e.g., Code Reviewer, Test Engineer) are automatically included as verification steps in every plan.
 2. **Start a Feature** — Describe what you want to build and select one or more repositories. A feature branch is created from each repo's base branch, and a **git worktree** is automatically provisioned per repo so multiple features can run concurrently without interfering. Cross-repo features span multiple repositories with a shared branch name.
 3. **Plan with Claude** — An interactive Claude Code session in plan mode helps you refine the approach and break it into task specs, each with assigned agents. The ideation prompt includes repo context (languages, structure, available agents). If the planner encounters important ambiguities, it can pause to ask clarifying questions — you answer in the UI, and planning resumes with your answers as context. All Q&A history stays visible so you can see exactly what informed the plan.
 4. **Configure Launch** — GMB analyzes your task dependency graph and recommends an execution mode with confidence scoring:
@@ -20,7 +20,7 @@ A desktop app for agent-based AI development workflows. Configure agents, plan f
 ### Core Workflow
 - **Cross-repo features** — Features can span multiple repositories. Branches, validators, diffs, and pushes operate across all selected repos. Agents and context from all repos are aggregated during ideation and launch.
 - **Execution mode intelligence** — Ideation analyzes planned tasks and recommends Teams or Subagents mode with confidence scoring and rationale
-- **Agent management** — Agents stored as `.claude/agents/*.md` files with YAML frontmatter; form-based editor with color picker, tools, model, and system prompt configuration
+- **Agent management** — Agents stored as `.claude/agents/*.md` files with YAML frontmatter; form-based editor with color picker, role selector, tools, model, and system prompt configuration
 - **Interactive planning** — Back-and-forth conversation with Claude in plan mode; task specs written to `plan.json` with automatic polling. Planner can ask clarifying questions via `questions.json` when decisions would materially change the plan — users answer in the UI and planning resumes with full context
 - **Launch command generation** — GMB builds the appropriate Claude Code command with environment variables, agent configs, and system prompts for the chosen execution mode
 - **Feature lifecycle** — Features progress through statuses: Ideation → Configuring → Executing → Ready (or Failed)

@@ -85,6 +85,7 @@ fn build_prompt(feature: &Feature, mode: &ExecutionMode, repo_path: Option<&str>
 - Work on the feature branch: {branch}
 - Coordinate via the shared task list
 - Each teammate should work on their assigned tasks in parallel
+- If any tasks are assigned to quality/review agents, ensure they run after implementation tasks and verify all changes before signaling completion
 - When all tasks pass, signal completion{guidance_note}"#,
                 name = feature.name,
                 description = feature.description,
@@ -111,6 +112,7 @@ fn build_prompt(feature: &Feature, mode: &ExecutionMode, repo_path: Option<&str>
 - Work on the feature branch: {branch}
 - Use the Agent tool to delegate work to subagents when beneficial
 - The task list above is a suggestion — you may reorganize as needed
+- If any tasks are assigned to quality/review agents, ensure they run after implementation tasks and verify all changes
 - When all tasks are complete, ensure everything works together{guidance_note}"#,
                 name = feature.name,
                 description = feature.description,

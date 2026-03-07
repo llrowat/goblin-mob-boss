@@ -57,10 +57,18 @@ pub struct AgentFile {
     /// UI display color (hex string, e.g. "#5a8a5c"). Stored in frontmatter.
     #[serde(default = "default_agent_color")]
     pub color: String,
+    /// Agent role: "developer", "quality", "infrastructure", "documentation", "explorer".
+    /// Quality agents are automatically included as verification steps in planning.
+    #[serde(default = "default_agent_role")]
+    pub role: String,
 }
 
 fn default_agent_color() -> String {
     "#5a8a5c".to_string()
+}
+
+fn default_agent_role() -> String {
+    "developer".to_string()
 }
 
 impl AgentFile {
@@ -82,6 +90,7 @@ impl AgentFile {
                 system_prompt: content.to_string(),
                 is_global: false,
                 color: default_agent_color(),
+                role: default_agent_role(),
             });
         }
 
@@ -99,6 +108,7 @@ impl AgentFile {
         let mut tools = None;
         let mut model = None;
         let mut color = default_agent_color();
+        let mut role = default_agent_role();
 
         for line in frontmatter.lines() {
             let line = line.trim();
@@ -114,6 +124,7 @@ impl AgentFile {
                     "tools" => tools = Some(value.to_string()),
                     "model" => model = Some(value.to_string()),
                     "color" => color = value.to_string(),
+                    "role" => role = value.to_string(),
                     _ => {}
                 }
             }
@@ -135,6 +146,7 @@ impl AgentFile {
             system_prompt: body.to_string(),
             is_global: false,
             color,
+            role,
         })
     }
 
@@ -153,6 +165,9 @@ impl AgentFile {
         }
         if self.color != default_agent_color() {
             fm.push_str(&format!("color: \"{}\"\n", self.color));
+        }
+        if self.role != default_agent_role() {
+            fm.push_str(&format!("role: \"{}\"\n", self.role));
         }
         fm.push_str("---\n\n");
         fm.push_str(&self.system_prompt);
@@ -750,6 +765,7 @@ You are a frontend specialist. Focus on UI components, styling, and accessibilit
             system_prompt: "You are a testing specialist.".to_string(),
             is_global: false,
             color: default_agent_color(),
+            role: default_agent_role(),
         };
         let md = agent.to_markdown();
         let parsed = AgentFile::parse("test-writer.md", &md).unwrap();
@@ -912,6 +928,7 @@ You are a backend developer."#;
             system_prompt: "You are colorful.".to_string(),
             is_global: false,
             color: "#c45a6a".to_string(),
+            role: default_agent_role(),
         };
         let md = agent.to_markdown();
         assert!(md.contains("color: \"#c45a6a\""));
@@ -930,9 +947,78 @@ You are a backend developer."#;
             system_prompt: "prompt".to_string(),
             is_global: false,
             color: "#5a8a5c".to_string(),
+            role: default_agent_role(),
         };
         let md = agent.to_markdown();
         assert!(!md.contains("color:"));
+    }
+
+    // ── Role Tests ──
+
+    #[test]
+    fn agent_file_parse_with_role() {
+        let content = r#"---
+name: "Code Reviewer"
+description: "Quality specialist"
+role: "quality"
+---
+
+You review code."#;
+        let agent = AgentFile::parse("code-reviewer.md", content).unwrap();
+        assert_eq!(agent.role, "quality");
+    }
+
+    #[test]
+    fn agent_file_parse_without_role_gets_default() {
+        let content = r#"---
+name: "Dev"
+---
+
+You develop."#;
+        let agent = AgentFile::parse("dev.md", content).unwrap();
+        assert_eq!(agent.role, "developer");
+    }
+
+    #[test]
+    fn agent_file_no_frontmatter_gets_default_role() {
+        let agent = AgentFile::parse("test.md", "Just a prompt.").unwrap();
+        assert_eq!(agent.role, "developer");
+    }
+
+    #[test]
+    fn agent_file_roundtrip_with_role() {
+        let agent = AgentFile {
+            filename: "reviewer.md".to_string(),
+            name: "Reviewer".to_string(),
+            description: String::new(),
+            tools: None,
+            model: None,
+            system_prompt: "You review.".to_string(),
+            is_global: false,
+            color: default_agent_color(),
+            role: "quality".to_string(),
+        };
+        let md = agent.to_markdown();
+        assert!(md.contains("role: \"quality\""));
+        let parsed = AgentFile::parse("reviewer.md", &md).unwrap();
+        assert_eq!(parsed.role, "quality");
+    }
+
+    #[test]
+    fn agent_file_default_role_not_written_to_markdown() {
+        let agent = AgentFile {
+            filename: "default.md".to_string(),
+            name: "Default".to_string(),
+            description: String::new(),
+            tools: None,
+            model: None,
+            system_prompt: "prompt".to_string(),
+            is_global: false,
+            color: default_agent_color(),
+            role: default_agent_role(),
+        };
+        let md = agent.to_markdown();
+        assert!(!md.contains("role:"));
     }
 
     // ── System Map Tests ──
