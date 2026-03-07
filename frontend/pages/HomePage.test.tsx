@@ -168,7 +168,7 @@ describe("HomePage", () => {
       expect(screen.getByText("Auth Feature")).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByText("Delete"));
+    fireEvent.click(screen.getByTitle("Delete feature"));
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith("delete_feature", { featureId: "f1" });

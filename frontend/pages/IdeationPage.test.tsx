@@ -4,6 +4,17 @@ import { invoke } from "@tauri-apps/api/core";
 import { IdeationPage } from "./IdeationPage";
 import type { Feature, IdeationResult } from "../types";
 
+// Mock the useTerminalSession hook
+const mockStartSession = vi.fn();
+const mockClearSession = vi.fn();
+vi.mock("../hooks/useTerminalSession", () => ({
+  useTerminalSession: () => ({
+    session: null,
+    startSession: mockStartSession,
+    clearSession: mockClearSession,
+  }),
+}));
+
 const mockedInvoke = vi.mocked(invoke);
 
 // Mock react-router-dom
@@ -103,11 +114,11 @@ describe("IdeationPage", () => {
     // Verify task keys render (TASK-1 appears in both key and deps columns)
     expect(screen.getAllByText("TASK-1").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("TASK-2")).toBeInTheDocument();
-    expect(screen.getByText(/Approve & Configure Launch/)).toBeInTheDocument();
+    expect(screen.getByText(/^Launch$/)).toBeInTheDocument();
     expect(screen.getByText(/Request Changes/)).toBeInTheDocument();
   });
 
-  it("shows execution mode recommendation", async () => {
+  it("shows execution mode selector with recommendation", async () => {
     mockedInvoke.mockImplementation(async (cmd: string) => {
       if (cmd === "get_feature") return mockFeature;
       if (cmd === "get_ideation_prompt") return "system prompt";
@@ -120,8 +131,9 @@ describe("IdeationPage", () => {
     await waitFor(() => {
       expect(screen.getByText("Agent Teams")).toBeInTheDocument();
     });
+    expect(screen.getByText("Subagents")).toBeInTheDocument();
+    expect(screen.getByText("Recommended")).toBeInTheDocument();
     expect(screen.getByText("90% confidence")).toBeInTheDocument();
-    expect(screen.getByText("Tasks can run in parallel")).toBeInTheDocument();
   });
 
   it("opens feedback form on Request Changes click", async () => {
@@ -198,5 +210,47 @@ describe("IdeationPage", () => {
     render(<IdeationPage />);
     const btn = await screen.findByText("View Context");
     expect(btn).toBeInTheDocument();
+  });
+
+  it("hides edit controls when feature is executing", async () => {
+    const executingFeature: Feature = {
+      ...mockFeature,
+      status: "executing",
+      pty_session_id: "launch-f1",
+      task_specs: mockIdeationResult.tasks,
+    };
+
+    mockedInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "get_feature") return executingFeature;
+      if (cmd === "get_ideation_prompt") return "system prompt";
+      if (cmd === "poll_ideation_result") return mockIdeationResult;
+      return undefined;
+    });
+
+    render(<IdeationPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Add auth module")).toBeInTheDocument();
+    });
+
+    // Should show "Executing" in the header
+    expect(screen.getByText(/Executing: Test Feature/)).toBeInTheDocument();
+
+    // Should NOT show Launch, Request Changes, or Restart buttons
+    expect(screen.queryByText(/^Launch$/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Request Changes/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Restart")).not.toBeInTheDocument();
+
+    // Should NOT show edit pencil buttons
+    expect(screen.queryAllByTitle("Edit task")).toHaveLength(0);
+
+    // Should have called startSession with the feature's pty_session_id
+    expect(mockStartSession).toHaveBeenCalledWith("f1", "launch-f1");
+
+    // run_ideation should NOT have been called
+    expect(mockedInvoke).not.toHaveBeenCalledWith(
+      "run_ideation",
+      expect.anything(),
+    );
   });
 });

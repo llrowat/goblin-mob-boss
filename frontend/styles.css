@@ -120,6 +120,37 @@ body {
   color: var(--accent);
 }
 
+.feature-delete-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: var(--radius-sm);
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s;
+}
+
+.panel:hover .feature-delete-btn {
+  opacity: 1;
+}
+
+.feature-delete-btn:hover {
+  color: var(--danger);
+}
+
+.sidebar-executing-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--accent-brass);
+}
+
 .sidebar-section-label {
   padding: 16px 12px 6px;
   font-size: 11px;
@@ -416,22 +447,42 @@ body {
 
 /* ── Execution mode recommendation card ── */
 
-.exec-mode-card {
+.exec-mode-selector {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.exec-mode-option {
+  flex: 1;
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 14px 16px 28px;
-  margin-bottom: 16px;
+  gap: 10px;
+  padding: 10px 12px;
   background: var(--bg);
-  border: 1px solid var(--border);
+  border: 2px solid var(--border);
   border-radius: var(--radius);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  font-family: var(--font-sans);
+  color: var(--text);
+  text-align: left;
   position: relative;
 }
 
+.exec-mode-option:hover {
+  border-color: var(--text-secondary);
+}
+
+.exec-mode-option.exec-mode-active {
+  border-color: var(--accent);
+  background: rgba(90, 138, 92, 0.06);
+}
+
 .exec-mode-icon {
-  width: 44px;
-  height: 44px;
-  border-radius: var(--radius);
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -448,29 +499,48 @@ body {
   color: var(--accent-brass);
 }
 
-.exec-mode-body {
+.exec-mode-option-text {
   flex: 1;
   min-width: 0;
 }
 
 .exec-mode-title {
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
-  margin-bottom: 2px;
 }
 
 .exec-mode-desc {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.exec-mode-rec-badge {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  color: var(--accent);
+  background: rgba(90, 138, 92, 0.12);
+  padding: 2px 6px;
+  border-radius: 8px;
+}
+
+.exec-mode-rationale {
   font-size: 12px;
   color: var(--text-secondary);
   line-height: 1.45;
+  margin-bottom: 12px;
+  position: relative;
+  padding-bottom: 4px;
 }
 
 .exec-mode-confidence {
-  position: absolute;
-  bottom: 8px;
-  right: 14px;
   font-size: 11px;
   color: var(--muted);
+  margin-left: 8px;
 }
 
 /* ── JIRA-style task table ── */
@@ -516,6 +586,11 @@ body {
 
 .jira-row-expanded {
   background: rgba(90, 138, 92, 0.04);
+}
+
+.jira-row-expanded .jira-col-summary {
+  white-space: normal;
+  overflow: visible;
 }
 
 .jira-col-key {
@@ -637,6 +712,86 @@ body {
   border-radius: 2px;
   flex-shrink: 0;
   margin-top: 2px;
+}
+
+.jira-col-edit {
+  width: 32px;
+  flex-shrink: 0;
+  text-align: center;
+}
+
+.jira-edit-btn {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: var(--radius-sm);
+  transition: color 0.15s, background 0.15s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.jira-edit-btn:hover {
+  color: var(--text);
+  background: var(--panel-hover);
+}
+
+/* Edit task dialog */
+.edit-task-modal {
+  max-width: 580px;
+  width: 100%;
+}
+
+.edit-task-body {
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-height: 75vh;
+  overflow-y: auto;
+}
+
+.edit-task-footer {
+  padding: 12px 20px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  border-top: 1px solid var(--border);
+}
+
+/* Acceptance criteria editable list */
+.ac-edit-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ac-edit-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ac-edit-input {
+  flex: 1;
+}
+
+.ac-edit-remove {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 18px;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+  border-radius: var(--radius-sm);
+  transition: color 0.15s;
+}
+
+.ac-edit-remove:hover {
+  color: var(--danger);
 }
 
 /* Progress bar */
@@ -1232,6 +1387,44 @@ body {
   padding: 8px 0;
   display: flex;
   align-items: center;
+}
+
+/* Persistent terminal — inline on ideation page */
+.persistent-terminal-inline {
+  margin-top: 16px;
+}
+
+/* Persistent terminal — collapsible bar on other pages */
+.persistent-terminal {
+  border-top: 1px solid var(--border);
+  margin-top: 24px;
+}
+
+.persistent-terminal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  cursor: pointer;
+  background: var(--surface);
+  user-select: none;
+}
+
+.persistent-terminal-header:hover {
+  background: var(--surface-hover);
+}
+
+.persistent-terminal-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.persistent-terminal-toggle {
+  font-size: 11px;
+  color: var(--muted);
 }
 
 /* ── System Map — Goblin Treasure Map ── */

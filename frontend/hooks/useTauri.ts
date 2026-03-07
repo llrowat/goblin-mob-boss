@@ -155,6 +155,9 @@ export function useTauri() {
       invoke<void>("revise_ideation", { featureId, feedback }),
 
     // PTY
+    startLaunchPty: (featureId: string, cols: number, rows: number) =>
+      invoke<string>("start_launch_pty", { featureId, cols, rows }),
+
     writePty: (sessionId: string, data: string) =>
       invoke<void>("write_pty", { sessionId, data }),
 

@@ -525,7 +525,7 @@ pub fn configure_launch(
     feature.execution_rationale = Some(execution_rationale);
     feature.selected_agents = selected_agents;
     feature.task_specs = task_specs;
-    feature.status = FeatureStatus::Configuring;
+    // Status stays as-is; markFeatureExecuting transitions to Executing
     feature.updated_at = Utc::now();
     let updated = feature.clone();
     drop(features);
@@ -576,6 +576,77 @@ pub fn get_launch_command(state: State<AppState>, feature_id: String) -> Result<
     };
 
     Ok(cmd)
+}
+
+/// Start a PTY session with the launch command for a feature.
+/// Returns the session ID so the frontend can attach a terminal.
+#[tauri::command]
+pub fn start_launch_pty(
+    app_handle: tauri::AppHandle,
+    state: State<AppState>,
+    pty_sessions: State<pty::PtySessions>,
+    feature_id: String,
+    cols: u16,
+    rows: u16,
+) -> Result<String, String> {
+    let features = state.features.lock().unwrap();
+    let feature = features
+        .get(&feature_id)
+        .ok_or("Feature not found")?
+        .clone();
+    drop(features);
+
+    let repo = get_primary_repo(&state, &feature)?;
+
+    // Read the system prompt written during ideation
+    let feature_dir = Path::new(&repo.path)
+        .join(".gmb")
+        .join("features")
+        .join(&feature.id);
+    let system_prompt_path = feature_dir.join("system-prompt.md");
+    let system_prompt_content = std::fs::read_to_string(&system_prompt_path).unwrap_or_default();
+
+    let (args, env, _prompt) = launch::build_launch(&feature, &system_prompt_content);
+
+    let work_dir = feature
+        .worktree_paths
+        .get(&repo.id)
+        .map(|s| s.as_str())
+        .unwrap_or(&repo.path);
+
+    // Set env vars before spawning
+    for (key, val) in &env {
+        std::env::set_var(key, val);
+    }
+
+    let session_id = format!("launch-{}", feature_id);
+
+    // args[0] is "claude", rest are arguments
+    let cmd = &args[0];
+    let cmd_args: Vec<String> = args[1..].to_vec();
+
+    pty::spawn_pty_session(
+        &app_handle,
+        &session_id,
+        cmd,
+        &cmd_args,
+        work_dir,
+        cols,
+        rows,
+        &pty_sessions,
+    )?;
+
+    // Mark feature as executing
+    let mut features = state.features.lock().unwrap();
+    if let Some(f) = features.get_mut(&feature_id) {
+        f.status = FeatureStatus::Executing;
+        f.pty_session_id = Some(session_id.clone());
+        f.updated_at = Utc::now();
+    }
+    drop(features);
+    state.save_features();
+
+    Ok(session_id)
 }
 
 /// Mark a feature as executing (user has launched the terminal command).

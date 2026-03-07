@@ -111,9 +111,9 @@ export function HomePage() {
   const featureRoute = (f: Feature) => {
     switch (f.status) {
       case "ideation":
-        return `/feature/${f.id}/ideation`;
       case "configuring":
-        return `/feature/${f.id}/launch`;
+      case "executing":
+        return `/feature/${f.id}/ideation`;
       default:
         return `/feature/${f.id}/status`;
     }
@@ -169,13 +169,26 @@ export function HomePage() {
             <p>Your mob is waiting for orders. Click &quot;New Feature&quot; to give them something to build.</p>
           </div>
         ) : (
-          features.map((f) => (
+          [...features].sort((a, b) => {
+            if (a.status === "executing" && b.status !== "executing") return -1;
+            if (a.status !== "executing" && b.status === "executing") return 1;
+            return 0;
+          }).map((f) => (
             <div
               key={f.id}
               className="panel"
-              style={{ marginBottom: 8, cursor: "pointer" }}
+              style={{ marginBottom: 8, cursor: "pointer", position: "relative" }}
               onClick={() => navigate(featureRoute(f))}
             >
+              <button
+                className="feature-delete-btn"
+                onClick={(e) => handleDeleteFeature(e, f.id)}
+                title="Delete feature"
+              >
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <path d="M2.5 3.5h9M5 3.5V2.5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1M5.5 6v4M8.5 6v4M3.5 3.5l.5 8a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1l.5-8" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
               <div className="panel-header" style={{ marginBottom: 0 }}>
                 <div>
                   <div className="panel-title">{f.name}</div>
@@ -192,22 +205,12 @@ export function HomePage() {
                     </span>
                   </div>
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span
-                    className={`status-badge ${f.status === "executing" ? "running" : f.status}`}
-                  >
-                    <span className="status-dot" />
-                    {statusLabel[f.status] ?? f.status}
-                  </span>
-                  <button
-                    className="btn btn-secondary"
-                    style={{ padding: "2px 8px", fontSize: 11 }}
-                    onClick={(e) => handleDeleteFeature(e, f.id)}
-                    title="Delete feature"
-                  >
-                    Delete
-                  </button>
-                </div>
+                <span
+                  className={`status-badge ${f.status === "executing" ? "running" : f.status}`}
+                >
+                  <span className="status-dot" />
+                  {statusLabel[f.status] ?? f.status}
+                </span>
               </div>
             </div>
           ))

@@ -71,6 +71,7 @@ pub fn run() {
             commands::run_ideation,
             commands::revise_ideation,
             // PTY
+            commands::start_launch_pty,
             commands::write_pty,
             commands::resize_pty,
             commands::kill_pty,
