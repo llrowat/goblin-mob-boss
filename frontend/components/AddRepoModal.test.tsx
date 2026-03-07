@@ -49,6 +49,7 @@ describe("AddRepoModal", () => {
     vi.mocked(invoke).mockResolvedValueOnce({
       name: "my-project",
       base_branch: "main",
+      has_claude_md: true,
     });
 
     render(<AddRepoModal onClose={onClose} onAdded={onAdded} />);
@@ -76,6 +77,75 @@ describe("AddRepoModal", () => {
 
     await waitFor(() => {
       expect(screen.getByText("Not a git repo")).toBeInTheDocument();
+    });
+  });
+
+  it("shows CLAUDE.md found when repo has one", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce({
+      name: "my-project",
+      base_branch: "main",
+      has_claude_md: true,
+    });
+
+    render(<AddRepoModal onClose={onClose} onAdded={onAdded} />);
+
+    fireEvent.change(screen.getByPlaceholderText("/home/user/my-project"), {
+      target: { value: "/some/path" },
+    });
+    fireEvent.click(screen.getByText("Detect"));
+
+    await waitFor(() => {
+      expect(screen.getByText("CLAUDE.md found")).toBeInTheDocument();
+    });
+  });
+
+  it("shows No CLAUDE.md with Generate button when repo lacks one", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce({
+      name: "my-project",
+      base_branch: "main",
+      has_claude_md: false,
+    });
+
+    render(<AddRepoModal onClose={onClose} onAdded={onAdded} />);
+
+    fireEvent.change(screen.getByPlaceholderText("/home/user/my-project"), {
+      target: { value: "/some/path" },
+    });
+    fireEvent.click(screen.getByText("Detect"));
+
+    await waitFor(() => {
+      expect(screen.getByText("No CLAUDE.md")).toBeInTheDocument();
+      expect(screen.getByText("Generate")).toBeInTheDocument();
+    });
+  });
+
+  it("shows generating state when Generate is clicked", async () => {
+    // First call: detect_repo_info
+    vi.mocked(invoke).mockResolvedValueOnce({
+      name: "my-project",
+      base_branch: "main",
+      has_claude_md: false,
+    });
+
+    render(<AddRepoModal onClose={onClose} onAdded={onAdded} />);
+
+    fireEvent.change(screen.getByPlaceholderText("/home/user/my-project"), {
+      target: { value: "/some/path" },
+    });
+    fireEvent.click(screen.getByText("Detect"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Generate")).toBeInTheDocument();
+    });
+
+    // Second call: generate_claude_md (returns void)
+    vi.mocked(invoke).mockResolvedValueOnce(undefined);
+
+    fireEvent.click(screen.getByText("Generate"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Generating CLAUDE.md...")).toBeInTheDocument();
+      expect(screen.getByText("Goblins exploring the lair")).toBeInTheDocument();
     });
   });
 });

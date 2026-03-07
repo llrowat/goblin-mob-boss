@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useTauri } from "../hooks/useTauri";
 
@@ -18,11 +18,26 @@ export function AddRepoModal({ onClose, onAdded }: Props) {
   const [loading, setLoading] = useState(false);
   const [detected, setDetected] = useState(false);
 
+  // CLAUDE.md state
+  const [hasClaudeMd, setHasClaudeMd] = useState(false);
+  const [generatingClaudeMd, setGeneratingClaudeMd] = useState(false);
+  const [claudeMdGenerated, setClaudeMdGenerated] = useState(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+  }, []);
+
   const handleBrowse = async () => {
     const selected = await open({ directory: true, multiple: false });
     if (selected) {
       setPath(selected as string);
       setDetected(false);
+      setHasClaudeMd(false);
+      setGeneratingClaudeMd(false);
+      setClaudeMdGenerated(false);
     }
   };
 
@@ -33,8 +48,35 @@ export function AddRepoModal({ onClose, onAdded }: Props) {
       const info = await tauri.detectRepoInfo(path.trim());
       setName(info.name);
       setBaseBranch(info.base_branch);
+      setHasClaudeMd(info.has_claude_md);
       setDetected(true);
     } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const handleGenerateClaudeMd = async () => {
+    setGeneratingClaudeMd(true);
+    setError("");
+    try {
+      await tauri.generateClaudeMd(path.trim());
+      // Poll for CLAUDE.md creation
+      pollRef.current = setInterval(async () => {
+        try {
+          const exists = await tauri.checkClaudeMd(path.trim());
+          if (exists) {
+            if (pollRef.current) clearInterval(pollRef.current);
+            pollRef.current = null;
+            setGeneratingClaudeMd(false);
+            setHasClaudeMd(true);
+            setClaudeMdGenerated(true);
+          }
+        } catch {
+          // keep polling
+        }
+      }, 2000);
+    } catch (e) {
+      setGeneratingClaudeMd(false);
       setError(String(e));
     }
   };
@@ -95,6 +137,9 @@ export function AddRepoModal({ onClose, onAdded }: Props) {
               onChange={(e) => {
                 setPath(e.target.value);
                 setDetected(false);
+                setHasClaudeMd(false);
+                setGeneratingClaudeMd(false);
+                setClaudeMdGenerated(false);
               }}
               placeholder="/home/user/my-project"
             />
@@ -109,6 +154,92 @@ export function AddRepoModal({ onClose, onAdded }: Props) {
 
         {detected && (
           <>
+            {/* CLAUDE.md status */}
+            <div
+              className="form-group"
+              style={{
+                padding: "10px 12px",
+                background: hasClaudeMd
+                  ? "rgba(90,138,92,0.1)"
+                  : "rgba(184,148,74,0.1)",
+                borderRadius: 6,
+                border: `1px solid ${hasClaudeMd ? "var(--success)" : "var(--warning)"}`,
+              }}
+            >
+              {hasClaudeMd ? (
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span
+                    style={{
+                      color: "var(--success)",
+                      fontWeight: 600,
+                      fontSize: 13,
+                    }}
+                  >
+                    CLAUDE.md found
+                  </span>
+                  {claudeMdGenerated && (
+                    <span
+                      style={{ color: "var(--text-secondary)", fontSize: 12 }}
+                    >
+                      — fresh loot from the goblins
+                    </span>
+                  )}
+                </div>
+              ) : generatingClaudeMd ? (
+                <div style={{ fontSize: 13 }}>
+                  <span style={{ color: "var(--warning)", fontWeight: 600 }}>
+                    Generating CLAUDE.md...
+                  </span>
+                  <span
+                    style={{
+                      color: "var(--text-secondary)",
+                      marginLeft: 8,
+                      fontSize: 12,
+                    }}
+                  >
+                    Goblins exploring the lair
+                  </span>
+                </div>
+              ) : (
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                  }}
+                >
+                  <div>
+                    <span
+                      style={{
+                        color: "var(--warning)",
+                        fontWeight: 600,
+                        fontSize: 13,
+                      }}
+                    >
+                      No CLAUDE.md
+                    </span>
+                    <div
+                      style={{
+                        color: "var(--text-secondary)",
+                        fontSize: 12,
+                        marginTop: 2,
+                      }}
+                    >
+                      Your mob works better with a CLAUDE.md — it tells agents
+                      how the lair is set up.
+                    </div>
+                  </div>
+                  <button
+                    className="btn btn-primary btn-sm"
+                    onClick={handleGenerateClaudeMd}
+                    style={{ whiteSpace: "nowrap", marginLeft: 12 }}
+                  >
+                    Generate
+                  </button>
+                </div>
+              )}
+            </div>
+
             <div className="form-group">
               <label className="form-label">Name</label>
               <input
