@@ -213,6 +213,9 @@ pub struct Feature {
     pub task_specs: Vec<TaskSpec>,
     #[serde(default)]
     pub pty_session_id: Option<String>,
+    /// The shell command that was executed when launching Claude Code.
+    #[serde(default)]
+    pub launched_command: Option<String>,
     /// Per-repo worktree paths: maps repo_id -> worktree_path.
     /// When set, execution and validation use these isolated worktrees
     /// instead of the main working directory, allowing concurrent features.
@@ -238,6 +241,7 @@ impl Feature {
             selected_agents: vec![],
             task_specs: vec![],
             pty_session_id: None,
+            launched_command: None,
             worktree_paths: std::collections::HashMap::new(),
             created_at: now,
             updated_at: now,
@@ -665,6 +669,40 @@ mod tests {
         let json = serde_json::to_string(&feature).unwrap();
         assert!(!json.contains("\"repo_id\""));
         assert!(json.contains("\"repo_ids\""));
+    }
+
+    #[test]
+    fn feature_launched_command_defaults_none() {
+        let json = r#"{
+            "id": "feat-1",
+            "repo_ids": ["r1"],
+            "name": "Test",
+            "description": "desc",
+            "branch": "feature/test-1234",
+            "status": "ideation",
+            "created_at": "2025-01-01T00:00:00Z",
+            "updated_at": "2025-01-01T00:00:00Z"
+        }"#;
+        let feature: Feature = serde_json::from_str(json).unwrap();
+        assert!(feature.launched_command.is_none());
+    }
+
+    #[test]
+    fn feature_launched_command_serializes() {
+        let mut feature = Feature::new(
+            vec!["r1".to_string()],
+            "X".to_string(),
+            "desc".to_string(),
+            "feature/x-1234".to_string(),
+        );
+        feature.launched_command = Some("cd /tmp && claude --append-system-prompt 'hello'".to_string());
+        let json = serde_json::to_string(&feature).unwrap();
+        assert!(json.contains("launched_command"));
+        let parsed: Feature = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            parsed.launched_command.as_deref(),
+            Some("cd /tmp && claude --append-system-prompt 'hello'")
+        );
     }
 
     #[test]

@@ -754,11 +754,24 @@ pub fn start_launch_pty(
         &pty_sessions,
     )?;
 
+    // Build the full command string for display
+    let env_prefix: String = env
+        .iter()
+        .map(|(k, v)| format!("{}={}", k, v))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let full_command = if env_prefix.is_empty() {
+        format!("cd {} && {}", work_dir, args.join(" "))
+    } else {
+        format!("cd {} && {} {}", work_dir, env_prefix, args.join(" "))
+    };
+
     // Mark feature as executing
     let mut features = state.features.lock().unwrap();
     if let Some(f) = features.get_mut(&feature_id) {
         f.status = FeatureStatus::Executing;
         f.pty_session_id = Some(session_id.clone());
+        f.launched_command = Some(full_command);
         f.updated_at = Utc::now();
     }
     drop(features);
