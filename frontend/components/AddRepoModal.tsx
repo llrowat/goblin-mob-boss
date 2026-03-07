@@ -259,7 +259,7 @@ export function AddRepoModal({ onClose, onAdded }: Props) {
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Brief description of this repo"
               />
-              <div className="form-help">Optional — helps give your mob context about the turf</div>
+              <div className="form-help">Optional — helps give agents context about the repository</div>
             </div>
 
             <div className="form-group">
