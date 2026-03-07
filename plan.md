@@ -239,9 +239,9 @@ Modify the polling in FeatureDetailPage to check the unified `IdeationPollResult
 - If `result.questions` is present → set state to `"questions"`, display questions
 - If `result.tasks` is present → set state to `"done"`, display plan (existing behavior)
 
-### Answer History (Nice-to-have)
+### Answer History (Required)
 
-Show previously answered questions in a collapsed section so the user can see what context Claude already has. This could be a simple accordion above the current questions or plan.
+Show all previously answered questions in the UI so the user always sees the full Q&A context that Claude is working with. Display as a visible section (not collapsed) above the current questions or plan. Each round of Q&A is shown chronologically — this gives the user confidence that Claude understood their answers and makes it easy to spot misunderstandings before the plan is finalized.
 
 ---
 
@@ -263,6 +263,7 @@ Include the questions.json schema in the prompt so Claude knows the exact format
 - Claude should provide `options` when there are clear alternatives (helps user decide faster)
 - Claude should provide `context` explaining why this matters
 - If no questions needed, go straight to plan.json (backwards compatible)
+- **No cap on Q&A rounds** — let the conversation flow naturally; Claude will move to plan.json when it has enough clarity
 
 ---
 
@@ -278,9 +279,10 @@ Include the questions.json schema in the prompt so Claude knows the exact format
 
 ---
 
-## Open Questions for Discussion
+## Resolved Decisions
 
-1. **Question limit per round?** Proposed: max 5 questions per round. Too many feels overwhelming.
-2. **Max rounds of questions?** Should we cap at e.g. 2 rounds to prevent infinite Q&A loops, or let it flow naturally?
-3. **Skip questions option?** Should users be able to say "just plan with your best judgment" to skip answering and force plan.json output?
-4. **Should questions be optional or encouraged?** The prompt can be tuned from "ask when truly needed" to "always ask a few questions first." Which feels better for the workflow?
+1. **Question limit per round?** Max 5 questions per round to keep it focused.
+2. **Max rounds of questions?** No cap — let it flow naturally. Claude moves to plan.json when it has enough clarity.
+3. **Skip questions option?** TBD — could add a "Just plan it" button later if needed.
+4. **Tone:** Questions only when truly needed — Claude should plan autonomously by default and only ask when the answer would materially change the approach.
+5. **Answer visibility:** All prior Q&A context is always visible in the UI, not collapsed.
