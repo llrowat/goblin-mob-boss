@@ -627,8 +627,8 @@ export function SystemMapPage() {
         <div className="empty-state">
           <h3>No maps yet</h3>
           <p>
-            Create a map to chart your services, their connections, and data
-            flows.
+            Every good boss knows the lay of the land. Create a map to chart
+            your services and how they connect.
           </p>
           <button className="btn btn-primary btn-lg" onClick={() => setShowNewMapModal(true)}>
             New Map
@@ -1224,7 +1224,7 @@ export function SystemMapPage() {
               {activeMap.services.length === 0 ? (
                 <div className="empty-state" style={{ padding: "80px 24px" }}>
                   <h3>No services yet</h3>
-                  <p>Add a service manually or explore your repos to discover them.</p>
+                  <p>Add a service or explore your repos to see what&apos;s out there.</p>
                   <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
                     <button className="btn btn-brass" onClick={openAddService}>
                       Add Service

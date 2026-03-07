@@ -63,7 +63,7 @@ export function ReposPage() {
 
       {repos.length === 0 ? (
         <div className="empty-state">
-          <p>No repositories added yet. Add one to get started.</p>
+          <p>No repos on the map yet. Add one to set up shop.</p>
         </div>
       ) : (
         repos.map((repo) => (

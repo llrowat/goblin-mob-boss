@@ -89,7 +89,7 @@ export function HomePage() {
     return (
       <div className="empty-state">
         <h3>No repositories yet</h3>
-        <p>Add a repository to get started.</p>
+        <p>The crew needs a base of operations. Add a repository to get started.</p>
         <button
           className="btn btn-primary btn-lg"
           onClick={() => navigate("/repos")}
@@ -165,7 +165,7 @@ export function HomePage() {
         {features.length === 0 ? (
           <div className="empty-state">
             <h3>No active features</h3>
-            <p>No features yet. Click &quot;New Feature&quot; to get started.</p>
+            <p>The crew is idle. Click &quot;New Feature&quot; to start a scheme.</p>
           </div>
         ) : (
           [...features].sort((a, b) => {

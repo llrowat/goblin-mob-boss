@@ -268,7 +268,7 @@ export function AgentsPage() {
         <div className="empty-state">
           <h3>No Agents</h3>
           <p>
-            No agents defined yet. Create .md files in your repo&apos;s .claude/agents/ directory, or
+            No crew members yet. Create .md files in your repo&apos;s .claude/agents/ directory, or
             add one above.
           </p>
         </div>

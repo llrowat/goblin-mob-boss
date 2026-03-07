@@ -243,7 +243,7 @@ describe("AgentsPage", () => {
 
     await waitFor(() => {
       expect(screen.getByText("No Agents")).toBeInTheDocument();
-      expect(screen.getByText(/No agents defined yet/)).toBeInTheDocument();
+      expect(screen.getByText(/No crew members yet/)).toBeInTheDocument();
     });
   });
 
