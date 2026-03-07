@@ -52,7 +52,7 @@ export function ReposPage() {
     <div>
       <div className="page-header">
         <h2>Repositories</h2>
-        <p>Manage the territories your mob operates in.</p>
+        <p>Manage the repositories your agents work in.</p>
       </div>
 
       <div style={{ marginBottom: 16 }}>
@@ -63,7 +63,7 @@ export function ReposPage() {
 
       {repos.length === 0 ? (
         <div className="empty-state">
-          <p>No lairs claimed yet. Add a repository to set up shop.</p>
+          <p>No repos on the map yet. Add one to set up shop.</p>
         </div>
       ) : (
         repos.map((repo) => (

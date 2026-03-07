@@ -85,7 +85,7 @@ describe("AgentsPage", () => {
 
     expect(screen.getByText("Agents")).toBeInTheDocument();
     expect(
-      screen.getByText(/Manage your mob roster/),
+      screen.getByText(/Manage your agents/),
     ).toBeInTheDocument();
   });
 
@@ -243,7 +243,7 @@ describe("AgentsPage", () => {
 
     await waitFor(() => {
       expect(screen.getByText("No Agents")).toBeInTheDocument();
-      expect(screen.getByText(/No goblins in the ranks/)).toBeInTheDocument();
+      expect(screen.getByText(/No crew members yet/)).toBeInTheDocument();
     });
   });
 

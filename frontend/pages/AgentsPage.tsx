@@ -161,7 +161,7 @@ export function AgentsPage() {
       <div className="page-header">
         <h2>Agents</h2>
         <p>
-          Manage your mob roster. These .claude/agents/*.md files define who&apos;s
+          Manage your agents. These .claude/agents/*.md files define who&apos;s
           available for task execution.
         </p>
       </div>
@@ -268,7 +268,7 @@ export function AgentsPage() {
         <div className="empty-state">
           <h3>No Agents</h3>
           <p>
-            No goblins in the ranks yet. Create .md files in your repo&apos;s .claude/agents/ directory, or
+            No crew members yet. Create .md files in your repo&apos;s .claude/agents/ directory, or
             add one above.
           </p>
         </div>
