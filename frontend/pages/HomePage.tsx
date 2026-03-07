@@ -89,7 +89,7 @@ export function HomePage() {
     return (
       <div className="empty-state">
         <h3>No repositories yet</h3>
-        <p>The mob is ready, but there&apos;s no turf to claim. Add a repository to get started.</p>
+        <p>Add a repository to get started.</p>
         <button
           className="btn btn-primary btn-lg"
           onClick={() => navigate("/repos")}
@@ -125,8 +125,7 @@ export function HomePage() {
         <div>
           <h2>Features</h2>
           <p>
-            Round up your mob. Start a new feature to plan and execute with
-            Claude.
+            Start a new feature to plan and execute with Claude.
           </p>
         </div>
         <button
@@ -166,7 +165,7 @@ export function HomePage() {
         {features.length === 0 ? (
           <div className="empty-state">
             <h3>No active features</h3>
-            <p>Your mob is waiting for orders. Click &quot;New Feature&quot; to give them something to build.</p>
+            <p>No features yet. Click &quot;New Feature&quot; to get started.</p>
           </div>
         ) : (
           [...features].sort((a, b) => {

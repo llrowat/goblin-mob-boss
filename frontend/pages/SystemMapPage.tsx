@@ -10,42 +10,42 @@ import type {
   DiscoveryStatus,
 } from "../types";
 
-// ── Service type visual config (goblin-themed) ──
+// ── Service type visual config ──
 
 const SERVICE_ICONS: Record<ServiceType, string> = {
-  backend: "\u2692",    // Hammer — the forge
-  frontend: "\uD83D\uDC41", // Eye — the lookout
-  worker: "\u2699",     // Gear — the grinder
-  gateway: "\uD83D\uDEAA", // Door — the gate
-  database: "\uD83D\uDC8E", // Gem — the vault
-  queue: "\uD83D\uDCDC", // Scroll — message scroll
-  cache: "\uD83C\uDFFA", // Amphora — the stash
-  external: "\uD83C\uDF0D", // Globe — the outside world
+  backend: "\u2692",    // Hammer
+  frontend: "\uD83D\uDC41", // Eye
+  worker: "\u2699",     // Gear
+  gateway: "\uD83D\uDEAA", // Door
+  database: "\uD83D\uDC8E", // Gem
+  queue: "\uD83D\uDCDC", // Scroll
+  cache: "\uD83C\uDFFA", // Amphora
+  external: "\uD83C\uDF0D", // Globe
 };
 
 const SERVICE_LABELS: Record<ServiceType, string> = {
-  backend: "Forge",
-  frontend: "Lookout",
-  worker: "Grinder",
-  gateway: "Gate",
-  database: "Vault",
-  queue: "Scroll Post",
-  cache: "Stash",
-  external: "Outside",
+  backend: "Backend",
+  frontend: "Frontend",
+  worker: "Worker",
+  gateway: "Gateway",
+  database: "Database",
+  queue: "Queue",
+  cache: "Cache",
+  external: "External",
 };
 
 const CONNECTION_STYLES: Record<
   ConnectionType,
   { dash: string; color: string; label: string }
 > = {
-  rest: { dash: "", color: "#b8944a", label: "Trade Route" },
-  grpc: { dash: "", color: "#5b8abd", label: "Tunnel" },
-  graphql: { dash: "8 4", color: "#9b6abf", label: "Crystal Link" },
-  websocket: { dash: "2 4", color: "#5a8a5c", label: "Whisper Line" },
-  event: { dash: "12 6", color: "#c4654a", label: "Smoke Signal" },
-  shared_db: { dash: "4 2", color: "#d4aa5a", label: "Shared Vault" },
-  file_system: { dash: "6 3", color: "#6a675f", label: "Dead Drop" },
-  ipc: { dash: "3 3", color: "#9a978f", label: "Secret Passage" },
+  rest: { dash: "", color: "#b8944a", label: "REST" },
+  grpc: { dash: "", color: "#5b8abd", label: "gRPC" },
+  graphql: { dash: "8 4", color: "#9b6abf", label: "GraphQL" },
+  websocket: { dash: "2 4", color: "#5a8a5c", label: "WebSocket" },
+  event: { dash: "12 6", color: "#c4654a", label: "Event" },
+  shared_db: { dash: "4 2", color: "#d4aa5a", label: "Shared DB" },
+  file_system: { dash: "6 3", color: "#6a675f", label: "File System" },
+  ipc: { dash: "3 3", color: "#9a978f", label: "IPC" },
 };
 
 const SERVICE_COLORS: Record<ServiceType, string> = {
@@ -59,7 +59,7 @@ const SERVICE_COLORS: Record<ServiceType, string> = {
   external: "#6a675f",
 };
 
-const DEFAULT_MAP_NAME = "New Turf Map";
+const DEFAULT_MAP_NAME = "New System Map";
 
 // ── Helper: generate a position for new services ──
 function nextPosition(services: MapService[]): [number, number] {
@@ -405,7 +405,7 @@ export function SystemMapPage() {
     const poll = async () => {
       if (attempts >= maxAttempts) {
         setExploring(false);
-        setError("Discovery timed out — scouts took too long.");
+        setError("Discovery timed out. Try again or check your repos.");
         return;
       }
       attempts++;
@@ -543,7 +543,7 @@ export function SystemMapPage() {
           />
         )}
 
-        {/* Outer circle — lair border */}
+        {/* Outer circle — service border */}
         <circle
           cx={x}
           cy={y}
@@ -600,7 +600,7 @@ export function SystemMapPage() {
             className="map-node-data"
             fill="var(--accent-brass)"
           >
-            {svc.owns_data.length} treasure{svc.owns_data.length > 1 ? "s" : ""}
+            {svc.owns_data.length} {svc.owns_data.length > 1 ? "datasets" : "dataset"}
           </text>
         )}
       </g>
@@ -611,7 +611,7 @@ export function SystemMapPage() {
   if (loading) {
     return (
       <div className="empty-state">
-        <p>Scouting the territory...</p>
+        <p>Loading system maps...</p>
       </div>
     );
   }
@@ -622,16 +622,16 @@ export function SystemMapPage() {
       <div>
         <div className="page-header">
           <h2>System Map</h2>
-          <p>Chart your turf — map how your services scheme together.</p>
+          <p>Visualize how your services connect and interact.</p>
         </div>
         <div className="empty-state">
-          <h3>No turf mapped yet</h3>
+          <h3>No maps yet</h3>
           <p>
-            Every good mob boss knows the lay of the land. Create a map to chart
-            your services, their connections, and where the treasure flows.
+            Create a map to chart your services, their connections, and data
+            flows.
           </p>
           <button className="btn btn-primary btn-lg" onClick={() => setShowNewMapModal(true)}>
-            Chart New Turf
+            New Map
           </button>
         </div>
 
@@ -645,7 +645,7 @@ export function SystemMapPage() {
     return (
       <div className="modal-overlay" onClick={() => setShowNewMapModal(false)}>
         <div className="modal" onClick={(e) => e.stopPropagation()}>
-          <div className="modal-title">Chart New Turf</div>
+          <div className="modal-title">New Map</div>
           <div className="form-group">
             <label className="form-label">Map Name</label>
             <input
@@ -662,7 +662,7 @@ export function SystemMapPage() {
               className="form-textarea"
               value={newMapDesc}
               onChange={(e) => setNewMapDesc(e.target.value)}
-              placeholder="What territory does this map cover?"
+              placeholder="What does this map cover?"
               rows={3}
             />
           </div>
@@ -684,7 +684,7 @@ export function SystemMapPage() {
       <div className="modal-overlay" onClick={() => setShowServiceModal(false)}>
         <div className="modal" onClick={(e) => e.stopPropagation()}>
           <div className="modal-title">
-            {editingService ? "Edit Lair" : "Add Lair"}
+            {editingService ? "Edit Service" : "Add Service"}
           </div>
           <div className="form-group">
             <label className="form-label">Name</label>
@@ -703,14 +703,14 @@ export function SystemMapPage() {
               value={svcType}
               onChange={(e) => setSvcType(e.target.value as ServiceType)}
             >
-              <option value="backend">Backend (Forge)</option>
-              <option value="frontend">Frontend (Lookout)</option>
-              <option value="worker">Worker (Grinder)</option>
-              <option value="gateway">Gateway (Gate)</option>
-              <option value="database">Database (Vault)</option>
-              <option value="queue">Queue (Scroll Post)</option>
-              <option value="cache">Cache (Stash)</option>
-              <option value="external">External (Outside)</option>
+              <option value="backend">Backend</option>
+              <option value="frontend">Frontend</option>
+              <option value="worker">Worker</option>
+              <option value="gateway">Gateway</option>
+              <option value="database">Database</option>
+              <option value="queue">Queue</option>
+              <option value="cache">Cache</option>
+              <option value="external">External</option>
             </select>
           </div>
           <div className="form-group">
@@ -781,7 +781,7 @@ export function SystemMapPage() {
       <div className="modal-overlay" onClick={() => setShowConnectionModal(false)}>
         <div className="modal" onClick={(e) => e.stopPropagation()}>
           <div className="modal-title">
-            {editingConnection ? "Edit Route" : "Add Route"}
+            {editingConnection ? "Edit Connection" : "Add Connection"}
           </div>
           <div className="form-group">
             <label className="form-label">From</label>
@@ -933,7 +933,7 @@ export function SystemMapPage() {
         {svc.owns_data.length > 0 && (
           <div style={{ marginBottom: 12 }}>
             <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600, textTransform: "uppercase", marginBottom: 4 }}>
-              Treasure Hoard
+              Owned Data
             </div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
               {svc.owns_data.map((d) => (
@@ -1041,14 +1041,14 @@ export function SystemMapPage() {
     return (
       <div className="modal-overlay" onClick={() => setShowExploreModal(false)}>
         <div className="modal" onClick={(e) => e.stopPropagation()}>
-          <div className="modal-title">Explore Territory</div>
+          <div className="modal-title">Explore Repositories</div>
           <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 16 }}>
-            Send scouts into your lairs to discover services, connections, and
-            treasure hoards. Select which repos to explore.
+            Scan your repositories to discover services, connections, and data
+            ownership. Select which repos to explore.
           </p>
           {repos.length === 0 ? (
             <div style={{ fontSize: 13, color: "var(--muted)", padding: "16px 0" }}>
-              No lairs registered. Add repositories first.
+              No repositories registered. Add repositories first.
             </div>
           ) : (
             <div className="explore-repo-list">
@@ -1079,7 +1079,7 @@ export function SystemMapPage() {
               onClick={handleExplore}
               disabled={exploreRepoIds.length === 0}
             >
-              Send Scouts
+              Start Discovery
             </button>
           </div>
         </div>
@@ -1093,7 +1093,7 @@ export function SystemMapPage() {
         {exploreCommand && (
           <div className="discovery-command">
             <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600, textTransform: "uppercase", marginBottom: 4 }}>
-              Run this command to send scouts
+              Run this command to start discovery
             </div>
             <pre className="command-display">{exploreCommand}</pre>
             <button
@@ -1111,12 +1111,12 @@ export function SystemMapPage() {
               <span className="discovery-spinner" />
               <span style={{ fontSize: 13, fontWeight: 500 }}>
                 {discoveryStatus.complete
-                  ? "Scouts returned!"
-                  : `${discoveryStatus.found} of ${discoveryStatus.total} scouts returned...`}
+                  ? "Discovery complete!"
+                  : `${discoveryStatus.found} of ${discoveryStatus.total} repos scanned...`}
               </span>
             </div>
             <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
-              {discoveryStatus.services_discovered} lair{discoveryStatus.services_discovered !== 1 ? "s" : ""} discovered
+              {discoveryStatus.services_discovered} service{discoveryStatus.services_discovered !== 1 ? "s" : ""} discovered
               {" \u00B7 "}
               {discoveryStatus.connections_discovered} route{discoveryStatus.connections_discovered !== 1 ? "s" : ""} mapped
             </div>
@@ -1132,7 +1132,7 @@ export function SystemMapPage() {
         {!exploreCommand && !discoveryStatus && exploring && (
           <div style={{ fontSize: 13, color: "var(--muted)", display: "flex", alignItems: "center", gap: 8 }}>
             <span className="discovery-spinner" />
-            Preparing scouts...
+            Preparing discovery...
           </div>
         )}
       </div>
@@ -1145,7 +1145,7 @@ export function SystemMapPage() {
       <div className="page-header" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div>
           <h2>System Map</h2>
-          <p>Chart your turf — see how the whole operation connects.</p>
+          <p>Visualize how your services connect and interact.</p>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           {maps.length > 1 && (
@@ -1175,14 +1175,14 @@ export function SystemMapPage() {
           {/* Toolbar */}
           <div className="map-toolbar">
             <button className="btn btn-brass btn-sm" onClick={openAddService}>
-              Add Lair
+              Add Service
             </button>
             <button
               className="btn btn-secondary btn-sm"
               onClick={openAddConnection}
               disabled={activeMap.services.length < 2}
             >
-              Add Route
+              Add Connection
             </button>
             <button
               className="btn btn-brass btn-sm"
@@ -1193,14 +1193,14 @@ export function SystemMapPage() {
             </button>
             <div style={{ flex: 1 }} />
             <span style={{ fontSize: 12, color: "var(--muted)" }}>
-              {activeMap.services.length} lair{activeMap.services.length !== 1 ? "s" : ""}
+              {activeMap.services.length} service{activeMap.services.length !== 1 ? "s" : ""}
               {" \u00B7 "}
-              {activeMap.connections.length} route{activeMap.connections.length !== 1 ? "s" : ""}
+              {activeMap.connections.length} connection{activeMap.connections.length !== 1 ? "s" : ""}
             </span>
             <div style={{ flex: 1 }} />
             {confirmDeleteMap ? (
               <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                <span style={{ fontSize: 12, color: "var(--danger)" }}>Burn this map?</span>
+                <span style={{ fontSize: 12, color: "var(--danger)" }}>Delete this map?</span>
                 <button className="btn btn-danger btn-sm" onClick={handleDeleteMap}>
                   Yes
                 </button>
@@ -1223,11 +1223,11 @@ export function SystemMapPage() {
             <div className="map-canvas-wrapper">
               {activeMap.services.length === 0 ? (
                 <div className="empty-state" style={{ padding: "80px 24px" }}>
-                  <h3>Empty territory</h3>
-                  <p>Add a lair manually or send scouts to explore your repos.</p>
+                  <h3>No services yet</h3>
+                  <p>Add a service manually or explore your repos to discover them.</p>
                   <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
                     <button className="btn btn-brass" onClick={openAddService}>
-                      Add Lair
+                      Add Service
                     </button>
                     {repos.length > 0 && (
                       <button

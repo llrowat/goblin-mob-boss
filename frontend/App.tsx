@@ -78,15 +78,6 @@ function AppLayout() {
           >
             Guide
           </NavLink>
-          <NavLink
-            to="/map"
-            className={({ isActive }) =>
-              `sidebar-nav-item ${isActive ? "active" : ""}`
-            }
-          >
-            System Map
-          </NavLink>
-
           <div className="sidebar-section-label">Settings</div>
           <NavLink
             to="/agents"
@@ -103,6 +94,14 @@ function AppLayout() {
             }
           >
             Repositories
+          </NavLink>
+          <NavLink
+            to="/map"
+            className={({ isActive }) =>
+              `sidebar-nav-item ${isActive ? "active" : ""}`
+            }
+          >
+            System Map
           </NavLink>
           <NavLink
             to="/settings"

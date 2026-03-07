@@ -111,8 +111,8 @@ describe("SystemMapPage", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText("No turf mapped yet")).toBeInTheDocument();
-      expect(screen.getByText("Chart New Turf")).toBeInTheDocument();
+      expect(screen.getByText("No maps yet")).toBeInTheDocument();
+      expect(screen.getByText("New Map")).toBeInTheDocument();
     });
   });
 
@@ -153,7 +153,7 @@ describe("SystemMapPage", () => {
     });
   });
 
-  it("shows toolbar with lair and route counts", async () => {
+  it("shows toolbar with service and connection counts", async () => {
     vi.mocked(invoke).mockImplementation((cmd: string) => {
       if (cmd === "list_system_maps") return Promise.resolve([mockMap]);
       if (cmd === "list_repositories") return Promise.resolve(mockRepos);
@@ -167,8 +167,8 @@ describe("SystemMapPage", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText(/2 lairs/)).toBeInTheDocument();
-      expect(screen.getByText(/1 route/)).toBeInTheDocument();
+      expect(screen.getByText(/2 services/)).toBeInTheDocument();
+      expect(screen.getByText(/1 connection/)).toBeInTheDocument();
     });
   });
 
@@ -182,10 +182,10 @@ describe("SystemMapPage", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText("Chart New Turf")).toBeInTheDocument();
+      expect(screen.getByText("New Map")).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByText("Chart New Turf"));
+    fireEvent.click(screen.getByText("New Map"));
 
     expect(screen.getByPlaceholderText("e.g. Platform Overview")).toBeInTheDocument();
   });
@@ -204,10 +204,10 @@ describe("SystemMapPage", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText("Add Lair")).toBeInTheDocument();
+      expect(screen.getByText("Add Service")).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByText("Add Lair"));
+    fireEvent.click(screen.getByText("Add Service"));
 
     expect(screen.getByPlaceholderText("e.g. Auth Service")).toBeInTheDocument();
   });
@@ -228,10 +228,10 @@ describe("SystemMapPage", () => {
     await waitFor(() => {
       expect(screen.getByText("Legend")).toBeInTheDocument();
       // Use getAllByText since labels appear in both the map and the legend
-      expect(screen.getAllByText("Forge").length).toBeGreaterThanOrEqual(1);
-      expect(screen.getAllByText("Lookout").length).toBeGreaterThanOrEqual(1);
-      expect(screen.getByText("Trade Route")).toBeInTheDocument();
-      expect(screen.getByText("Smoke Signal")).toBeInTheDocument();
+      expect(screen.getAllByText("Backend").length).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByText("Frontend").length).toBeGreaterThanOrEqual(1);
+      expect(screen.getByText("REST")).toBeInTheDocument();
+      expect(screen.getByText("Event")).toBeInTheDocument();
     });
   });
 
@@ -256,7 +256,7 @@ describe("SystemMapPage", () => {
     fireEvent.click(screen.getByText("Auth Service"));
 
     await waitFor(() => {
-      expect(screen.getByText("Treasure Hoard")).toBeInTheDocument();
+      expect(screen.getByText("Owned Data")).toBeInTheDocument();
       expect(screen.getByText("users")).toBeInTheDocument();
       expect(screen.getByText("sessions")).toBeInTheDocument();
     });
@@ -281,7 +281,7 @@ describe("SystemMapPage", () => {
 
     fireEvent.click(screen.getByText("Delete Map"));
 
-    expect(screen.getByText("Burn this map?")).toBeInTheDocument();
+    expect(screen.getByText("Delete this map?")).toBeInTheDocument();
     expect(screen.getByText("Yes")).toBeInTheDocument();
     expect(screen.getByText("No")).toBeInTheDocument();
   });
@@ -324,10 +324,10 @@ describe("SystemMapPage", () => {
     fireEvent.click(screen.getByText("Explore"));
 
     await waitFor(() => {
-      expect(screen.getByText("Explore Territory")).toBeInTheDocument();
+      expect(screen.getByText("Explore Repositories")).toBeInTheDocument();
       expect(screen.getByText("Backend API")).toBeInTheDocument();
       expect(screen.getByText("Frontend App")).toBeInTheDocument();
-      expect(screen.getByText("Send Scouts")).toBeInTheDocument();
+      expect(screen.getByText("Start Discovery")).toBeInTheDocument();
     });
   });
 
@@ -351,7 +351,7 @@ describe("SystemMapPage", () => {
     fireEvent.click(screen.getByText("Explore"));
 
     await waitFor(() => {
-      const sendButton = screen.getByText("Send Scouts");
+      const sendButton = screen.getByText("Start Discovery");
       expect(sendButton).toBeDisabled();
     });
   });
@@ -371,7 +371,7 @@ describe("SystemMapPage", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText("Empty territory")).toBeInTheDocument();
+      expect(screen.getByText("No services yet")).toBeInTheDocument();
       // The Explore button in the toolbar + the one in empty state
       const exploreButtons = screen.getAllByText("Explore");
       expect(exploreButtons.length).toBeGreaterThanOrEqual(1);
@@ -393,7 +393,7 @@ describe("SystemMapPage", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText("Empty territory")).toBeInTheDocument();
+      expect(screen.getByText("No services yet")).toBeInTheDocument();
     });
   });
 });

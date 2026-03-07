@@ -35,7 +35,7 @@ describe("HomePage", () => {
 
     await waitFor(() => {
       expect(screen.getByText("No repositories yet")).toBeInTheDocument();
-      expect(screen.getByText(/The mob is ready/)).toBeInTheDocument();
+      expect(screen.getByText(/Add a repository to get started/)).toBeInTheDocument();
     });
   });
 
