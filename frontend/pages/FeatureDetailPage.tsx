@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useTauri } from "../hooks/useTauri";
 import { useTerminalSession } from "../hooks/useTerminalSession";
+import { useBackgroundPlanning } from "../hooks/useBackgroundPlanning";
 import type {
   Feature,
   IdeationResult,
@@ -19,6 +20,7 @@ export function FeatureDetailPage() {
   const tauri = useTauri();
   const navigate = useNavigate();
   const { session: terminalSession, startSession, clearSession } = useTerminalSession();
+  const { isPlanning, addPlanning, consumePlan } = useBackgroundPlanning();
   const [feature, setFeature] = useState<Feature | null>(null);
   const [ideationResult, setIdeationResult] = useState<IdeationResult | null>(
     null,
@@ -78,6 +80,7 @@ export function FeatureDetailPage() {
     setIdeationResult(null);
     clearSession();
     try {
+      addPlanning(featureId);
       await tauri.runIdeation(featureId);
     } catch (err) {
       setStatus("error");
@@ -90,6 +93,15 @@ export function FeatureDetailPage() {
     if (!featureId) return;
     // Skip if already executing (terminal session restored from feature load)
     if (terminalSession?.featureId === featureId) return;
+
+    // Check if background planning already has a completed plan
+    const bgPlan = consumePlan(featureId);
+    if (bgPlan && bgPlan.tasks.length > 0) {
+      setIdeationResult(bgPlan);
+      setStatus("done");
+      return;
+    }
+
     // For ready/failed features, plan is loaded from task_specs in the feature load effect
     // Still poll in case plan.json has data, but don't start ideation if poll returns empty
     tauri.getFeature(featureId).then((f) => {
@@ -105,11 +117,18 @@ export function FeatureDetailPage() {
         if (result.tasks.length > 0) {
           setIdeationResult(result);
           setStatus("done");
+        } else if (isPlanning(featureId)) {
+          // Background planning already started ideation — just poll
+          setStatus("running");
         } else {
           startIdeation();
         }
       }).catch(() => {
-        startIdeation();
+        if (isPlanning(featureId)) {
+          setStatus("running");
+        } else {
+          startIdeation();
+        }
       });
     }).catch(() => {
       startIdeation();

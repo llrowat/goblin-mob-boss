@@ -142,13 +142,31 @@ body {
   color: var(--danger);
 }
 
+.sidebar-badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.sidebar-planning-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--accent);
+}
+
 .sidebar-executing-badge {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  margin-left: auto;
   font-size: 11px;
   color: var(--accent-brass);
+}
+
+.spinner.spinner-planning {
+  border-top-color: var(--accent);
 }
 
 .sidebar-section-label {

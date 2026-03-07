@@ -15,6 +15,18 @@ vi.mock("../hooks/useTerminalSession", () => ({
   }),
 }));
 
+// Mock the useBackgroundPlanning hook
+const mockAddPlanning = vi.fn();
+const mockIsPlanning = vi.fn(() => false);
+const mockConsumePlan = vi.fn(() => null);
+vi.mock("../hooks/useBackgroundPlanning", () => ({
+  useBackgroundPlanning: () => ({
+    isPlanning: mockIsPlanning,
+    addPlanning: mockAddPlanning,
+    consumePlan: mockConsumePlan,
+  }),
+}));
+
 const mockedInvoke = vi.mocked(invoke);
 
 // Mock react-router-dom
