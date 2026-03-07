@@ -282,6 +282,46 @@ pub struct TaskSpec {
     pub agent: String,
 }
 
+// ── Planning Questions ──
+// When the planner encounters ambiguity, it writes questions.json instead of plan.json.
+// The user answers in the UI, then ideation resumes with answers as context.
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum QuestionType {
+    SingleChoice,
+    FreeText,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlanningQuestion {
+    pub id: String,
+    pub question: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub options: Option<Vec<String>>,
+    #[serde(rename = "type")]
+    pub question_type: QuestionType,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlanningAnswer {
+    pub id: String,
+    pub question: String,
+    pub answer: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QuestionsFile {
+    pub questions: Vec<PlanningQuestion>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AnswersFile {
+    pub answers: Vec<PlanningAnswer>,
+}
+
 // ── Ideation Discovery Result ──
 // What the ideation prompt outputs (tasks + execution mode recommendation).
 
@@ -291,6 +331,11 @@ pub struct IdeationResult {
     pub tasks: Vec<TaskSpec>,
     #[serde(default)]
     pub execution_mode: Option<ExecutionRecommendation>,
+    #[serde(default)]
+    pub questions: Option<Vec<PlanningQuestion>>,
+    /// Previously answered questions for display in the UI.
+    #[serde(default)]
+    pub answered_questions: Option<Vec<PlanningAnswer>>,
 }
 
 // ── Validator Results ──
@@ -1011,5 +1056,127 @@ You are a backend developer."#;
         }"#;
         let dep: ServiceDependency = serde_json::from_str(json).unwrap();
         assert!(dep.sync);
+    }
+
+    // ── Planning Questions Tests ──
+
+    #[test]
+    fn planning_question_single_choice_serializes() {
+        let q = PlanningQuestion {
+            id: "q1".to_string(),
+            question: "Which approach?".to_string(),
+            context: Some("Found two patterns".to_string()),
+            options: Some(vec!["Option A".to_string(), "Option B".to_string()]),
+            question_type: QuestionType::SingleChoice,
+        };
+        let json = serde_json::to_string(&q).unwrap();
+        assert!(json.contains("\"single_choice\""));
+        assert!(json.contains("\"Option A\""));
+        let parsed: PlanningQuestion = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.id, "q1");
+        assert_eq!(parsed.question_type, QuestionType::SingleChoice);
+        assert_eq!(parsed.options.unwrap().len(), 2);
+        assert_eq!(parsed.context.unwrap(), "Found two patterns");
+    }
+
+    #[test]
+    fn planning_question_free_text_serializes() {
+        let q = PlanningQuestion {
+            id: "q2".to_string(),
+            question: "Any preferences?".to_string(),
+            context: None,
+            options: None,
+            question_type: QuestionType::FreeText,
+        };
+        let json = serde_json::to_string(&q).unwrap();
+        assert!(json.contains("\"free_text\""));
+        assert!(!json.contains("\"context\""));
+        assert!(!json.contains("\"options\""));
+        let parsed: PlanningQuestion = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.question_type, QuestionType::FreeText);
+        assert!(parsed.context.is_none());
+        assert!(parsed.options.is_none());
+    }
+
+    #[test]
+    fn questions_file_roundtrip() {
+        let qf = QuestionsFile {
+            questions: vec![
+                PlanningQuestion {
+                    id: "q1".to_string(),
+                    question: "Choice?".to_string(),
+                    context: Some("context".to_string()),
+                    options: Some(vec!["A".to_string(), "B".to_string()]),
+                    question_type: QuestionType::SingleChoice,
+                },
+                PlanningQuestion {
+                    id: "q2".to_string(),
+                    question: "Details?".to_string(),
+                    context: None,
+                    options: None,
+                    question_type: QuestionType::FreeText,
+                },
+            ],
+        };
+        let json = serde_json::to_string_pretty(&qf).unwrap();
+        let parsed: QuestionsFile = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.questions.len(), 2);
+        assert_eq!(parsed.questions[0].id, "q1");
+        assert_eq!(parsed.questions[1].question_type, QuestionType::FreeText);
+    }
+
+    #[test]
+    fn answers_file_roundtrip() {
+        let af = AnswersFile {
+            answers: vec![
+                PlanningAnswer {
+                    id: "q1".to_string(),
+                    question: "Which approach?".to_string(),
+                    answer: "Option A".to_string(),
+                },
+                PlanningAnswer {
+                    id: "q2".to_string(),
+                    question: "Details?".to_string(),
+                    answer: "Use the existing pattern".to_string(),
+                },
+            ],
+        };
+        let json = serde_json::to_string_pretty(&af).unwrap();
+        let parsed: AnswersFile = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.answers.len(), 2);
+        assert_eq!(parsed.answers[0].answer, "Option A");
+        assert_eq!(parsed.answers[1].id, "q2");
+    }
+
+    #[test]
+    fn ideation_result_with_questions() {
+        let json = r#"{
+            "tasks": [],
+            "questions": [
+                {
+                    "id": "q1",
+                    "question": "Persist in localStorage or backend?",
+                    "context": "Found both patterns in the codebase",
+                    "options": ["localStorage", "Backend store"],
+                    "type": "single_choice"
+                }
+            ]
+        }"#;
+        let result: IdeationResult = serde_json::from_str(json).unwrap();
+        assert!(result.tasks.is_empty());
+        let questions = result.questions.unwrap();
+        assert_eq!(questions.len(), 1);
+        assert_eq!(questions[0].id, "q1");
+        assert_eq!(questions[0].question_type, QuestionType::SingleChoice);
+    }
+
+    #[test]
+    fn ideation_result_without_questions_defaults_none() {
+        let json = r#"{
+            "tasks": [{"title": "Do thing", "description": "details"}]
+        }"#;
+        let result: IdeationResult = serde_json::from_str(json).unwrap();
+        assert!(result.questions.is_none());
+        assert!(result.answered_questions.is_none());
     }
 }

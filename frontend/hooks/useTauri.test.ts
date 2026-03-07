@@ -115,6 +115,19 @@ describe("useTauri", () => {
     });
   });
 
+  it("submitPlanningAnswers calls invoke correctly", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce(undefined);
+    const { result } = renderHook(() => useTauri());
+    const answers = [
+      { id: "q1", question: "Which approach?", answer: "Option A" },
+    ];
+    await result.current.submitPlanningAnswers("feature-1", answers);
+    expect(invoke).toHaveBeenCalledWith("submit_planning_answers", {
+      featureId: "feature-1",
+      answers,
+    });
+  });
+
   it("markFeatureExecuting calls invoke correctly", async () => {
     vi.mocked(invoke).mockResolvedValueOnce({});
     const { result } = renderHook(() => useTauri());

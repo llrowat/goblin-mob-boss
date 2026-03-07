@@ -447,12 +447,26 @@ pub fn poll_ideation_result(
         .join(&feature.id)
         .join("tasks");
 
+    // Load any previously answered questions for context
+    let answers_path = tasks_dir.join("answers.json");
+    let answered_questions = if answers_path.exists() {
+        std::fs::read_to_string(&answers_path)
+            .ok()
+            .and_then(|data| serde_json::from_str::<AnswersFile>(&data).ok())
+            .map(|f| f.answers)
+    } else {
+        None
+    };
+
     // Try plan.json first (new format with execution_mode)
     let plan_path = tasks_dir.join("plan.json");
     if plan_path.exists() {
         match std::fs::read_to_string(&plan_path) {
             Ok(data) => match serde_json::from_str::<IdeationResult>(&data) {
-                Ok(result) => return Ok(result),
+                Ok(mut result) => {
+                    result.answered_questions = answered_questions;
+                    return Ok(result);
+                }
                 Err(e) => {
                     log::warn!("Malformed plan.json for feature {}: {}", feature_id, e);
                 }
@@ -463,11 +477,36 @@ pub fn poll_ideation_result(
         }
     }
 
+    // Check for questions.json (planner is asking for clarification)
+    let questions_path = tasks_dir.join("questions.json");
+    if questions_path.exists() {
+        match std::fs::read_to_string(&questions_path) {
+            Ok(data) => match serde_json::from_str::<QuestionsFile>(&data) {
+                Ok(qf) => {
+                    return Ok(IdeationResult {
+                        tasks: vec![],
+                        execution_mode: None,
+                        questions: Some(qf.questions),
+                        answered_questions,
+                    });
+                }
+                Err(e) => {
+                    log::warn!("Malformed questions.json for feature {}: {}", feature_id, e);
+                }
+            },
+            Err(e) => {
+                log::warn!("Failed to read questions.json for feature {}: {}", feature_id, e);
+            }
+        }
+    }
+
     // Fallback: read individual NN.json files (old format)
     if !tasks_dir.exists() {
         return Ok(IdeationResult {
             tasks: vec![],
             execution_mode: None,
+            questions: None,
+            answered_questions: None,
         });
     }
 
@@ -477,7 +516,10 @@ pub fn poll_ideation_result(
             .flatten()
             .filter(|e| {
                 let fname = e.file_name().to_string_lossy().to_string();
-                fname.ends_with(".json") && fname != "plan.json"
+                fname.ends_with(".json")
+                    && fname != "plan.json"
+                    && fname != "questions.json"
+                    && fname != "answers.json"
             })
             .collect();
         files.sort_by_key(|e| e.file_name());
@@ -503,6 +545,8 @@ pub fn poll_ideation_result(
     Ok(IdeationResult {
         tasks: specs,
         execution_mode: None,
+        questions: None,
+        answered_questions,
     })
 }
 
@@ -1083,6 +1127,95 @@ pub fn revise_ideation(
         .unwrap_or(&repo.path);
 
     spawn_ideation_process(&feature_dir, work_dir, &system_prompt_content, &revised_prompt)
+}
+
+/// Submit answers to planning questions and resume ideation.
+/// Writes answers.json, deletes questions.json, and spawns a new ideation process
+/// with the user's answers included in the prompt.
+#[tauri::command]
+pub fn submit_planning_answers(
+    state: State<AppState>,
+    feature_id: String,
+    answers: Vec<PlanningAnswer>,
+) -> Result<(), String> {
+    let features = state.features.lock().unwrap();
+    let feature = features
+        .get(&feature_id)
+        .ok_or("Feature not found")?
+        .clone();
+    drop(features);
+
+    let repo = get_primary_repo(&state, &feature)?;
+    let feature_dir = Path::new(&repo.path)
+        .join(".gmb")
+        .join("features")
+        .join(&feature.id);
+    let tasks_dir = feature_dir.join("tasks");
+
+    // Read existing answers (from prior rounds) and append new ones
+    let answers_path = tasks_dir.join("answers.json");
+    let mut all_answers = if answers_path.exists() {
+        std::fs::read_to_string(&answers_path)
+            .ok()
+            .and_then(|data| serde_json::from_str::<AnswersFile>(&data).ok())
+            .map(|f| f.answers)
+            .unwrap_or_default()
+    } else {
+        vec![]
+    };
+    all_answers.extend(answers);
+
+    // Write accumulated answers
+    let answers_file = AnswersFile {
+        answers: all_answers.clone(),
+    };
+    std::fs::write(
+        &answers_path,
+        serde_json::to_string_pretty(&answers_file)
+            .map_err(|e| format!("Failed to serialize answers: {}", e))?,
+    )
+    .map_err(|e| format!("Failed to write answers.json: {}", e))?;
+
+    // Delete questions.json (consumed)
+    let questions_path = tasks_dir.join("questions.json");
+    if questions_path.exists() {
+        let _ = std::fs::remove_file(&questions_path);
+    }
+
+    // Delete old plan.json so polling starts fresh
+    let plan_path = tasks_dir.join("plan.json");
+    if plan_path.exists() {
+        let _ = std::fs::remove_file(&plan_path);
+    }
+
+    // Build prompt with answers
+    let (system_prompt_path, _) = ensure_ideation_prompts(&state, &feature)?;
+    let system_prompt_content = std::fs::read_to_string(&system_prompt_path)
+        .map_err(|e| format!("Failed to read system prompt: {}", e))?;
+
+    let repos = state.repositories.lock().unwrap();
+    let all_repos: Vec<_> = feature
+        .effective_repo_ids()
+        .iter()
+        .filter_map(|id| repos.get(id).cloned())
+        .collect();
+    drop(repos);
+    let agent_list = build_agent_list(&all_repos);
+
+    let user_prompt = prompts::ideation_user_prompt_with_answers(
+        &feature.description,
+        &tasks_dir.to_string_lossy(),
+        &agent_list,
+        &all_answers,
+    );
+
+    let work_dir = feature
+        .worktree_paths
+        .get(&repo.id)
+        .map(|s| s.as_str())
+        .unwrap_or(&repo.path);
+
+    spawn_ideation_process(&feature_dir, work_dir, &system_prompt_content, &user_prompt)
 }
 
 // ── PTY Commands ──

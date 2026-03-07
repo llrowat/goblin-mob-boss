@@ -71,6 +71,7 @@ pub fn run() {
             // Ideation (background)
             commands::run_ideation,
             commands::revise_ideation,
+            commands::submit_planning_answers,
             // PTY
             commands::start_launch_pty,
             commands::write_pty,
