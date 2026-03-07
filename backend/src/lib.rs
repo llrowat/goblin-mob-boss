@@ -17,7 +17,8 @@ use store::AppState;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let config_dir = dirs_config_path();
-    let state = AppState::new(config_dir);
+    let gmb_dir = gmb_home_path();
+    let state = AppState::new(config_dir, gmb_dir);
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -115,6 +116,20 @@ fn dirs_config_path() -> String {
         return gmb_dir.to_string_lossy().to_string();
     }
     ".goblin-mob-boss".to_string()
+}
+
+fn gmb_home_path() -> String {
+    if let Ok(home) = std::env::var("HOME") {
+        let gmb_dir = std::path::PathBuf::from(&home).join(".gmb");
+        let _ = std::fs::create_dir_all(&gmb_dir);
+        return gmb_dir.to_string_lossy().to_string();
+    }
+    if let Ok(profile) = std::env::var("USERPROFILE") {
+        let gmb_dir = std::path::PathBuf::from(&profile).join(".gmb");
+        let _ = std::fs::create_dir_all(&gmb_dir);
+        return gmb_dir.to_string_lossy().to_string();
+    }
+    ".gmb".to_string()
 }
 
 fn dirs_next() -> Option<String> {

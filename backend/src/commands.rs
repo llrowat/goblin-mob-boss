@@ -1549,8 +1549,8 @@ pub fn start_map_discovery(
         .collect::<Result<Vec<_>, _>>()?;
     drop(repos_lock);
 
-    // Create discovery directory in GMB config
-    let discovery_dir = Path::new(&state.config_path)
+    // Create discovery directory in ~/.gmb
+    let discovery_dir = Path::new(&state.gmb_path)
         .join("discoveries")
         .join(&map_id);
     std::fs::create_dir_all(&discovery_dir)
@@ -1616,7 +1616,7 @@ pub fn poll_map_discovery(
     map_id: String,
     repo_ids: Vec<String>,
 ) -> Result<serde_json::Value, String> {
-    let discovery_dir = Path::new(&state.config_path)
+    let discovery_dir = Path::new(&state.gmb_path)
         .join("discoveries")
         .join(&map_id);
 
