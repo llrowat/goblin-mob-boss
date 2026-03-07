@@ -9,17 +9,21 @@ pub struct AppState {
     pub system_maps: Mutex<HashMap<String, SystemMap>>,
     pub preferences: Mutex<Preferences>,
     pub config_path: String,
+    /// Dedicated path for system map storage (`~/.gmb`).
+    pub gmb_path: String,
 }
 
 impl AppState {
-    pub fn new(config_path: String) -> Self {
+    pub fn new(config_path: String, gmb_path: String) -> Self {
         let state = Self {
             repositories: Mutex::new(HashMap::new()),
             features: Mutex::new(HashMap::new()),
             system_maps: Mutex::new(HashMap::new()),
             preferences: Mutex::new(Preferences::default()),
             config_path,
+            gmb_path,
         };
+        state.migrate_system_maps();
         state.load_repos();
         state.load_features();
         state.load_system_maps();
@@ -31,6 +35,41 @@ impl AppState {
 
     fn json_path(&self, filename: &str) -> std::path::PathBuf {
         std::path::PathBuf::from(&self.config_path).join(filename)
+    }
+
+    fn gmb_json_path(&self, filename: &str) -> std::path::PathBuf {
+        std::path::PathBuf::from(&self.gmb_path).join(filename)
+    }
+
+    /// Migrate system_maps.json from the old config_path to ~/.gmb if it exists
+    /// and hasn't already been migrated.
+    fn migrate_system_maps(&self) {
+        let old_path = self.json_path("system_maps.json");
+        let new_path = self.gmb_json_path("system_maps.json");
+        if old_path.exists() && !new_path.exists() {
+            if let Some(parent) = new_path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            match std::fs::rename(&old_path, &new_path) {
+                Ok(_) => {
+                    log::info!(
+                        "Migrated system_maps.json from {} to {}",
+                        old_path.display(),
+                        new_path.display()
+                    );
+                }
+                Err(e) => {
+                    // rename can fail across filesystems; fall back to copy + delete
+                    log::warn!("Rename failed ({}), trying copy", e);
+                    if std::fs::copy(&old_path, &new_path).is_ok() {
+                        let _ = std::fs::remove_file(&old_path);
+                        log::info!("Migrated system_maps.json via copy");
+                    } else {
+                        log::error!("Failed to migrate system_maps.json: {}", e);
+                    }
+                }
+            }
+        }
     }
 
     fn load_json_list<T: serde::de::DeserializeOwned>(&self, filename: &str) -> Vec<T> {
@@ -132,20 +171,69 @@ impl AppState {
         self.save_json_list("features.json", &list);
     }
 
-    // ── System Map persistence ──
+    // ── System Map persistence (stored in ~/.gmb) ──
 
     fn load_system_maps(&self) {
-        let maps = self.load_json_list::<SystemMap>("system_maps.json");
-        let mut map = self.system_maps.lock().unwrap();
-        for sm in maps {
-            map.insert(sm.id.clone(), sm);
+        let path = self.gmb_json_path("system_maps.json");
+        if !path.exists() {
+            return;
+        }
+        match std::fs::read_to_string(&path) {
+            Ok(data) => match serde_json::from_str::<Vec<SystemMap>>(&data) {
+                Ok(items) => {
+                    let mut map = self.system_maps.lock().unwrap();
+                    for sm in items {
+                        map.insert(sm.id.clone(), sm);
+                    }
+                }
+                Err(e) => {
+                    log::error!(
+                        "Corrupted JSON in {}: {}. Backing up and returning empty.",
+                        path.display(),
+                        e
+                    );
+                    let backup = path.with_extension("json.bak");
+                    let _ = std::fs::copy(&path, &backup);
+                }
+            },
+            Err(e) => {
+                log::error!("Failed to read {}: {}", path.display(), e);
+            }
         }
     }
 
     pub fn save_system_maps(&self) {
+        let path = self.gmb_json_path("system_maps.json");
+        if let Some(parent) = path.parent() {
+            if let Err(e) = std::fs::create_dir_all(parent) {
+                log::error!("Failed to create gmb dir {}: {}", parent.display(), e);
+                return;
+            }
+        }
         let maps = self.system_maps.lock().unwrap();
         let list: Vec<&SystemMap> = maps.values().collect();
-        self.save_json_list("system_maps.json", &list);
+        let data = match serde_json::to_string_pretty(&list) {
+            Ok(d) => d,
+            Err(e) => {
+                log::error!("Failed to serialize system maps: {}", e);
+                return;
+            }
+        };
+        drop(maps);
+        let tmp_path = path.with_extension("json.tmp");
+        if let Err(e) = std::fs::write(&tmp_path, &data) {
+            log::error!("Failed to write temp file {}: {}", tmp_path.display(), e);
+            return;
+        }
+        if let Err(e) = std::fs::rename(&tmp_path, &path) {
+            log::error!(
+                "Failed to rename {} -> {}: {}",
+                tmp_path.display(),
+                path.display(),
+                e
+            );
+            let _ = std::fs::write(&path, &data);
+        }
     }
 
     // ── Preferences persistence ──
@@ -302,12 +390,14 @@ mod tests {
 
     fn make_state(dir: &TempDir) -> AppState {
         let config_path = dir.path().to_string_lossy().to_string();
+        let gmb_path = dir.path().join("gmb").to_string_lossy().to_string();
         AppState {
             repositories: Mutex::new(HashMap::new()),
             features: Mutex::new(HashMap::new()),
             system_maps: Mutex::new(HashMap::new()),
             preferences: Mutex::new(Preferences::default()),
             config_path,
+            gmb_path,
         }
     }
 
@@ -520,7 +610,9 @@ mod tests {
         }
         state.save_system_maps();
 
-        assert!(dir.path().join("system_maps.json").exists());
+        // System maps are stored in gmb_path, not config_path
+        assert!(dir.path().join("gmb").join("system_maps.json").exists());
+        assert!(!dir.path().join("system_maps.json").exists());
 
         let state2 = make_state(&dir);
         state2.load_system_maps();
@@ -566,6 +658,9 @@ mod tests {
         }
         state.save_system_maps();
 
+        // Verify stored in gmb_path
+        assert!(dir.path().join("gmb").join("system_maps.json").exists());
+
         let state2 = make_state(&dir);
         state2.load_system_maps();
         let maps = state2.system_maps.lock().unwrap();
@@ -574,5 +669,63 @@ mod tests {
         assert_eq!(loaded.services[0].owns_data, vec!["users"]);
         assert_eq!(loaded.connections.len(), 1);
         assert_eq!(loaded.connections[0].label, "/api");
+    }
+
+    #[test]
+    fn migrate_system_maps_from_config_to_gmb() {
+        let dir = TempDir::new().unwrap();
+
+        // Write a system_maps.json in the old config_path location
+        let old_data = r#"[{
+            "id": "map-old",
+            "name": "Legacy Map",
+            "description": "From old location",
+            "services": [],
+            "connections": [],
+            "created_at": "2025-01-01T00:00:00Z",
+            "updated_at": "2025-01-01T00:00:00Z"
+        }]"#;
+        std::fs::write(dir.path().join("system_maps.json"), old_data).unwrap();
+
+        // Construct state — migration + load should pick up the old file
+        let config_path = dir.path().to_string_lossy().to_string();
+        let gmb_path = dir.path().join("gmb").to_string_lossy().to_string();
+        let state = AppState::new(config_path, gmb_path);
+
+        // Old file should be gone, new file should exist
+        assert!(!dir.path().join("system_maps.json").exists());
+        assert!(dir.path().join("gmb").join("system_maps.json").exists());
+
+        // Map should be loaded
+        let maps = state.system_maps.lock().unwrap();
+        assert_eq!(maps.len(), 1);
+        assert_eq!(maps.get("map-old").unwrap().name, "Legacy Map");
+    }
+
+    #[test]
+    fn no_migration_when_gmb_already_has_system_maps() {
+        let dir = TempDir::new().unwrap();
+        let gmb_dir = dir.path().join("gmb");
+        std::fs::create_dir_all(&gmb_dir).unwrap();
+
+        // Old location has data
+        let old_data = r#"[{"id":"old","name":"Old","description":"","services":[],"connections":[],"created_at":"2025-01-01T00:00:00Z","updated_at":"2025-01-01T00:00:00Z"}]"#;
+        std::fs::write(dir.path().join("system_maps.json"), old_data).unwrap();
+
+        // New location already has data
+        let new_data = r#"[{"id":"new","name":"New","description":"","services":[],"connections":[],"created_at":"2025-01-01T00:00:00Z","updated_at":"2025-01-01T00:00:00Z"}]"#;
+        std::fs::write(gmb_dir.join("system_maps.json"), new_data).unwrap();
+
+        let config_path = dir.path().to_string_lossy().to_string();
+        let gmb_path = gmb_dir.to_string_lossy().to_string();
+        let state = AppState::new(config_path, gmb_path);
+
+        // Old file should still exist (not migrated since new already exists)
+        assert!(dir.path().join("system_maps.json").exists());
+
+        // Should load from new location
+        let maps = state.system_maps.lock().unwrap();
+        assert_eq!(maps.len(), 1);
+        assert_eq!(maps.get("new").unwrap().name, "New");
     }
 }
