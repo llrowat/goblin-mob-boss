@@ -126,6 +126,9 @@ export function useTauri() {
     markFeatureReady: (featureId: string) =>
       invoke<Feature>("mark_feature_ready", { featureId }),
 
+    cancelExecution: (featureId: string) =>
+      invoke<Feature>("cancel_execution", { featureId }),
+
     // Validation
     runFeatureValidators: (featureId: string) =>
       invoke<VerifyResult>("run_feature_validators", { featureId }),

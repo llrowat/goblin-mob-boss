@@ -45,7 +45,7 @@ export function HomePage() {
       setShowNewFeature(false);
       setName("");
       setDescription("");
-      navigate(`/feature/${feature.id}/ideation`);
+      navigate(`/feature/${feature.id}/detail`);
     } catch (e) {
       setError(String(e));
     } finally {
@@ -113,9 +113,9 @@ export function HomePage() {
       case "ideation":
       case "configuring":
       case "executing":
-        return `/feature/${f.id}/ideation`;
+        return `/feature/${f.id}/detail`;
       default:
-        return `/feature/${f.id}/status`;
+        return `/feature/${f.id}/detail`;
     }
   };
 
@@ -204,6 +204,11 @@ export function HomePage() {
                       [{featureRepoNames(f)}]
                     </span>
                   </div>
+                  {f.worktree_paths && Object.values(f.worktree_paths).length > 0 && (
+                    <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
+                      {Object.values(f.worktree_paths).join(", ")}
+                    </div>
+                  )}
                 </div>
                 <span
                   className={`status-badge ${f.status === "executing" ? "running" : f.status}`}

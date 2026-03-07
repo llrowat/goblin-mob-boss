@@ -678,6 +678,27 @@ pub fn mark_feature_ready(state: State<AppState>, feature_id: String) -> Result<
     Ok(updated)
 }
 
+/// Cancel execution: kill the PTY session and reset the feature back to ideation.
+#[tauri::command]
+pub fn cancel_execution(
+    state: State<AppState>,
+    pty_sessions: State<pty::PtySessions>,
+    feature_id: String,
+) -> Result<Feature, String> {
+    let mut features = state.features.lock().unwrap();
+    let feature = features.get_mut(&feature_id).ok_or("Feature not found")?;
+    // Kill the PTY session if one exists
+    if let Some(session_id) = feature.pty_session_id.take() {
+        let _ = pty::kill_pty_session(&pty_sessions, &session_id);
+    }
+    feature.status = FeatureStatus::Ideation;
+    feature.updated_at = Utc::now();
+    let updated = feature.clone();
+    drop(features);
+    state.save_features();
+    Ok(updated)
+}
+
 // ── Validation Commands ──
 
 #[tauri::command]

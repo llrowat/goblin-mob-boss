@@ -2,9 +2,7 @@ import { useEffect, useState } from "react";
 import { BrowserRouter, Routes, Route, NavLink } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { HomePage } from "./pages/HomePage";
-import { IdeationPage } from "./pages/IdeationPage";
-import { LaunchConfigPage } from "./pages/LaunchConfigPage";
-import { FeatureStatusPage } from "./pages/FeatureStatusPage";
+import { FeatureDetailPage } from "./pages/FeatureDetailPage";
 import { AgentsPage } from "./pages/AgentsPage";
 import { ReposPage } from "./pages/ReposPage";
 import { SettingsPage } from "./pages/SettingsPage";
@@ -121,18 +119,10 @@ function AppLayout() {
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route
-            path="/feature/:featureId/ideation"
-            element={<IdeationPage />}
+            path="/feature/:featureId/detail"
+            element={<FeatureDetailPage />}
           />
-          <Route
-            path="/feature/:featureId/launch"
-            element={<LaunchConfigPage />}
-          />
-          <Route
-            path="/feature/:featureId/status"
-            element={<FeatureStatusPage />}
-          />
-          <Route path="/guide" element={<GuidePage />} />
+<Route path="/guide" element={<GuidePage />} />
           <Route path="/map" element={<SystemMapPage />} />
           <Route path="/agents" element={<AgentsPage />} />
           <Route path="/repos" element={<ReposPage />} />

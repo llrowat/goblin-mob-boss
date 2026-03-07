@@ -60,6 +60,7 @@ pub fn run() {
             commands::get_launch_command,
             commands::mark_feature_executing,
             commands::mark_feature_ready,
+            commands::cancel_execution,
             // Validation
             commands::run_feature_validators,
             // Diff

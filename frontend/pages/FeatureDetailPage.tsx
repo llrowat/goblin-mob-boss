@@ -2,11 +2,19 @@ import React, { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useTauri } from "../hooks/useTauri";
 import { useTerminalSession } from "../hooks/useTerminalSession";
-import type { Feature, IdeationResult, TaskSpec, ExecutionMode } from "../types";
+import type {
+  Feature,
+  IdeationResult,
+  TaskSpec,
+  ExecutionMode,
+  DiffSummary,
+  VerifyResult,
+  ExecutionAnalysis,
+} from "../types";
 
 type IdeationStatus = "idle" | "running" | "done" | "error";
 
-export function IdeationPage() {
+export function FeatureDetailPage() {
   const { featureId } = useParams<{ featureId: string }>();
   const tauri = useTauri();
   const navigate = useNavigate();
@@ -33,6 +41,13 @@ export function IdeationPage() {
   // Launch
   const [launching, setLaunching] = useState(false);
 
+  // Ready-state: validation, diff, PR, analytics
+  const [diff, setDiff] = useState<DiffSummary | null>(null);
+  const [verifyResult, setVerifyResult] = useState<VerifyResult | null>(null);
+  const [verifying, setVerifying] = useState(false);
+  const [prCommand, setPrCommand] = useState("");
+  const [analysis, setAnalysis] = useState<ExecutionAnalysis | null>(null);
+
   // Load feature data
   useEffect(() => {
     if (!featureId) return;
@@ -41,11 +56,15 @@ export function IdeationPage() {
       // If already executing, restore the terminal session via context
       if (f.status === "executing" && f.pty_session_id) {
         startSession(f.id, f.pty_session_id);
-        // Load the saved plan from the feature's task_specs
         if (f.task_specs.length > 0) {
           setIdeationResult({ tasks: f.task_specs, execution_mode: null });
           setStatus("done");
         }
+      }
+      // If ready/failed, show the saved plan read-only
+      if ((f.status === "ready" || f.status === "failed") && f.task_specs.length > 0) {
+        setIdeationResult({ tasks: f.task_specs, execution_mode: null });
+        setStatus("done");
       }
     }).catch(console.error);
     tauri.getIdeationPrompt(featureId).then(setSystemPrompt).catch(() => {});
@@ -71,13 +90,27 @@ export function IdeationPage() {
     if (!featureId) return;
     // Skip if already executing (terminal session restored from feature load)
     if (terminalSession?.featureId === featureId) return;
-    tauri.pollIdeationResult(featureId).then((result) => {
-      if (result.tasks.length > 0) {
-        setIdeationResult(result);
-        setStatus("done");
-      } else {
-        startIdeation();
+    // For ready/failed features, plan is loaded from task_specs in the feature load effect
+    // Still poll in case plan.json has data, but don't start ideation if poll returns empty
+    tauri.getFeature(featureId).then((f) => {
+      if (f.status === "ready" || f.status === "failed" || f.status === "executing") {
+        // Plan already saved on feature; poll is just a fallback
+        if (f.task_specs.length > 0) {
+          setIdeationResult({ tasks: f.task_specs, execution_mode: null });
+          setStatus("done");
+        }
+        return;
       }
+      return tauri.pollIdeationResult(featureId).then((result) => {
+        if (result.tasks.length > 0) {
+          setIdeationResult(result);
+          setStatus("done");
+        } else {
+          startIdeation();
+        }
+      }).catch(() => {
+        startIdeation();
+      });
     }).catch(() => {
       startIdeation();
     });
@@ -176,6 +209,50 @@ export function IdeationPage() {
     }
   };
 
+  // Ready-state handlers
+  const handleRunValidators = async () => {
+    if (!featureId) return;
+    setVerifying(true);
+    setError("");
+    try {
+      const result = await tauri.runFeatureValidators(featureId);
+      setVerifyResult(result);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+  const handleViewDiff = async () => {
+    if (!featureId) return;
+    try {
+      setDiff(await tauri.getFeatureDiff(featureId));
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const handlePushAndPR = async () => {
+    if (!featureId) return;
+    setError("");
+    try {
+      await tauri.pushFeature(featureId);
+      setPrCommand(await tauri.getPrCommand(featureId));
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const handleAnalyze = async () => {
+    if (!featureId) return;
+    try {
+      setAnalysis(await tauri.analyzeFeatureExecution(featureId));
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
   const hasActiveTerminal = terminalSession?.featureId === featureId;
 
   if (!feature) {
@@ -188,12 +265,27 @@ export function IdeationPage() {
 
   const recommendation = ideationResult?.execution_mode;
   const isExecuting = feature.status === "executing";
+  const isReady = feature.status === "ready" || feature.status === "failed";
+  const isReadOnly = isExecuting || isReady;
+
+  const headerLabel = isExecuting
+    ? "Executing"
+    : isReady
+      ? feature.status === "ready" ? "Ready" : "Failed"
+      : "Planning";
 
   return (
     <div>
       <div className="page-header">
-        <h2>{isExecuting ? "Executing" : "Planning"}: {feature.name}</h2>
-        <p>{feature.description}</p>
+        <h2>{headerLabel}: {feature.name}</h2>
+        <p>
+          {feature.description}
+          {feature.branch && (
+            <span style={{ marginLeft: 12, fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--muted)" }}>
+              {feature.branch}
+            </span>
+          )}
+        </p>
       </div>
 
       {error && <div className="error-banner">{error}</div>}
@@ -208,7 +300,7 @@ export function IdeationPage() {
                 : "Plan"}
           </div>
           <div style={{ display: "flex", gap: 8 }}>
-            {status !== "running" && !isExecuting && (
+            {status !== "running" && !isReadOnly && (
               <button
                 className="btn btn-secondary btn-sm"
                 onClick={handleRestart}
@@ -262,8 +354,8 @@ export function IdeationPage() {
               <div className="exec-mode-selector">
                 <button
                   className={`exec-mode-option${activeMode === "teams" ? " exec-mode-active" : ""}`}
-                  onClick={() => !isExecuting && setModeOverride("teams")}
-                  style={isExecuting ? { cursor: "default" } : undefined}
+                  onClick={() => !isReadOnly && setModeOverride("teams")}
+                  style={isReadOnly ? { cursor: "default" } : undefined}
                 >
                   <div className="exec-mode-icon exec-mode-teams">
                     <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
@@ -283,8 +375,8 @@ export function IdeationPage() {
                 </button>
                 <button
                   className={`exec-mode-option${activeMode === "subagents" ? " exec-mode-active" : ""}`}
-                  onClick={() => !isExecuting && setModeOverride("subagents")}
-                  style={isExecuting ? { cursor: "default" } : undefined}
+                  onClick={() => !isReadOnly && setModeOverride("subagents")}
+                  style={isReadOnly ? { cursor: "default" } : undefined}
                 >
                   <div className="exec-mode-icon exec-mode-sub">
                     <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
@@ -324,7 +416,7 @@ export function IdeationPage() {
               <div className="jira-col-assignee">Assignee</div>
               <div className="jira-col-deps">Blocked by</div>
               <div className="jira-col-ac">AC</div>
-              {!isExecuting && <div className="jira-col-edit" />}
+              {!isReadOnly && <div className="jira-col-edit" />}
             </div>
             {ideationResult.tasks.map((spec, i) => (
               <div key={i} className="jira-row-group">
@@ -354,7 +446,7 @@ export function IdeationPage() {
                       </span>
                     )}
                   </div>
-                  {!isExecuting && (
+                  {!isReadOnly && (
                     <div className="jira-col-edit">
                       <button
                         className="jira-edit-btn"
@@ -386,7 +478,7 @@ export function IdeationPage() {
           </div>
 
           {/* Actions */}
-          {!hasActiveTerminal && !isExecuting ? (
+          {!hasActiveTerminal && !isReadOnly ? (
             <div style={{ marginTop: 16, display: "flex", gap: 8, justifyContent: "flex-end" }}>
               <button
                 className="btn btn-secondary"
@@ -405,7 +497,7 @@ export function IdeationPage() {
           ) : null}
 
           {/* Feedback form */}
-          {showFeedback && !isExecuting && (
+          {showFeedback && !isReadOnly && (
             <div style={{ marginTop: 12 }}>
               <textarea
                 className="form-textarea"
@@ -437,6 +529,197 @@ export function IdeationPage() {
         </>
       )}
       </div>
+
+      {/* Ready state: validation, diff, PR, analytics */}
+      {isReady && (
+        <>
+          <div className="panel" style={{ marginTop: 16 }}>
+            <div className="panel-title" style={{ marginBottom: 8 }}>
+              Validation & PR
+            </div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button
+                className="btn btn-secondary"
+                onClick={handleRunValidators}
+                disabled={verifying}
+              >
+                {verifying ? "Running..." : "Run Validators"}
+              </button>
+              <button className="btn btn-secondary" onClick={handleViewDiff}>
+                View Diff
+              </button>
+              <button className="btn btn-secondary" onClick={handleAnalyze}>
+                Analyze Execution
+              </button>
+              <button className="btn btn-primary" onClick={handlePushAndPR}>
+                Push & Create PR
+              </button>
+            </div>
+          </div>
+
+          {/* Execution Analysis */}
+          {analysis && (
+            <div className="panel" style={{ marginTop: 16 }}>
+              <div className="panel-title" style={{ marginBottom: 8 }}>
+                Execution Analysis
+              </div>
+              <div
+                style={{
+                  padding: "8px 12px",
+                  borderRadius: 6,
+                  marginBottom: 12,
+                  backgroundColor: analysis.mode_assessment.was_appropriate
+                    ? "rgba(107, 158, 107, 0.1)"
+                    : "rgba(196, 90, 106, 0.1)",
+                  border: `1px solid ${analysis.mode_assessment.was_appropriate ? "rgba(107, 158, 107, 0.3)" : "rgba(196, 90, 106, 0.3)"}`,
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 13,
+                    fontWeight: 600,
+                    marginBottom: 4,
+                    color: analysis.mode_assessment.was_appropriate
+                      ? "var(--success)"
+                      : "var(--danger)",
+                  }}
+                >
+                  {analysis.mode_assessment.was_appropriate
+                    ? "Good mode choice"
+                    : "Mode could be improved"}
+                </div>
+                <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5 }}>
+                  {analysis.mode_assessment.reason}
+                </div>
+                {analysis.mode_assessment.suggestion && (
+                  <div style={{ fontSize: 12, color: "var(--muted)", fontStyle: "italic", marginTop: 4 }}>
+                    Tip: {analysis.mode_assessment.suggestion}
+                  </div>
+                )}
+              </div>
+
+              <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>
+                Task coverage ({analysis.planned_task_count} planned, {analysis.files_changed} files changed):
+              </div>
+              {analysis.task_file_coverage.map((tc, i) => (
+                <div
+                  key={i}
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    alignItems: "center",
+                    padding: "4px 0",
+                    borderBottom: "1px solid var(--border)",
+                    fontSize: 12,
+                  }}
+                >
+                  <span
+                    style={{
+                      color: tc.coverage_status === "covered"
+                        ? "var(--success)"
+                        : tc.coverage_status === "partial"
+                          ? "#c9a84c"
+                          : "var(--muted)",
+                      fontWeight: 600,
+                      minWidth: 60,
+                      fontSize: 10,
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    {tc.coverage_status === "no_changes_detected" ? "No files" : tc.coverage_status}
+                  </span>
+                  <span style={{ color: "var(--text-secondary)", flex: 1 }}>{tc.task_title}</span>
+                  {tc.likely_files.length > 0 && (
+                    <span style={{ color: "var(--muted)", fontFamily: "var(--font-mono)", fontSize: 10 }}>
+                      {tc.likely_files.length} file{tc.likely_files.length !== 1 ? "s" : ""}
+                    </span>
+                  )}
+                </div>
+              ))}
+
+              {analysis.unplanned_files.length > 0 && (
+                <div style={{ marginTop: 8 }}>
+                  <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>
+                    Unplanned file changes:
+                  </div>
+                  <div style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: "#c9a84c" }}>
+                    {analysis.unplanned_files.map((f) => (
+                      <div key={f}>{f}</div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Validator results */}
+          {verifyResult && (
+            <div className="panel" style={{ marginTop: 16 }}>
+              <div className="panel-title" style={{ marginBottom: 8 }}>
+                Validation Results
+                <span
+                  style={{
+                    color: verifyResult.all_passed ? "var(--success)" : "var(--danger)",
+                    fontSize: 13,
+                    fontWeight: 400,
+                    marginLeft: 8,
+                  }}
+                >
+                  {verifyResult.all_passed ? "All passed" : "Some failed"}
+                </span>
+              </div>
+              {verifyResult.results.map((r, i) => (
+                <div key={i} style={{ padding: "8px 0", borderBottom: "1px solid var(--border)" }}>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <span style={{ color: r.success ? "var(--success)" : "var(--danger)" }}>
+                      {r.success ? "PASS" : "FAIL"}
+                    </span>
+                    <code style={{ fontSize: 12 }}>{r.command}</code>
+                  </div>
+                  {!r.success && r.stderr && (
+                    <div className="code-block" style={{ marginTop: 4, fontSize: 11 }}>
+                      {r.stderr}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Diff summary */}
+          {diff && (
+            <div className="panel" style={{ marginTop: 16 }}>
+              <div className="panel-title" style={{ marginBottom: 8 }}>
+                Diff Summary
+                <span style={{ fontSize: 12, fontWeight: 400, marginLeft: 8, fontFamily: "var(--font-mono)" }}>
+                  {diff.total_files} files{" "}
+                  <span style={{ color: "var(--success)" }}>+{diff.total_insertions}</span>{" "}
+                  <span style={{ color: "var(--danger)" }}>-{diff.total_deletions}</span>
+                </span>
+              </div>
+              <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, lineHeight: 1.6 }}>
+                {diff.files.map((f) => (
+                  <div key={f.path} style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <span style={{ color: "var(--text-secondary)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {f.path}
+                    </span>
+                    <span style={{ color: "var(--success)" }}>+{f.insertions}</span>
+                    <span style={{ color: "var(--danger)" }}>-{f.deletions}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* PR command */}
+          {prCommand && (
+            <div className="panel" style={{ marginTop: 16 }}>
+              <div className="panel-title" style={{ marginBottom: 8 }}>PR Command</div>
+              <div className="code-block">{prCommand}</div>
+            </div>
+          )}
+        </>
+      )}
 
       {/* Edit Task Dialog */}
       {editingTask !== null && editDraft && (

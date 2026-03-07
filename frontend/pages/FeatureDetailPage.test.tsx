@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { invoke } from "@tauri-apps/api/core";
-import { IdeationPage } from "./IdeationPage";
+import { FeatureDetailPage } from "./FeatureDetailPage";
 import type { Feature, IdeationResult } from "../types";
 
 // Mock the useTerminalSession hook
@@ -70,7 +70,7 @@ const emptyIdeationResult: IdeationResult = {
   execution_mode: null,
 };
 
-describe("IdeationPage", () => {
+describe("FeatureDetailPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockedInvoke.mockImplementation(async (cmd: string) => {
@@ -83,14 +83,14 @@ describe("IdeationPage", () => {
   });
 
   it("shows feature name after loading", async () => {
-    render(<IdeationPage />);
+    render(<FeatureDetailPage />);
     await waitFor(() => {
       expect(screen.getByText(/Test Feature/)).toBeInTheDocument();
     });
   });
 
   it("shows spinner while planning", async () => {
-    render(<IdeationPage />);
+    render(<FeatureDetailPage />);
     await waitFor(() => {
       expect(screen.getByText(/Planning in progress/)).toBeInTheDocument();
     });
@@ -105,7 +105,7 @@ describe("IdeationPage", () => {
       return undefined;
     });
 
-    render(<IdeationPage />);
+    render(<FeatureDetailPage />);
 
     await waitFor(() => {
       expect(screen.getByText("Add auth module")).toBeInTheDocument();
@@ -126,7 +126,7 @@ describe("IdeationPage", () => {
       return undefined;
     });
 
-    render(<IdeationPage />);
+    render(<FeatureDetailPage />);
 
     await waitFor(() => {
       expect(screen.getByText("Agent Teams")).toBeInTheDocument();
@@ -144,7 +144,7 @@ describe("IdeationPage", () => {
       return undefined;
     });
 
-    render(<IdeationPage />);
+    render(<FeatureDetailPage />);
 
     await waitFor(() => {
       expect(screen.getByText(/Request Changes/)).toBeInTheDocument();
@@ -167,7 +167,7 @@ describe("IdeationPage", () => {
       return undefined;
     });
 
-    render(<IdeationPage />);
+    render(<FeatureDetailPage />);
 
     await waitFor(() => {
       expect(screen.getByText(/Request Changes/)).toBeInTheDocument();
@@ -193,7 +193,7 @@ describe("IdeationPage", () => {
       return undefined;
     });
 
-    render(<IdeationPage />);
+    render(<FeatureDetailPage />);
 
     await waitFor(() => {
       expect(screen.getByText("Add auth module")).toBeInTheDocument();
@@ -207,7 +207,7 @@ describe("IdeationPage", () => {
   });
 
   it("shows view context toggle", async () => {
-    render(<IdeationPage />);
+    render(<FeatureDetailPage />);
     const btn = await screen.findByText("View Context");
     expect(btn).toBeInTheDocument();
   });
@@ -227,7 +227,7 @@ describe("IdeationPage", () => {
       return undefined;
     });
 
-    render(<IdeationPage />);
+    render(<FeatureDetailPage />);
 
     await waitFor(() => {
       expect(screen.getByText("Add auth module")).toBeInTheDocument();
@@ -248,6 +248,69 @@ describe("IdeationPage", () => {
     expect(mockStartSession).toHaveBeenCalledWith("f1", "launch-f1");
 
     // run_ideation should NOT have been called
+    expect(mockedInvoke).not.toHaveBeenCalledWith(
+      "run_ideation",
+      expect.anything(),
+    );
+  });
+
+  it("shows ready state with validation and PR actions", async () => {
+    const readyFeature: Feature = {
+      ...mockFeature,
+      status: "ready",
+      task_specs: mockIdeationResult.tasks,
+    };
+
+    mockedInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "get_feature") return readyFeature;
+      if (cmd === "get_ideation_prompt") return "system prompt";
+      if (cmd === "poll_ideation_result") return mockIdeationResult;
+      return undefined;
+    });
+
+    render(<FeatureDetailPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Ready: Test Feature/)).toBeInTheDocument();
+    });
+
+    // Should show validation and PR buttons
+    expect(screen.getByText("Run Validators")).toBeInTheDocument();
+    expect(screen.getByText("View Diff")).toBeInTheDocument();
+    expect(screen.getByText("Analyze Execution")).toBeInTheDocument();
+    expect(screen.getByText("Push & Create PR")).toBeInTheDocument();
+
+    // Should NOT show edit controls
+    expect(screen.queryByText(/^Launch$/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Request Changes/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Restart")).not.toBeInTheDocument();
+    expect(screen.queryAllByTitle("Edit task")).toHaveLength(0);
+
+    // Should show the plan read-only
+    expect(screen.getByText("Add auth module")).toBeInTheDocument();
+    expect(screen.getByText("Add auth UI")).toBeInTheDocument();
+  });
+
+  it("does not run ideation for ready features", async () => {
+    const readyFeature: Feature = {
+      ...mockFeature,
+      status: "ready",
+      task_specs: mockIdeationResult.tasks,
+    };
+
+    mockedInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "get_feature") return readyFeature;
+      if (cmd === "get_ideation_prompt") return "system prompt";
+      if (cmd === "poll_ideation_result") return emptyIdeationResult;
+      return undefined;
+    });
+
+    render(<FeatureDetailPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Add auth module")).toBeInTheDocument();
+    });
+
     expect(mockedInvoke).not.toHaveBeenCalledWith(
       "run_ideation",
       expect.anything(),
