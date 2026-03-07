@@ -58,9 +58,16 @@ export function useTauri() {
       invoke<void>("remove_repository", { id }),
 
     detectRepoInfo: (path: string) =>
-      invoke<{ name: string; base_branch: string }>("detect_repo_info", {
-        path,
-      }),
+      invoke<{ name: string; base_branch: string; has_claude_md: boolean }>(
+        "detect_repo_info",
+        { path },
+      ),
+
+    checkClaudeMd: (path: string) =>
+      invoke<boolean>("check_claude_md", { path }),
+
+    generateClaudeMd: (path: string) =>
+      invoke<void>("generate_claude_md", { path }),
 
     // Agents (file-based)
     listAgents: (repoPath: string) =>

@@ -93,7 +93,81 @@ pub fn detect_repo_info(path: String) -> Result<serde_json::Value, String> {
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| "unknown".to_string());
-    Ok(serde_json::json!({ "name": name, "base_branch": base_branch }))
+    let has_claude_md = has_claude_md_file(&path);
+    Ok(serde_json::json!({ "name": name, "base_branch": base_branch, "has_claude_md": has_claude_md }))
+}
+
+/// Check whether a CLAUDE.md file exists at the repo root.
+fn has_claude_md_file(repo_path: &str) -> bool {
+    Path::new(repo_path).join("CLAUDE.md").exists()
+}
+
+/// Check if CLAUDE.md exists for a given repo path.
+#[tauri::command]
+pub fn check_claude_md(path: String) -> Result<bool, String> {
+    if !Path::new(&path).exists() {
+        return Err("Path does not exist".to_string());
+    }
+    Ok(has_claude_md_file(&path))
+}
+
+/// Spawn Claude Code in --print mode to auto-generate a CLAUDE.md for the repo.
+/// Claude analyzes the codebase and writes CLAUDE.md to the repo root.
+/// Returns immediately; the frontend polls `check_claude_md` to detect completion.
+#[tauri::command]
+pub fn generate_claude_md(path: String) -> Result<(), String> {
+    use std::io::Write as IoWrite;
+
+    let repo_path = Path::new(&path);
+    if !repo_path.exists() {
+        return Err("Path does not exist".to_string());
+    }
+    if !git::is_git_repo(&path) {
+        return Err("Path is not a git repository".to_string());
+    }
+
+    let prompt = r#"Analyze this codebase and generate a CLAUDE.md file in the project root. The CLAUDE.md should contain:
+
+1. **Project overview** — what the project is, its tech stack, and structure
+2. **Development commands** — how to install dependencies, run the app, build, lint, and test
+3. **Testing requirements** — how to run tests, what frameworks are used, where test files live
+4. **Code style and conventions** — naming conventions, file organization, patterns used
+5. **Important architecture notes** — key design decisions, data flow, module boundaries
+
+Look at package.json, Cargo.toml, Makefile, pyproject.toml, or any build config files to discover commands. Look at existing code to understand conventions.
+
+Write the file to `CLAUDE.md` at the repository root. Be concise and practical — focus on what an AI coding agent needs to know to work effectively in this codebase. Do not include generic advice; only include project-specific information you can verify from the code."#;
+
+    let log_path = repo_path.join(".gmb");
+    let _ = std::fs::create_dir_all(&log_path);
+    let log_file = std::fs::File::create(log_path.join("claude-md-generation.log"))
+        .map_err(|e| format!("Failed to create log file: {}", e))?;
+    let stderr_file = log_file
+        .try_clone()
+        .map_err(|e| format!("Failed to clone log file handle: {}", e))?;
+
+    let mut cmd = std::process::Command::new("claude");
+    cmd.arg("--print")
+        .arg("--permission-mode")
+        .arg("bypassPermissions")
+        .arg("--allowedTools")
+        .arg("Read,Glob,Grep,Write")
+        .stdin(std::process::Stdio::piped())
+        .stdout(log_file)
+        .stderr(stderr_file)
+        .current_dir(&path);
+
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("Failed to start Claude: {}", e))?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        std::thread::spawn(move || {
+            let _ = stdin.write_all(prompt.as_bytes());
+        });
+    }
+
+    Ok(())
 }
 
 // ── Agent Commands (file-based) ──
@@ -1746,5 +1820,54 @@ mod tests {
     #[test]
     fn shell_quote_path_with_quotes() {
         assert_eq!(shell_quote("it's"), "'it'\\''s'");
+    }
+
+    #[test]
+    fn has_claude_md_file_returns_true_when_exists() {
+        let dir = TempDir::new().unwrap();
+        std::fs::write(dir.path().join("CLAUDE.md"), "# Project").unwrap();
+        assert!(has_claude_md_file(&dir.path().to_string_lossy()));
+    }
+
+    #[test]
+    fn has_claude_md_file_returns_false_when_missing() {
+        let dir = TempDir::new().unwrap();
+        assert!(!has_claude_md_file(&dir.path().to_string_lossy()));
+    }
+
+    #[test]
+    fn check_claude_md_returns_true_when_exists() {
+        let dir = TempDir::new().unwrap();
+        std::fs::write(dir.path().join("CLAUDE.md"), "# Project").unwrap();
+        let result = check_claude_md(dir.path().to_string_lossy().to_string());
+        assert_eq!(result.unwrap(), true);
+    }
+
+    #[test]
+    fn check_claude_md_returns_false_when_missing() {
+        let dir = TempDir::new().unwrap();
+        let result = check_claude_md(dir.path().to_string_lossy().to_string());
+        assert_eq!(result.unwrap(), false);
+    }
+
+    #[test]
+    fn check_claude_md_errors_on_bad_path() {
+        let result = check_claude_md("/nonexistent/path/xyz".to_string());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn generate_claude_md_errors_on_bad_path() {
+        let result = generate_claude_md("/nonexistent/path/xyz".to_string());
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Path does not exist"));
+    }
+
+    #[test]
+    fn generate_claude_md_errors_on_non_git_repo() {
+        let dir = TempDir::new().unwrap();
+        let result = generate_claude_md(dir.path().to_string_lossy().to_string());
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("not a git repository"));
     }
 }
