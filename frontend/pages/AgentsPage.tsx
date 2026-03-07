@@ -25,6 +25,7 @@ interface AgentFormData {
   model: string;
   system_prompt: string;
   color: string;
+  role: string;
 }
 
 const emptyForm: AgentFormData = {
@@ -35,6 +36,7 @@ const emptyForm: AgentFormData = {
   model: "",
   system_prompt: "",
   color: "#5a8a5c",
+  role: "developer",
 };
 
 export function AgentsPage() {
@@ -110,6 +112,7 @@ export function AgentsPage() {
       system_prompt: data.system_prompt.trim(),
       is_global: false,
       color: data.color,
+      role: data.role as AgentFile["role"],
     };
 
     try {
@@ -483,6 +486,7 @@ function AgentFormModal({
         model: agent.model || "",
         system_prompt: agent.system_prompt,
         color: agent.color || "#5a8a5c",
+        role: agent.role || "developer",
       };
     }
     return { ...emptyForm };
@@ -615,6 +619,25 @@ function AgentFormModal({
                 />
               </div>
             )}
+          </div>
+
+          {/* Role */}
+          <div className="form-group">
+            <label className="form-label">Role</label>
+            <select
+              className="form-input"
+              value={form.role}
+              onChange={(e) => update("role", e.target.value)}
+            >
+              <option value="developer">Developer</option>
+              <option value="quality">Quality (verifies work)</option>
+              <option value="infrastructure">Infrastructure</option>
+              <option value="documentation">Documentation</option>
+              <option value="explorer">Explorer</option>
+            </select>
+            <div className="form-help">
+              Quality agents are automatically included as verification steps in plans.
+            </div>
           </div>
 
           {/* Tools */}

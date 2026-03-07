@@ -29,6 +29,7 @@ describe("AgentsPage", () => {
       system_prompt: "You are a senior full-stack developer.",
       is_global: false,
       color: "#5a8a5c",
+      role: "developer",
     },
     {
       filename: "frontend-dev.md",
@@ -39,6 +40,7 @@ describe("AgentsPage", () => {
       system_prompt: "You are a frontend specialist.",
       is_global: true,
       color: "#5b8abd",
+      role: "developer",
     },
   ];
 
@@ -52,6 +54,7 @@ describe("AgentsPage", () => {
       system_prompt: "You are a frontend development specialist.",
       is_global: true,
       color: "#5b8abd",
+      role: "developer",
     },
     {
       filename: "test-engineer.md",
@@ -62,6 +65,7 @@ describe("AgentsPage", () => {
       system_prompt: "You are a testing specialist.",
       is_global: true,
       color: "#c9a84c",
+      role: "quality",
     },
   ];
 

@@ -22,11 +22,37 @@ The user has these agents configured:
 
 /// User prompt for ideation — passed as the positional argument to `claude`.
 /// Contains the feature description and all planning instructions.
+/// `quality_agents` is a formatted list of agents with role "quality" — when non-empty,
+/// the prompt instructs the planner to always include a verification task using them.
 pub fn ideation_user_prompt(
     description: &str,
     tasks_dir: &str,
     available_agents: &str,
+    quality_agents: &str,
 ) -> String {
+    let quality_section = if quality_agents.is_empty() {
+        String::new()
+    } else {
+        format!(
+            r#"## Code Quality Verification
+
+The following agents are designated for code quality verification:
+
+{quality_agents}
+
+**You MUST include a final verification task** in every plan that uses one or more of these quality agents to review all changes made by the other tasks. This task should:
+- Depend on all implementation tasks (so it runs last)
+- Review code for correctness, security, style consistency, and test coverage
+- Run any relevant linters or tests
+- Be assigned to the most appropriate quality agent listed above
+
+This verification step is mandatory and must not be skipped.
+
+"#,
+            quality_agents = quality_agents,
+        )
+    };
+
     format!(
         r#"I want to build the following feature:
 
@@ -111,7 +137,7 @@ After defining tasks, recommend an execution mode:
 **"teams"** — 4+ parallel tasks, different files/directories, multiple agent roles, few dependencies
 **"subagents"** — fewer tasks, sequential work, tightly coupled modules, heavy coordination needed
 
-## Rules
+{quality_section}## Rules
 
 - The ONLY files you may create are `{tasks_dir}/plan.json` or `{tasks_dir}/questions.json`.
 - Do NOT write code, tests, configuration, or any other files.
@@ -120,6 +146,7 @@ After defining tasks, recommend an execution mode:
         description = description,
         tasks_dir = tasks_dir,
         available_agents = available_agents,
+        quality_section = quality_section,
     )
 }
 
@@ -129,9 +156,10 @@ pub fn ideation_user_prompt_with_answers(
     description: &str,
     tasks_dir: &str,
     available_agents: &str,
+    quality_agents: &str,
     answers: &[crate::models::PlanningAnswer],
 ) -> String {
-    let base = ideation_user_prompt(description, tasks_dir, available_agents);
+    let base = ideation_user_prompt(description, tasks_dir, available_agents, quality_agents);
 
     let mut answers_section = String::from("\n\n---\n\n## User's Answers to Your Questions\n\n");
     for answer in answers {
@@ -266,13 +294,13 @@ mod tests {
 
     #[test]
     fn user_prompt_includes_feature_description() {
-        let prompt = ideation_user_prompt("Add user auth", "/tasks", "frontend-dev");
+        let prompt = ideation_user_prompt("Add user auth", "/tasks", "frontend-dev", "");
         assert!(prompt.contains("Add user auth"));
     }
 
     #[test]
     fn user_prompt_includes_plan_json_format() {
-        let prompt = ideation_user_prompt("desc", "/tasks", "agents");
+        let prompt = ideation_user_prompt("desc", "/tasks", "agents", "");
         assert!(prompt.contains("plan.json"));
         assert!(prompt.contains("\"tasks\""));
         assert!(prompt.contains("\"recommended\""));
@@ -280,7 +308,7 @@ mod tests {
 
     #[test]
     fn user_prompt_includes_execution_mode_guidance() {
-        let prompt = ideation_user_prompt("desc", "/tasks", "agents");
+        let prompt = ideation_user_prompt("desc", "/tasks", "agents", "");
         assert!(prompt.contains("\"teams\""));
         assert!(prompt.contains("\"subagents\""));
         assert!(prompt.contains("confidence"));
@@ -288,7 +316,7 @@ mod tests {
 
     #[test]
     fn user_prompt_includes_planning_boundaries() {
-        let prompt = ideation_user_prompt("desc", "/tasks", "agents");
+        let prompt = ideation_user_prompt("desc", "/tasks", "agents", "");
         assert!(prompt.contains("PLANNING MODE"));
         assert!(prompt.contains("must NOT implement"));
         assert!(prompt.contains("ONLY files you may create"));
@@ -296,7 +324,7 @@ mod tests {
 
     #[test]
     fn user_prompt_includes_tasks_dir() {
-        let prompt = ideation_user_prompt("desc", "/my/tasks/dir", "agents");
+        let prompt = ideation_user_prompt("desc", "/my/tasks/dir", "agents", "");
         assert!(prompt.contains("/my/tasks/dir/plan.json"));
     }
 
@@ -342,7 +370,7 @@ mod tests {
 
     #[test]
     fn user_prompt_includes_questions_json_instructions() {
-        let prompt = ideation_user_prompt("desc", "/tasks", "agents");
+        let prompt = ideation_user_prompt("desc", "/tasks", "agents", "");
         assert!(prompt.contains("questions.json"));
         assert!(prompt.contains("single_choice"));
         assert!(prompt.contains("free_text"));
@@ -363,7 +391,7 @@ mod tests {
                 answer: "Use brand colors".to_string(),
             },
         ];
-        let prompt = ideation_user_prompt_with_answers("desc", "/tasks", "agents", &answers);
+        let prompt = ideation_user_prompt_with_answers("desc", "/tasks", "agents", "", &answers);
         assert!(prompt.contains("User's Answers to Your Questions"));
         assert!(prompt.contains("Q: Which approach?"));
         assert!(prompt.contains("A: Option A"));
@@ -378,9 +406,39 @@ mod tests {
             question: "Q?".to_string(),
             answer: "A".to_string(),
         }];
-        let prompt = ideation_user_prompt_with_answers("my feature", "/tasks", "agents", &answers);
+        let prompt = ideation_user_prompt_with_answers("my feature", "/tasks", "agents", "", &answers);
         assert!(prompt.contains("my feature"));
         assert!(prompt.contains("PLANNING MODE"));
         assert!(prompt.contains("questions.json"));
+    }
+
+    #[test]
+    fn user_prompt_includes_quality_section_when_agents_present() {
+        let quality = "- **Code Reviewer** (code-reviewer): Code quality and review specialist\n- **Test Engineer** (test-engineer): Testing and quality assurance specialist";
+        let prompt = ideation_user_prompt("desc", "/tasks", "agents", quality);
+        assert!(prompt.contains("Code Quality Verification"));
+        assert!(prompt.contains("Code Reviewer"));
+        assert!(prompt.contains("Test Engineer"));
+        assert!(prompt.contains("MUST include a final verification task"));
+    }
+
+    #[test]
+    fn user_prompt_omits_quality_section_when_no_agents() {
+        let prompt = ideation_user_prompt("desc", "/tasks", "agents", "");
+        assert!(!prompt.contains("Code Quality Verification"));
+        assert!(!prompt.contains("MUST include a final verification task"));
+    }
+
+    #[test]
+    fn user_prompt_with_answers_includes_quality_section() {
+        let quality = "- **Code Reviewer** (code-reviewer)";
+        let answers = vec![crate::models::PlanningAnswer {
+            id: "q1".to_string(),
+            question: "Q?".to_string(),
+            answer: "A".to_string(),
+        }];
+        let prompt = ideation_user_prompt_with_answers("desc", "/tasks", "agents", quality, &answers);
+        assert!(prompt.contains("Code Quality Verification"));
+        assert!(prompt.contains("User's Answers to Your Questions"));
     }
 }
