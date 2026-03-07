@@ -1,6 +1,4 @@
-import { useEffect, useState } from "react";
 import { BrowserRouter, Routes, Route, NavLink } from "react-router-dom";
-import { invoke } from "@tauri-apps/api/core";
 import { HomePage } from "./pages/HomePage";
 import { FeatureDetailPage } from "./pages/FeatureDetailPage";
 import { AgentsPage } from "./pages/AgentsPage";
@@ -8,40 +6,24 @@ import { ReposPage } from "./pages/ReposPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { GuidePage } from "./pages/GuidePage";
 import { SystemMapPage } from "./pages/SystemMapPage";
-import { TerminalSessionProvider, useTerminalSession } from "./hooks/useTerminalSession";
+import { TerminalSessionProvider } from "./hooks/useTerminalSession";
+import { BackgroundPlanningProvider, useBackgroundPlanning } from "./hooks/useBackgroundPlanning";
 import { PersistentTerminal } from "./components/PersistentTerminal";
-import type { Feature } from "./types";
 
 function App() {
   return (
     <BrowserRouter>
       <TerminalSessionProvider>
-        <AppLayout />
+        <BackgroundPlanningProvider>
+          <AppLayout />
+        </BackgroundPlanningProvider>
       </TerminalSessionProvider>
     </BrowserRouter>
   );
 }
 
-function useExecutingCount() {
-  const { session } = useTerminalSession();
-  const [count, setCount] = useState(0);
-
-  useEffect(() => {
-    const poll = () => {
-      invoke<Feature[]>("list_features", { repoId: null }).then((features) => {
-        setCount(features.filter((f) => f.status === "executing").length);
-      }).catch(() => {});
-    };
-    poll();
-    const interval = setInterval(poll, 5000);
-    return () => clearInterval(interval);
-  }, [session]);
-
-  return count;
-}
-
 function AppLayout() {
-  const executingCount = useExecutingCount();
+  const { planningCount, executingCount } = useBackgroundPlanning();
 
   return (
     <div className="app-layout">
@@ -63,12 +45,20 @@ function AppLayout() {
             }
           >
             Features
-            {executingCount > 0 && (
-              <span className="sidebar-executing-badge">
-                <span className="spinner" style={{ width: 10, height: 10, borderWidth: 1.5 }} />
-                {executingCount}
-              </span>
-            )}
+            <span className="sidebar-badges">
+              {planningCount > 0 && (
+                <span className="sidebar-planning-badge" title={`${planningCount} planning`}>
+                  <span className="spinner spinner-planning" style={{ width: 10, height: 10, borderWidth: 1.5 }} />
+                  {planningCount}
+                </span>
+              )}
+              {executingCount > 0 && (
+                <span className="sidebar-executing-badge" title={`${executingCount} executing`}>
+                  <span className="spinner" style={{ width: 10, height: 10, borderWidth: 1.5 }} />
+                  {executingCount}
+                </span>
+              )}
+            </span>
           </NavLink>
           <NavLink
             to="/guide"

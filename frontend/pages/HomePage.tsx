@@ -1,11 +1,13 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTauri } from "../hooks/useTauri";
+import { useBackgroundPlanning } from "../hooks/useBackgroundPlanning";
 import type { Repository, Feature } from "../types";
 
 export function HomePage() {
   const tauri = useTauri();
   const navigate = useNavigate();
+  const { addPlanning } = useBackgroundPlanning();
   const [repos, setRepos] = useState<Repository[]>([]);
   const [selectedRepoIds, setSelectedRepoIds] = useState<string[]>([]);
   const [name, setName] = useState("");
@@ -42,6 +44,9 @@ export function HomePage() {
         name.trim(),
         description.trim(),
       );
+      // Start planning immediately in the background
+      addPlanning(feature.id);
+      tauri.runIdeation(feature.id).catch(() => {});
       setShowNewFeature(false);
       setName("");
       setDescription("");

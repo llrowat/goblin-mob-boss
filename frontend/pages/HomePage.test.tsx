@@ -9,6 +9,19 @@ vi.mock("react-router-dom", async () => {
   return { ...actual, useNavigate: () => mockNavigate };
 });
 
+const mockAddPlanning = vi.fn();
+vi.mock("../hooks/useBackgroundPlanning", () => ({
+  useBackgroundPlanning: () => ({
+    addPlanning: mockAddPlanning,
+    planningCount: 0,
+    executingCount: 0,
+    planningIds: new Set(),
+    isPlanning: () => false,
+    completedPlans: new Map(),
+    consumePlan: () => null,
+  }),
+}));
+
 const mockRepo = {
   id: "r1",
   name: "my-app",
@@ -22,6 +35,7 @@ const mockRepo = {
 describe("HomePage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockAddPlanning.mockClear();
   });
 
   it("shows empty state when no repositories exist", async () => {
@@ -258,6 +272,65 @@ describe("HomePage", () => {
     // Should have checkboxes for repo selection
     const checkboxes = screen.getAllByRole("checkbox");
     expect(checkboxes.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("auto-starts planning when a feature is created", async () => {
+    const createdFeature = {
+      id: "f-new",
+      repo_ids: ["r1"],
+      name: "New Feature",
+      description: "Build something",
+      branch: "feature/new-feature-abc1",
+      status: "ideation",
+      execution_mode: null,
+      execution_rationale: null,
+      selected_agents: [],
+      task_specs: [],
+      pty_session_id: null,
+      worktree_paths: {},
+      created_at: "2025-01-01T00:00:00Z",
+      updated_at: "2025-01-01T00:00:00Z",
+    };
+
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "list_repositories") return Promise.resolve([mockRepo]);
+      if (cmd === "list_features") return Promise.resolve([]);
+      if (cmd === "start_feature") return Promise.resolve(createdFeature);
+      if (cmd === "run_ideation") return Promise.resolve();
+      return Promise.resolve([]);
+    });
+
+    render(
+      <MemoryRouter>
+        <HomePage />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("New Feature")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText("New Feature"));
+
+    // Fill in form
+    fireEvent.change(screen.getByPlaceholderText("User Authentication"), {
+      target: { value: "New Feature" },
+    });
+    fireEvent.change(
+      screen.getByPlaceholderText(/Add user authentication/),
+      { target: { value: "Build something cool" } },
+    );
+
+    fireEvent.click(screen.getByText("Start Feature"));
+
+    await waitFor(() => {
+      // Should have called run_ideation for the created feature
+      expect(invoke).toHaveBeenCalledWith("run_ideation", { featureId: "f-new" });
+      // Should have registered with background planning tracker
+      expect(mockAddPlanning).toHaveBeenCalledWith("f-new");
+      // Should navigate to detail page
+      expect(mockNavigate).toHaveBeenCalledWith("/feature/f-new/detail");
+    });
   });
 
   it("closes modal when Cancel is clicked", async () => {
