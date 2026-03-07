@@ -48,6 +48,7 @@ const mockFeature: Feature = {
   selected_agents: [],
   task_specs: [],
   pty_session_id: null,
+  launched_command: null,
   worktree_paths: {},
   created_at: "2026-01-01T00:00:00Z",
   updated_at: "2026-01-01T00:00:00Z",
@@ -404,6 +405,54 @@ describe("FeatureDetailPage", () => {
     });
     expect(screen.getByText("Q: Which approach?")).toBeInTheDocument();
     expect(screen.getByText("A: Option A")).toBeInTheDocument();
+  });
+
+  it("shows View Command button when feature has a launched command", async () => {
+    const executingFeature: Feature = {
+      ...mockFeature,
+      status: "executing",
+      pty_session_id: "launch-f1",
+      task_specs: mockIdeationResult.tasks,
+      launched_command: "cd /tmp/repo && claude --append-system-prompt 'do stuff'",
+    };
+
+    mockedInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "get_feature") return executingFeature;
+      if (cmd === "get_ideation_prompt") return "system prompt";
+      if (cmd === "poll_ideation_result") return mockIdeationResult;
+      return undefined;
+    });
+
+    render(<FeatureDetailPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("View Command")).toBeInTheDocument();
+    });
+
+    // Click to reveal the command
+    await userEvent.click(screen.getByText("View Command"));
+    expect(screen.getByText(/claude --append-system-prompt/)).toBeInTheDocument();
+
+    // Toggle hides it
+    await userEvent.click(screen.getByText("Hide Command"));
+    expect(screen.queryByText(/claude --append-system-prompt/)).not.toBeInTheDocument();
+  });
+
+  it("does not show View Command button when no command was launched", async () => {
+    mockedInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "get_feature") return mockFeature;
+      if (cmd === "get_ideation_prompt") return "system prompt";
+      if (cmd === "poll_ideation_result") return mockIdeationResult;
+      return undefined;
+    });
+
+    render(<FeatureDetailPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Add auth module")).toBeInTheDocument();
+    });
+
+    expect(screen.queryByText("View Command")).not.toBeInTheDocument();
   });
 
   it("does not run ideation for ready features", async () => {

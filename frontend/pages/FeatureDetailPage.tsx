@@ -32,6 +32,7 @@ export function FeatureDetailPage() {
   const [feedback, setFeedback] = useState("");
   const [showFeedback, setShowFeedback] = useState(false);
   const [showContext, setShowContext] = useState(false);
+  const [showCommand, setShowCommand] = useState(false);
   // Planning questions state
   const [questions, setQuestions] = useState<PlanningQuestion[]>([]);
   const [questionAnswers, setQuestionAnswers] = useState<Record<string, string>>({});
@@ -387,6 +388,14 @@ export function FeatureDetailPage() {
                 Restart
               </button>
             )}
+            {feature.launched_command && (
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={() => setShowCommand(!showCommand)}
+              >
+                {showCommand ? "Hide Command" : "View Command"}
+              </button>
+            )}
             <button
               className="btn btn-secondary btn-sm"
               onClick={() => setShowContext(!showContext)}
@@ -499,6 +508,12 @@ export function FeatureDetailPage() {
           <p style={{ color: "var(--danger)", fontSize: 13 }}>
             Something went wrong. Try restarting.
           </p>
+        )}
+
+        {showCommand && feature.launched_command && (
+          <div className="code-block" style={{ marginTop: 12, wordBreak: "break-all" }}>
+            {feature.launched_command}
+          </div>
         )}
 
         {showContext && (
