@@ -2,7 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { invoke } from "@tauri-apps/api/core";
 import { FeatureDetailPage } from "./FeatureDetailPage";
-import type { Feature, IdeationResult } from "../types";
+import type { Feature, IdeationResult, PlanningQuestion } from "../types";
 
 // Mock the useTerminalSession hook
 const mockStartSession = vi.fn();
@@ -75,11 +75,37 @@ const mockIdeationResult: IdeationResult = {
     rationale: "Tasks can run in parallel",
     confidence: 0.9,
   },
+  questions: null,
+  answered_questions: null,
 };
 
 const emptyIdeationResult: IdeationResult = {
   tasks: [],
   execution_mode: null,
+  questions: null,
+  answered_questions: null,
+};
+
+const mockQuestions: PlanningQuestion[] = [
+  {
+    id: "q1",
+    question: "Should auth use JWT or sessions?",
+    context: "Found both patterns in the codebase",
+    options: ["JWT tokens", "Server sessions", "Both"],
+    type: "single_choice",
+  },
+  {
+    id: "q2",
+    question: "Any specific auth provider requirements?",
+    type: "free_text",
+  },
+];
+
+const mockQuestionsResult: IdeationResult = {
+  tasks: [],
+  execution_mode: null,
+  questions: mockQuestions,
+  answered_questions: null,
 };
 
 describe("FeatureDetailPage", () => {
@@ -301,6 +327,83 @@ describe("FeatureDetailPage", () => {
     // Should show the plan read-only
     expect(screen.getByText("Add auth module")).toBeInTheDocument();
     expect(screen.getByText("Add auth UI")).toBeInTheDocument();
+  });
+
+  it("shows questions when polling returns questions", async () => {
+    mockedInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "get_feature") return mockFeature;
+      if (cmd === "get_ideation_prompt") return "system prompt";
+      if (cmd === "poll_ideation_result") return mockQuestionsResult;
+      return undefined;
+    });
+
+    render(<FeatureDetailPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Should auth use JWT or sessions?")).toBeInTheDocument();
+    });
+    expect(screen.getByText("Any specific auth provider requirements?")).toBeInTheDocument();
+    expect(screen.getByText("Found both patterns in the codebase")).toBeInTheDocument();
+    expect(screen.getByText("JWT tokens")).toBeInTheDocument();
+    expect(screen.getByText("Server sessions")).toBeInTheDocument();
+    expect(screen.getByText("Submit Answers")).toBeInTheDocument();
+  });
+
+  it("submits answers and resumes planning", async () => {
+    mockedInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "get_feature") return mockFeature;
+      if (cmd === "get_ideation_prompt") return "system prompt";
+      if (cmd === "poll_ideation_result") return mockQuestionsResult;
+      if (cmd === "submit_planning_answers") return undefined;
+      return undefined;
+    });
+
+    render(<FeatureDetailPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Should auth use JWT or sessions?")).toBeInTheDocument();
+    });
+
+    // Answer the single choice question
+    await userEvent.click(screen.getByText("JWT tokens"));
+
+    // Answer the free text question
+    const textarea = screen.getByPlaceholderText("Type your answer...");
+    await userEvent.type(textarea, "Use OAuth2");
+
+    await userEvent.click(screen.getByText("Submit Answers"));
+
+    expect(mockedInvoke).toHaveBeenCalledWith("submit_planning_answers", {
+      featureId: "f1",
+      answers: [
+        { id: "q1", question: "Should auth use JWT or sessions?", answer: "JWT tokens" },
+        { id: "q2", question: "Any specific auth provider requirements?", answer: "Use OAuth2" },
+      ],
+    });
+  });
+
+  it("shows answer history when plan has answered_questions", async () => {
+    const resultWithHistory: IdeationResult = {
+      ...mockIdeationResult,
+      answered_questions: [
+        { id: "q1", question: "Which approach?", answer: "Option A" },
+      ],
+    };
+
+    mockedInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "get_feature") return mockFeature;
+      if (cmd === "get_ideation_prompt") return "system prompt";
+      if (cmd === "poll_ideation_result") return resultWithHistory;
+      return undefined;
+    });
+
+    render(<FeatureDetailPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Planning Q&A")).toBeInTheDocument();
+    });
+    expect(screen.getByText("Q: Which approach?")).toBeInTheDocument();
+    expect(screen.getByText("A: Option A")).toBeInTheDocument();
   });
 
   it("does not run ideation for ready features", async () => {

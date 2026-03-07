@@ -11,9 +11,11 @@ import type {
   DiffSummary,
   VerifyResult,
   ExecutionAnalysis,
+  PlanningQuestion,
+  PlanningAnswer,
 } from "../types";
 
-type IdeationStatus = "idle" | "running" | "done" | "error";
+type IdeationStatus = "idle" | "running" | "questions" | "done" | "error";
 
 export function FeatureDetailPage() {
   const { featureId } = useParams<{ featureId: string }>();
@@ -30,6 +32,10 @@ export function FeatureDetailPage() {
   const [feedback, setFeedback] = useState("");
   const [showFeedback, setShowFeedback] = useState(false);
   const [showContext, setShowContext] = useState(false);
+  // Planning questions state
+  const [questions, setQuestions] = useState<PlanningQuestion[]>([]);
+  const [questionAnswers, setQuestionAnswers] = useState<Record<string, string>>({});
+  const [answeredHistory, setAnsweredHistory] = useState<PlanningAnswer[]>([]);
   const [systemPrompt, setSystemPrompt] = useState("");
   const [expandedTask, setExpandedTask] = useState<number | null>(null);
 
@@ -59,13 +65,13 @@ export function FeatureDetailPage() {
       if (f.status === "executing" && f.pty_session_id) {
         startSession(f.id, f.pty_session_id);
         if (f.task_specs.length > 0) {
-          setIdeationResult({ tasks: f.task_specs, execution_mode: null });
+          setIdeationResult({ tasks: f.task_specs, execution_mode: null, questions: null, answered_questions: null });
           setStatus("done");
         }
       }
       // If ready/failed, show the saved plan read-only
       if ((f.status === "ready" || f.status === "failed") && f.task_specs.length > 0) {
-        setIdeationResult({ tasks: f.task_specs, execution_mode: null });
+        setIdeationResult({ tasks: f.task_specs, execution_mode: null, questions: null, answered_questions: null });
         setStatus("done");
       }
     }).catch(console.error);
@@ -94,12 +100,25 @@ export function FeatureDetailPage() {
     // Skip if already executing (terminal session restored from feature load)
     if (terminalSession?.featureId === featureId) return;
 
-    // Check if background planning already has a completed plan
+    // Check if background planning already has a completed plan or questions
     const bgPlan = consumePlan(featureId);
-    if (bgPlan && bgPlan.tasks.length > 0) {
-      setIdeationResult(bgPlan);
-      setStatus("done");
-      return;
+    if (bgPlan) {
+      if (bgPlan.tasks.length > 0) {
+        setIdeationResult(bgPlan);
+        if (bgPlan.answered_questions) {
+          setAnsweredHistory(bgPlan.answered_questions);
+        }
+        setStatus("done");
+        return;
+      }
+      if (bgPlan.questions && bgPlan.questions.length > 0) {
+        setQuestions(bgPlan.questions);
+        if (bgPlan.answered_questions) {
+          setAnsweredHistory(bgPlan.answered_questions);
+        }
+        setStatus("questions");
+        return;
+      }
     }
 
     // For ready/failed features, plan is loaded from task_specs in the feature load effect
@@ -108,7 +127,7 @@ export function FeatureDetailPage() {
       if (f.status === "ready" || f.status === "failed" || f.status === "executing") {
         // Plan already saved on feature; poll is just a fallback
         if (f.task_specs.length > 0) {
-          setIdeationResult({ tasks: f.task_specs, execution_mode: null });
+          setIdeationResult({ tasks: f.task_specs, execution_mode: null, questions: null, answered_questions: null });
           setStatus("done");
         }
         return;
@@ -116,7 +135,16 @@ export function FeatureDetailPage() {
       return tauri.pollIdeationResult(featureId).then((result) => {
         if (result.tasks.length > 0) {
           setIdeationResult(result);
+          if (result.answered_questions) {
+            setAnsweredHistory(result.answered_questions);
+          }
           setStatus("done");
+        } else if (result.questions && result.questions.length > 0) {
+          setQuestions(result.questions);
+          if (result.answered_questions) {
+            setAnsweredHistory(result.answered_questions);
+          }
+          setStatus("questions");
         } else if (isPlanning(featureId)) {
           // Background planning already started ideation — just poll
           setStatus("running");
@@ -146,7 +174,16 @@ export function FeatureDetailPage() {
       tauri.pollIdeationResult(featureId).then((result) => {
         if (result.tasks.length > 0) {
           setIdeationResult(result);
+          if (result.answered_questions) {
+            setAnsweredHistory(result.answered_questions);
+          }
           setStatus("done");
+        } else if (result.questions && result.questions.length > 0) {
+          setQuestions(result.questions);
+          if (result.answered_questions) {
+            setAnsweredHistory(result.answered_questions);
+          }
+          setStatus("questions");
         }
       }).catch(() => {});
     };
@@ -172,6 +209,27 @@ export function FeatureDetailPage() {
       await tauri.reviseIdeation(featureId, feedback.trim());
       setFeedback("");
       setIdeationResult(null);
+    } catch (err) {
+      setStatus("error");
+      setError(String(err));
+    }
+  };
+
+  const handleSubmitAnswers = async () => {
+    if (!featureId || questions.length === 0) return;
+    const answers: PlanningAnswer[] = questions.map((q) => ({
+      id: q.id,
+      question: q.question,
+      answer: questionAnswers[q.id] || "",
+    }));
+    setStatus("running");
+    setError("");
+    setQuestions([]);
+    setAnsweredHistory((prev) => [...prev, ...answers]);
+    try {
+      addPlanning(featureId);
+      await tauri.submitPlanningAnswers(featureId, answers);
+      setQuestionAnswers({});
     } catch (err) {
       setStatus("error");
       setError(String(err));
@@ -314,9 +372,11 @@ export function FeatureDetailPage() {
           <div className="panel-title">
             {status === "running"
               ? "Planning in progress..."
-              : status === "done" && ideationResult
-                ? `Plan (${ideationResult.tasks.length} tasks)`
-                : "Plan"}
+              : status === "questions"
+                ? "Questions from the planner"
+                : status === "done" && ideationResult
+                  ? `Plan (${ideationResult.tasks.length} tasks)`
+                  : "Plan"}
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             {status !== "running" && !isReadOnly && (
@@ -351,6 +411,90 @@ export function FeatureDetailPage() {
           </div>
         )}
 
+        {/* Planning questions UI */}
+        {status === "questions" && questions.length > 0 && (
+          <div style={{ marginTop: 12 }}>
+            <div style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 12 }}>
+              The planner has some questions before finalizing the plan.
+            </div>
+
+            {questions.map((q) => (
+              <div
+                key={q.id}
+                style={{
+                  padding: "12px 16px",
+                  marginBottom: 12,
+                  borderRadius: 6,
+                  border: "1px solid var(--border)",
+                  backgroundColor: "var(--bg-secondary)",
+                }}
+              >
+                <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>
+                  {q.question}
+                </div>
+                {q.context && (
+                  <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8, lineHeight: 1.5 }}>
+                    {q.context}
+                  </div>
+                )}
+                {q.type === "single_choice" && q.options ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 4 }}>
+                    {q.options.map((opt) => (
+                      <label
+                        key={opt}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          fontSize: 13,
+                          cursor: "pointer",
+                          padding: "4px 0",
+                        }}
+                      >
+                        <input
+                          type="radio"
+                          name={`question-${q.id}`}
+                          checked={questionAnswers[q.id] === opt}
+                          onChange={() => setQuestionAnswers((prev) => ({ ...prev, [q.id]: opt }))}
+                        />
+                        {opt}
+                      </label>
+                    ))}
+                    <input
+                      className="form-input"
+                      placeholder="Or type a custom answer..."
+                      style={{ marginTop: 4, fontSize: 12 }}
+                      value={
+                        q.options.includes(questionAnswers[q.id] || "")
+                          ? ""
+                          : questionAnswers[q.id] || ""
+                      }
+                      onChange={(e) => setQuestionAnswers((prev) => ({ ...prev, [q.id]: e.target.value }))}
+                    />
+                  </div>
+                ) : (
+                  <textarea
+                    className="form-textarea"
+                    placeholder="Type your answer..."
+                    value={questionAnswers[q.id] || ""}
+                    onChange={(e) => setQuestionAnswers((prev) => ({ ...prev, [q.id]: e.target.value }))}
+                    style={{ minHeight: 60, marginTop: 4 }}
+                  />
+                )}
+              </div>
+            ))}
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 8 }}>
+              <button
+                className="btn btn-primary"
+                onClick={handleSubmitAnswers}
+                disabled={questions.some((q) => !questionAnswers[q.id]?.trim())}
+              >
+                Submit Answers
+              </button>
+            </div>
+          </div>
+        )}
+
         {status === "error" && !error && (
           <p style={{ color: "var(--danger)", fontSize: 13 }}>
             Something went wrong. Try restarting.
@@ -362,6 +506,31 @@ export function FeatureDetailPage() {
             {systemPrompt}
           </div>
         )}
+
+      {/* Answer history — always visible when there are prior answers */}
+      {answeredHistory.length > 0 && (
+        <div style={{ marginTop: 12 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 8 }}>
+            Planning Q&A
+          </div>
+          {answeredHistory.map((a) => (
+            <div
+              key={a.id}
+              style={{
+                padding: "8px 12px",
+                marginBottom: 6,
+                borderRadius: 4,
+                border: "1px solid var(--border)",
+                fontSize: 12,
+                lineHeight: 1.5,
+              }}
+            >
+              <div style={{ fontWeight: 600, color: "var(--text-secondary)" }}>Q: {a.question}</div>
+              <div style={{ color: "var(--text-primary)", marginTop: 2 }}>A: {a.answer}</div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {status === "done" && ideationResult && ideationResult.tasks.length > 0 && (
         <>

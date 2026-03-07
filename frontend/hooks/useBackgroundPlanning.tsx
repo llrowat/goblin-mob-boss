@@ -84,11 +84,23 @@ export function BackgroundPlanningProvider({ children }: { children: React.React
               continue;
             }
 
-            // Poll for plan completion
+            // Poll for plan completion or questions
             invoke<IdeationResult>("poll_ideation_result", { featureId })
               .then((result) => {
                 if (result.tasks.length > 0) {
                   // Plan is ready - remove from planning, add to completed
+                  setPlanningIds((prev) => {
+                    const next = new Set(prev);
+                    next.delete(featureId);
+                    return next;
+                  });
+                  setCompletedPlans((prev) => {
+                    const next = new Map(prev);
+                    next.set(featureId, result);
+                    return next;
+                  });
+                } else if (result.questions && result.questions.length > 0) {
+                  // Questions pending — remove from planning so detail page handles it
                   setPlanningIds((prev) => {
                     const next = new Set(prev);
                     next.delete(featureId);

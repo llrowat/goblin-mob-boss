@@ -6,6 +6,7 @@ import type {
   TaskSpec,
   ExecutionMode,
   IdeationResult,
+  PlanningAnswer,
   VerifyResult,
   DiffSummary,
   Preferences,
@@ -163,6 +164,9 @@ export function useTauri() {
 
     reviseIdeation: (featureId: string, feedback: string) =>
       invoke<void>("revise_ideation", { featureId, feedback }),
+
+    submitPlanningAnswers: (featureId: string, answers: PlanningAnswer[]) =>
+      invoke<void>("submit_planning_answers", { featureId, answers }),
 
     // PTY
     startLaunchPty: (featureId: string, cols: number, rows: number) =>

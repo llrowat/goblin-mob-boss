@@ -63,9 +63,27 @@ export interface TaskSpec {
   agent: string;
 }
 
+export type QuestionType = "single_choice" | "free_text";
+
+export interface PlanningQuestion {
+  id: string;
+  question: string;
+  context?: string;
+  options?: string[];
+  type: QuestionType;
+}
+
+export interface PlanningAnswer {
+  id: string;
+  question: string;
+  answer: string;
+}
+
 export interface IdeationResult {
   tasks: TaskSpec[];
   execution_mode: ExecutionRecommendation | null;
+  questions: PlanningQuestion[] | null;
+  answered_questions: PlanningAnswer[] | null;
 }
 
 export interface ValidatorResult {

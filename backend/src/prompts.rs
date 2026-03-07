@@ -34,20 +34,49 @@ pub fn ideation_user_prompt(
 
 ---
 
-You are in PLANNING MODE running non-interactively. There is NO human to respond to you. You must NOT ask questions, request clarification, or wait for input. Make your best judgment on any ambiguity and proceed.
+You are in PLANNING MODE running non-interactively. There is NO human to respond to you. You cannot wait for input.
 
-Your job is to explore the codebase, understand the architecture, and create a concrete task breakdown for this feature. You must NOT implement anything — no code, no file edits, no file creation except plan.json.
+Your job is to explore the codebase, understand the architecture, and create a concrete task breakdown for this feature. You must NOT implement anything — no code, no file edits, no file creation except plan.json or questions.json.
 
 ## Your Process
 
 1. **Explore** — Read the codebase to understand architecture, patterns, and relevant files.
-2. **Plan** — Design a high-level approach for implementing the feature.
-3. **Break down** — Create concrete tasks with agent assignments.
-4. **Write** — Write plan.json and stop.
+2. **Assess** — Determine if you have enough clarity to create a solid plan, or if key decisions need user input.
+3. **Ask or Plan** — If there are important ambiguities that would materially change your approach, write `questions.json`. Otherwise, go straight to `plan.json`.
 
-CRITICAL: Do NOT ask questions. Do NOT present options for the user to choose. Do NOT say "before I proceed" or "let me know". Just explore, decide, write plan.json, and stop.
+## Asking Questions (Optional)
 
-## Output
+If — and only if — you encounter decisions that would significantly affect the plan's direction, you may write `{tasks_dir}/questions.json` to ask the user for clarification BEFORE writing plan.json:
+
+```json
+{{{{
+  "questions": [
+    {{{{
+      "id": "q1",
+      "question": "Clear, specific question?",
+      "context": "Why this matters and what you found in the codebase",
+      "options": ["Option A", "Option B", "Option C"],
+      "type": "single_choice"
+    }}}},
+    {{{{
+      "id": "q2",
+      "question": "Open-ended question?",
+      "type": "free_text"
+    }}}}
+  ]
+}}}}
+```
+
+Rules for questions:
+- Only ask when the answer would **materially change** your approach — don't ask about things you can reasonably decide yourself.
+- At most **5 questions** per round. Focus on high-impact decisions.
+- Provide `options` (with a `single_choice` type) when there are clear alternatives — this helps the user decide faster.
+- Provide `context` explaining what you found and why it matters.
+- Use `free_text` type when the answer is open-ended with no clear options.
+- After writing questions.json, say "I have some questions before planning." and stop.
+- Do NOT write both questions.json and plan.json — write one or the other.
+
+## Writing the Plan
 
 Write a single JSON file to `{tasks_dir}/plan.json`:
 
@@ -84,15 +113,38 @@ After defining tasks, recommend an execution mode:
 
 ## Rules
 
-- The ONLY file you may create is `{tasks_dir}/plan.json`.
+- The ONLY files you may create are `{tasks_dir}/plan.json` or `{tasks_dir}/questions.json`.
 - Do NOT write code, tests, configuration, or any other files.
 - Do NOT edit any existing files.
-- Do NOT ask questions or request clarification. You are running non-interactively with no human present.
-- After writing plan.json, say "The plan is ready." and stop."#,
+- After writing plan.json or questions.json, stop."#,
         description = description,
         tasks_dir = tasks_dir,
         available_agents = available_agents,
     )
+}
+
+/// User prompt variant for ideation after user has answered questions.
+/// Includes the original prompt plus the user's answers.
+pub fn ideation_user_prompt_with_answers(
+    description: &str,
+    tasks_dir: &str,
+    available_agents: &str,
+    answers: &[crate::models::PlanningAnswer],
+) -> String {
+    let base = ideation_user_prompt(description, tasks_dir, available_agents);
+
+    let mut answers_section = String::from("\n\n---\n\n## User's Answers to Your Questions\n\n");
+    for answer in answers {
+        answers_section.push_str(&format!(
+            "**Q: {}**\nA: {}\n\n",
+            answer.question, answer.answer
+        ));
+    }
+    answers_section.push_str(
+        "Use these answers to inform your plan. If you still need clarification on different topics, you may write questions.json again. Otherwise, proceed to write plan.json."
+    );
+
+    format!("{}{}", base, answers_section)
 }
 
 // ── System Map Discovery Prompts ──
@@ -239,7 +291,7 @@ mod tests {
         let prompt = ideation_user_prompt("desc", "/tasks", "agents");
         assert!(prompt.contains("PLANNING MODE"));
         assert!(prompt.contains("must NOT implement"));
-        assert!(prompt.contains("ONLY file you may create"));
+        assert!(prompt.contains("ONLY files you may create"));
     }
 
     #[test]
@@ -286,5 +338,49 @@ mod tests {
         assert!(prompt.contains("docker-compose"));
         assert!(prompt.contains("migration"));
         assert!(prompt.contains("Do NOT modify any source files"));
+    }
+
+    #[test]
+    fn user_prompt_includes_questions_json_instructions() {
+        let prompt = ideation_user_prompt("desc", "/tasks", "agents");
+        assert!(prompt.contains("questions.json"));
+        assert!(prompt.contains("single_choice"));
+        assert!(prompt.contains("free_text"));
+        assert!(prompt.contains("materially change"));
+    }
+
+    #[test]
+    fn user_prompt_with_answers_includes_answers() {
+        let answers = vec![
+            crate::models::PlanningAnswer {
+                id: "q1".to_string(),
+                question: "Which approach?".to_string(),
+                answer: "Option A".to_string(),
+            },
+            crate::models::PlanningAnswer {
+                id: "q2".to_string(),
+                question: "Color palette?".to_string(),
+                answer: "Use brand colors".to_string(),
+            },
+        ];
+        let prompt = ideation_user_prompt_with_answers("desc", "/tasks", "agents", &answers);
+        assert!(prompt.contains("User's Answers to Your Questions"));
+        assert!(prompt.contains("Q: Which approach?"));
+        assert!(prompt.contains("A: Option A"));
+        assert!(prompt.contains("Q: Color palette?"));
+        assert!(prompt.contains("A: Use brand colors"));
+    }
+
+    #[test]
+    fn user_prompt_with_answers_includes_base_prompt() {
+        let answers = vec![crate::models::PlanningAnswer {
+            id: "q1".to_string(),
+            question: "Q?".to_string(),
+            answer: "A".to_string(),
+        }];
+        let prompt = ideation_user_prompt_with_answers("my feature", "/tasks", "agents", &answers);
+        assert!(prompt.contains("my feature"));
+        assert!(prompt.contains("PLANNING MODE"));
+        assert!(prompt.contains("questions.json"));
     }
 }
