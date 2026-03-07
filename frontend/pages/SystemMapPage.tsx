@@ -12,17 +12,6 @@ import type {
 
 // ── Service type visual config ──
 
-const SERVICE_ICONS: Record<ServiceType, string> = {
-  backend: "\u2692",    // Hammer
-  frontend: "\uD83D\uDC41", // Eye
-  worker: "\u2699",     // Gear
-  gateway: "\uD83D\uDEAA", // Door
-  database: "\uD83D\uDC8E", // Gem
-  queue: "\uD83D\uDCDC", // Scroll
-  cache: "\uD83C\uDFFA", // Amphora
-  external: "\uD83C\uDF0D", // Globe
-};
-
 const SERVICE_LABELS: Record<ServiceType, string> = {
   backend: "Backend",
   frontend: "Frontend",
@@ -34,18 +23,43 @@ const SERVICE_LABELS: Record<ServiceType, string> = {
   external: "External",
 };
 
+// Short abbreviations shown inside each shape
+const SERVICE_ABBR: Record<ServiceType, string> = {
+  backend: "BE",
+  frontend: "FE",
+  worker: "WK",
+  gateway: "GW",
+  database: "DB",
+  queue: "Q",
+  cache: "CA",
+  external: "EX",
+};
+
+// Shape: "circle" or "square" (rounded)
+const SERVICE_SHAPE: Record<ServiceType, "circle" | "square"> = {
+  backend: "square",
+  frontend: "circle",
+  worker: "square",
+  gateway: "square",
+  database: "circle",
+  queue: "square",
+  cache: "circle",
+  external: "circle",
+};
+
+// All connections use dashed lines — different dash patterns like map trails
 const CONNECTION_STYLES: Record<
   ConnectionType,
   { dash: string; color: string; label: string }
 > = {
-  rest: { dash: "", color: "#b8944a", label: "REST" },
-  grpc: { dash: "", color: "#5b8abd", label: "gRPC" },
-  graphql: { dash: "8 4", color: "#9b6abf", label: "GraphQL" },
-  websocket: { dash: "2 4", color: "#5a8a5c", label: "WebSocket" },
-  event: { dash: "12 6", color: "#c4654a", label: "Event" },
-  shared_db: { dash: "4 2", color: "#d4aa5a", label: "Shared DB" },
-  file_system: { dash: "6 3", color: "#6a675f", label: "File System" },
-  ipc: { dash: "3 3", color: "#9a978f", label: "IPC" },
+  rest: { dash: "8 4", color: "#b8944a", label: "REST" },
+  grpc: { dash: "12 4", color: "#5b8abd", label: "gRPC" },
+  graphql: { dash: "6 3 2 3", color: "#9b6abf", label: "GraphQL" },
+  websocket: { dash: "3 5", color: "#5a8a5c", label: "WebSocket" },
+  event: { dash: "2 4 6 4", color: "#c4654a", label: "Event" },
+  shared_db: { dash: "10 3 3 3", color: "#d4aa5a", label: "Shared DB" },
+  file_system: { dash: "4 6", color: "#6a675f", label: "File System" },
+  ipc: { dash: "2 3", color: "#9a978f", label: "IPC" },
 };
 
 const SERVICE_COLORS: Record<ServiceType, string> = {
@@ -449,47 +463,39 @@ export function SystemMapPage() {
     const [x1, y1] = from.position;
     const [x2, y2] = to.position;
 
-    // Curved path with a slight bend
     const midX = (x1 + x2) / 2;
     const midY = (y1 + y2) / 2;
-    const dx = x2 - x1;
-    const dy = y2 - y1;
-    const perpX = -dy * 0.15;
-    const perpY = dx * 0.15;
-    const ctrlX = midX + perpX;
-    const ctrlY = midY + perpY;
 
     const style = CONNECTION_STYLES[conn.connection_type];
 
     return (
       <g key={conn.id} className="map-connection-group">
         {/* Wider invisible hit area */}
-        <path
-          d={`M ${x1} ${y1} Q ${ctrlX} ${ctrlY} ${x2} ${y2}`}
-          fill="none"
+        <line
+          x1={x1} y1={y1} x2={x2} y2={y2}
           stroke="transparent"
           strokeWidth={16}
           style={{ cursor: "pointer" }}
           onClick={() => openEditConnection(conn)}
         />
-        {/* Visible path */}
-        <path
-          d={`M ${x1} ${y1} Q ${ctrlX} ${ctrlY} ${x2} ${y2}`}
-          fill="none"
+        {/* Dotted map-trail path */}
+        <line
+          x1={x1} y1={y1} x2={x2} y2={y2}
           stroke={style.color}
-          strokeWidth={2.5}
+          strokeWidth={2}
           strokeDasharray={style.dash}
           strokeLinecap="round"
-          opacity={0.7}
+          opacity={0.6}
           className="map-trail"
+          filter="url(#sketch)"
         />
-        {/* Arrow at midpoint */}
-        <circle cx={ctrlX} cy={ctrlY} r={4} fill={style.color} opacity={0.8} />
+        {/* Small dot at midpoint */}
+        <circle cx={midX} cy={midY} r={3} fill={style.color} opacity={0.7} />
         {/* Label */}
         {conn.label && (
           <text
-            x={ctrlX}
-            y={ctrlY - 10}
+            x={midX}
+            y={midY - 10}
             textAnchor="middle"
             className="map-connection-label"
             fill={style.color}
@@ -500,8 +506,8 @@ export function SystemMapPage() {
         {/* Async indicator */}
         {!conn.sync && (
           <text
-            x={ctrlX + 8}
-            y={ctrlY + 5}
+            x={midX + 8}
+            y={midY + 5}
             className="map-async-badge"
             fill={style.color}
           >
@@ -515,8 +521,9 @@ export function SystemMapPage() {
   const renderServiceNode = (svc: MapService) => {
     const [x, y] = svc.position;
     const isSelected = selectedServiceId === svc.id;
-    const icon = SERVICE_ICONS[svc.service_type];
-    const typeLabel = SERVICE_LABELS[svc.service_type];
+    const shape = SERVICE_SHAPE[svc.service_type];
+    const abbr = SERVICE_ABBR[svc.service_type];
+    const size = 32;
 
     return (
       <g
@@ -528,81 +535,75 @@ export function SystemMapPage() {
           setSelectedServiceId(isSelected ? null : svc.id);
         }}
         style={{ cursor: dragServiceId === svc.id ? "grabbing" : "grab" }}
+        filter="url(#sketch)"
       >
-        {/* Glow ring for selected */}
+        {/* Selection ring — dashed circle */}
         {isSelected && (
+          shape === "circle" ? (
+            <circle
+              cx={x} cy={y} r={size + 8}
+              fill="none"
+              stroke={svc.color}
+              strokeWidth={1.5}
+              strokeDasharray="4 3"
+              opacity={0.6}
+            />
+          ) : (
+            <rect
+              x={x - size - 8} y={y - size - 8}
+              width={(size + 8) * 2} height={(size + 8) * 2}
+              rx={6}
+              fill="none"
+              stroke={svc.color}
+              strokeWidth={1.5}
+              strokeDasharray="4 3"
+              opacity={0.6}
+            />
+          )
+        )}
+
+        {/* Shape */}
+        {shape === "circle" ? (
           <circle
-            cx={x}
-            cy={y}
-            r={52}
-            fill="none"
+            cx={x} cy={y} r={size}
+            fill="var(--bg)"
             stroke={svc.color}
             strokeWidth={2}
-            opacity={0.5}
-            className="map-node-glow"
+            className="map-node-border"
+          />
+        ) : (
+          <rect
+            x={x - size} y={y - size}
+            width={size * 2} height={size * 2}
+            rx={6}
+            fill="var(--bg)"
+            stroke={svc.color}
+            strokeWidth={2}
+            className="map-node-border"
           />
         )}
 
-        {/* Outer circle — service border */}
-        <circle
-          cx={x}
-          cy={y}
-          r={44}
-          fill="#2a2a2e"
-          stroke={svc.color}
-          strokeWidth={3}
-          className="map-node-border"
-        />
-
-        {/* Inner fill with subtle texture feel */}
-        <circle cx={x} cy={y} r={40} fill="#1a1a1e" opacity={0.9} />
-
-        {/* Icon */}
+        {/* Abbreviation inside shape */}
         <text
-          x={x}
-          y={y - 4}
+          x={x} y={y}
           textAnchor="middle"
           dominantBaseline="central"
-          className="map-node-icon"
-          fontSize={22}
+          className="map-node-abbr"
+          fill={svc.color}
         >
-          {icon}
+          {abbr}
         </text>
 
-        {/* Service name */}
+        {/* Service name below */}
         <text
           x={x}
-          y={y + 60}
+          y={y + size + 18}
           textAnchor="middle"
           className="map-node-name"
           fill="var(--text)"
         >
           {svc.name}
         </text>
-
-        {/* Type label */}
-        <text
-          x={x}
-          y={y + 76}
-          textAnchor="middle"
-          className="map-node-type"
-          fill="var(--muted)"
-        >
-          {typeLabel}
-        </text>
-
-        {/* Data badges */}
-        {svc.owns_data.length > 0 && (
-          <text
-            x={x}
-            y={y + 90}
-            textAnchor="middle"
-            className="map-node-data"
-            fill="var(--accent-brass)"
-          >
-            {svc.owns_data.length} {svc.owns_data.length > 1 ? "datasets" : "dataset"}
-          </text>
-        )}
       </g>
     );
   };
@@ -905,9 +906,13 @@ export function SystemMapPage() {
       <div className="map-detail-panel panel">
         <div className="panel-header">
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ fontSize: 20 }}>
-              {SERVICE_ICONS[svc.service_type]}
-            </span>
+            <svg width={24} height={24} style={{ flexShrink: 0 }}>
+              {SERVICE_SHAPE[svc.service_type] === "circle" ? (
+                <circle cx={12} cy={12} r={10} fill="none" stroke={svc.color} strokeWidth={2} />
+              ) : (
+                <rect x={2} y={2} width={20} height={20} rx={4} fill="none" stroke={svc.color} strokeWidth={2} />
+              )}
+            </svg>
             <span className="panel-title">{svc.name}</span>
           </div>
           <button
@@ -1007,10 +1012,16 @@ export function SystemMapPage() {
       <div className="map-legend">
         <div className="map-legend-title">Legend</div>
         <div className="map-legend-section">
-          {Object.entries(SERVICE_ICONS).map(([type, icon]) => (
+          {(Object.keys(SERVICE_LABELS) as ServiceType[]).map((type) => (
             <div key={type} className="map-legend-item">
-              <span className="map-legend-icon">{icon}</span>
-              <span>{SERVICE_LABELS[type as ServiceType]}</span>
+              <svg width={24} height={18} style={{ flexShrink: 0 }}>
+                {SERVICE_SHAPE[type] === "circle" ? (
+                  <circle cx={12} cy={9} r={7} fill="none" stroke={SERVICE_COLORS[type]} strokeWidth={1.5} />
+                ) : (
+                  <rect x={5} y={2} width={14} height={14} rx={3} fill="none" stroke={SERVICE_COLORS[type]} strokeWidth={1.5} />
+                )}
+              </svg>
+              <span>{SERVICE_LABELS[type]}</span>
             </div>
           ))}
         </div>
@@ -1018,7 +1029,7 @@ export function SystemMapPage() {
         <div className="map-legend-section">
           {Object.entries(CONNECTION_STYLES).map(([type, style]) => (
             <div key={type} className="map-legend-item">
-              <svg width={24} height={10}>
+              <svg width={24} height={10} style={{ flexShrink: 0 }}>
                 <line
                   x1={0}
                   y1={5}
@@ -1027,6 +1038,7 @@ export function SystemMapPage() {
                   stroke={style.color}
                   strokeWidth={2}
                   strokeDasharray={style.dash}
+                  strokeLinecap="round"
                 />
               </svg>
               <span>{style.label}</span>
@@ -1251,84 +1263,42 @@ export function SystemMapPage() {
                   onMouseLeave={handleSvgMouseUp}
                   onClick={() => setSelectedServiceId(null)}
                 >
-                  {/* Parchment texture background */}
                   <defs>
-                    <filter id="parchment-noise">
+                    {/* Subtle sketch filter for hand-drawn feel */}
+                    <filter id="sketch">
                       <feTurbulence
-                        type="fractalNoise"
-                        baseFrequency="0.04"
-                        numOctaves={4}
-                        seed={42}
-                        result="noise"
+                        type="turbulence"
+                        baseFrequency="0.03"
+                        numOctaves={2}
+                        seed={7}
+                        result="warp"
                       />
-                      <feColorMatrix
-                        type="saturate"
-                        values="0"
-                        in="noise"
-                        result="grey"
-                      />
-                      <feBlend
-                        mode="multiply"
+                      <feDisplacementMap
                         in="SourceGraphic"
-                        in2="grey"
+                        in2="warp"
+                        scale={1.5}
+                        xChannelSelector="R"
+                        yChannelSelector="G"
                       />
                     </filter>
-                    <radialGradient id="map-vignette" cx="50%" cy="50%" r="70%">
-                      <stop offset="0%" stopColor="#2a2520" stopOpacity={0} />
-                      <stop offset="100%" stopColor="#1a1a1e" stopOpacity={0.8} />
-                    </radialGradient>
-                    {/* Compass rose gradient */}
-                    <linearGradient id="compass-fade" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="var(--accent-brass)" stopOpacity={0.4} />
-                      <stop offset="100%" stopColor="var(--accent-brass)" stopOpacity={0.1} />
-                    </linearGradient>
+                    {/* Dot pattern for grid background */}
+                    <pattern id="dot-grid" x="0" y="0" width="40" height="40" patternUnits="userSpaceOnUse">
+                      <circle cx="20" cy="20" r="1" fill="var(--border)" opacity="0.4" />
+                    </pattern>
                   </defs>
 
-                  {/* Map background */}
-                  <rect
-                    width="1200"
-                    height="800"
-                    fill="#2a2520"
-                    rx={12}
-                    opacity={0.6}
-                  />
+                  {/* Clean background */}
+                  <rect width="1200" height="800" fill="var(--bg)" />
 
-                  {/* Parchment texture overlay */}
-                  <rect
-                    width="1200"
-                    height="800"
-                    fill="#3d3528"
-                    rx={12}
-                    opacity={0.3}
-                    filter="url(#parchment-noise)"
-                  />
-
-                  {/* Vignette */}
-                  <rect
-                    width="1200"
-                    height="800"
-                    fill="url(#map-vignette)"
-                    rx={12}
-                  />
-
-                  {/* Compass rose (decorative) */}
-                  <g transform="translate(1100, 700)" opacity={0.25}>
-                    <line x1={0} y1={-30} x2={0} y2={30} stroke="var(--accent-brass)" strokeWidth={1.5} />
-                    <line x1={-30} y1={0} x2={30} y2={0} stroke="var(--accent-brass)" strokeWidth={1.5} />
-                    <line x1={-20} y1={-20} x2={20} y2={20} stroke="var(--accent-brass)" strokeWidth={1} />
-                    <line x1={20} y1={-20} x2={-20} y2={20} stroke="var(--accent-brass)" strokeWidth={1} />
-                    <circle cx={0} cy={0} r={4} fill="var(--accent-brass)" />
-                    <text x={0} y={-36} textAnchor="middle" fill="var(--accent-brass)" fontSize={10} fontWeight={600}>
-                      N
-                    </text>
-                  </g>
+                  {/* Dot grid */}
+                  <rect width="1200" height="800" fill="url(#dot-grid)" />
 
                   {/* Map title */}
                   <text
-                    x={40}
-                    y={40}
+                    x={32}
+                    y={36}
                     className="map-title-text"
-                    fill="var(--accent-brass)"
+                    fill="var(--muted)"
                   >
                     {activeMap.name}
                   </text>
