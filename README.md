@@ -132,6 +132,10 @@ cd backend && cargo test --lib
 npm test
 ```
 
+## Contributing
+
+Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on getting started, running tests, and submitting pull requests.
+
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE) for details.
