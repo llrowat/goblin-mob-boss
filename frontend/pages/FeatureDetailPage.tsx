@@ -5,6 +5,7 @@ import { useTerminalSession } from "../hooks/useTerminalSession";
 import { useBackgroundPlanning } from "../hooks/useBackgroundPlanning";
 import type {
   Feature,
+  Repository,
   IdeationResult,
   TaskSpec,
   ExecutionMode,
@@ -24,6 +25,7 @@ export function FeatureDetailPage() {
   const navigate = useNavigate();
   const { session: terminalSession, startSession, clearSession } = useTerminalSession();
   const { isPlanning, addPlanning, consumePlan } = useBackgroundPlanning();
+  const [repos, setRepos] = useState<Repository[]>([]);
   const [feature, setFeature] = useState<Feature | null>(null);
   const [ideationResult, setIdeationResult] = useState<IdeationResult | null>(
     null,
@@ -58,6 +60,11 @@ export function FeatureDetailPage() {
   const [verifyResult, setVerifyResult] = useState<VerifyResult | null>(null);
   const [verifying, setVerifying] = useState(false);
   const [analysis, setAnalysis] = useState<ExecutionAnalysis | null>(null);
+
+  // Load repos for name display
+  useEffect(() => {
+    tauri.listRepositories().then((r) => setRepos(r || [])).catch(() => {});
+  }, []);
 
   // Load feature data
   useEffect(() => {
@@ -97,11 +104,11 @@ export function FeatureDetailPage() {
     tauri.getIdeationPrompt(featureId).then(setSystemPrompt).catch(() => {});
   }, [featureId]);
 
-  // Auto-load execution analysis and diff when feature reaches ready/pushed/complete state
+  // Auto-load execution analysis and diff when feature reaches ready/pushed state
   useEffect(() => {
     if (!featureId) return;
     const showResults = feature?.status === "ready" || feature?.status === "failed"
-      || feature?.status === "pushed" || feature?.status === "complete";
+      || feature?.status === "pushed";
     if (!showResults) return;
     if (!analysis) {
       tauri.analyzeFeatureExecution(featureId).then(setAnalysis).catch(() => {});
@@ -532,6 +539,11 @@ export function FeatureDetailPage() {
   const isComplete = feature.status === "complete";
   const isReadOnly = isExecuting || isReady || isPushed || isComplete;
 
+  const featureRepoIds = feature.repo_ids?.length > 0 ? feature.repo_ids : feature.repo_id ? [feature.repo_id] : [];
+  const featureRepoNames = featureRepoIds
+    .map((id) => repos.find((r) => r.id === id)?.name ?? id)
+    .join(", ");
+
   const headerLabel = isExecuting
     ? "Executing"
     : isComplete
@@ -549,12 +561,28 @@ export function FeatureDetailPage() {
           <h2>{headerLabel}: {feature.name}</h2>
           <p>
             {feature.description}
+          </p>
+          <div style={{ display: "flex", gap: 16, fontSize: 12, color: "var(--muted)", fontFamily: "var(--font-mono)", marginTop: 4 }}>
+            {featureRepoNames && (
+              <span title="Repository" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                  <path d="M2 2h8v8H2z" stroke="currentColor" strokeWidth="1" />
+                  <path d="M2 5h8" stroke="currentColor" strokeWidth="1" />
+                </svg>
+                {featureRepoNames}
+              </span>
+            )}
             {feature.branch && (
-              <span style={{ marginLeft: 12, fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--muted)" }}>
+              <span title="Branch" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                  <circle cx="3" cy="3" r="1.5" stroke="currentColor" strokeWidth="1" />
+                  <circle cx="9" cy="9" r="1.5" stroke="currentColor" strokeWidth="1" />
+                  <path d="M3 4.5V7a2 2 0 0 0 2 2h2.5" stroke="currentColor" strokeWidth="1" />
+                </svg>
                 {feature.branch}
               </span>
             )}
-          </p>
+          </div>
         </div>
         {!deleteConfirm ? (
           <button
@@ -946,8 +974,8 @@ export function FeatureDetailPage() {
       )}
       </div>
 
-      {/* Execution panel for ready/pushed/complete features (when no active terminal) */}
-      {(isReady || isPushed || isComplete) && !hasActiveTerminal && feature.launched_command && (
+      {/* Execution panel for ready/pushed features (when no active terminal) */}
+      {(isReady || isPushed) && !hasActiveTerminal && feature.launched_command && (
         <div className="panel" style={{ marginTop: 16 }}>
           <div className="panel-header">
             <div className="panel-title">
@@ -987,12 +1015,30 @@ export function FeatureDetailPage() {
           instead of at the bottom of the page (App level) */}
       <div id="terminal-portal-target" />
 
-      {/* Validation & review panel — shown for ready, pushed, and complete states */}
-      {(isReady || isPushed || isComplete) && !hasActiveTerminal && (
+      {/* Complete state — simple confirmation */}
+      {isComplete && (
+        <div className="panel" style={{ marginTop: 16, opacity: 0.7 }}>
+          <div className="panel-header">
+            <div className="panel-title">
+              <span
+                className="status-dot"
+                style={{ backgroundColor: "var(--success)", marginRight: 8 }}
+              />
+              Complete
+            </div>
+          </div>
+          <div style={{ fontSize: 12, color: "var(--muted)", padding: "8px 0" }}>
+            This feature is done. The worktree has been cleaned up.
+          </div>
+        </div>
+      )}
+
+      {/* Validation & review panel — shown for ready and pushed states */}
+      {(isReady || isPushed) && !hasActiveTerminal && (
         <div className="panel" style={{ marginTop: 16 }}>
           <div className="panel-header">
             <div className="panel-title">
-              {isComplete ? "Summary" : isPushed ? "Pushed" : "Validation & PR"}
+              {isPushed ? "Pushed" : "Validation & PR"}
             </div>
             <div style={{ display: "flex", gap: 8 }}>
               {!isComplete && !isPushed && (
