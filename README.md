@@ -25,10 +25,6 @@ A desktop app for agent-based AI development workflows. Configure agents, plan f
 - **Launch command generation** — GMB builds the appropriate Claude Code command with environment variables, agent configs, and system prompts for the chosen execution mode
 - **Feature lifecycle** — Features progress through statuses: Ideation → Configuring → Executing → Ready (or Failed)
 
-### Guide & Built-in Agents
-- **Built-in agents** — Starter agents for common roles: Frontend Developer, Backend Developer, Test Engineer, Code Reviewer, DevOps Engineer, Documentation Writer. Shown as greyed-out cards in the Agents page; one-click add to any repository.
-- **Feature recipes** — Pre-built task breakdowns for common patterns: CRUD API Endpoint, New UI Page, Full-Stack Feature, Refactor Module. Each recipe includes suggested execution mode and agent assignments.
-
 ### Execution Observability
 - **Live progress tracking** — During execution, GMB polls git activity on the feature branch showing: commit count, files changed, insertions/deletions, recent commit messages, and active file list
 - **Guidance notes** — Send mid-execution notes (info, important, critical) that are written to the feature directory where the agent can read them. Enables course correction without restarting execution.
@@ -92,7 +88,7 @@ goblin-mob-boss/
 │   └── tauri.conf.json
 ├── frontend/           # React (TypeScript) frontend
 │   ├── components/     # AddRepoModal, StatusBadge, Terminal
-│   ├── pages/          # HomePage, IdeationPage, LaunchConfigPage, FeatureStatusPage, GuidePage, AgentsPage, ReposPage, SettingsPage, SystemMapPage
+│   ├── pages/          # HomePage, IdeationPage, LaunchConfigPage, FeatureStatusPage, AgentsPage, ReposPage, SettingsPage, SystemMapPage
 │   ├── hooks/          # useTauri (IPC wrapper)
 │   ├── types/          # TypeScript type definitions
 │   ├── test/           # Vitest setup

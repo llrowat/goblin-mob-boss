@@ -4,7 +4,6 @@ import { FeatureDetailPage } from "./pages/FeatureDetailPage";
 import { AgentsPage } from "./pages/AgentsPage";
 import { ReposPage } from "./pages/ReposPage";
 import { SettingsPage } from "./pages/SettingsPage";
-import { GuidePage } from "./pages/GuidePage";
 import { SystemMapPage } from "./pages/SystemMapPage";
 import { TerminalSessionProvider } from "./hooks/useTerminalSession";
 import { BackgroundPlanningProvider, useBackgroundPlanning } from "./hooks/useBackgroundPlanning";
@@ -60,14 +59,6 @@ function AppLayout() {
               )}
             </span>
           </NavLink>
-          <NavLink
-            to="/guide"
-            className={({ isActive }) =>
-              `sidebar-nav-item ${isActive ? "active" : ""}`
-            }
-          >
-            Guide
-          </NavLink>
           <div className="sidebar-section-label">Settings</div>
           <NavLink
             to="/agents"
@@ -111,7 +102,6 @@ function AppLayout() {
             path="/feature/:featureId/detail"
             element={<FeatureDetailPage />}
           />
-<Route path="/guide" element={<GuidePage />} />
           <Route path="/map" element={<SystemMapPage />} />
           <Route path="/agents" element={<AgentsPage />} />
           <Route path="/repos" element={<ReposPage />} />
