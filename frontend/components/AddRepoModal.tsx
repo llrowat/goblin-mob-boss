@@ -22,6 +22,8 @@ export function AddRepoModal({ onClose, onAdded }: Props) {
   const [similarRepoIds, setSimilarRepoIds] = useState<string[]>([]);
   const [existingRepos, setExistingRepos] = useState<Repository[]>([]);
 
+  // Repo emptiness state
+  const [isRepoEmpty, setIsRepoEmpty] = useState(false);
   // CLAUDE.md state
   const [hasClaudeMd, setHasClaudeMd] = useState(false);
   const [generatingClaudeMd, setGeneratingClaudeMd] = useState(false);
@@ -40,6 +42,7 @@ export function AddRepoModal({ onClose, onAdded }: Props) {
     if (selected) {
       setPath(selected as string);
       setDetected(false);
+      setIsRepoEmpty(false);
       setHasClaudeMd(false);
       setGeneratingClaudeMd(false);
       setClaudeMdGenerated(false);
@@ -54,6 +57,7 @@ export function AddRepoModal({ onClose, onAdded }: Props) {
       setName(info.name);
       setBaseBranch(info.base_branch);
       setHasClaudeMd(info.has_claude_md);
+      setIsRepoEmpty(info.is_empty ?? false);
       setDetected(true);
     } catch (e) {
       setError(String(e));
@@ -144,6 +148,7 @@ export function AddRepoModal({ onClose, onAdded }: Props) {
               onChange={(e) => {
                 setPath(e.target.value);
                 setDetected(false);
+                setIsRepoEmpty(false);
                 setHasClaudeMd(false);
                 setGeneratingClaudeMd(false);
                 setClaudeMdGenerated(false);
@@ -161,91 +166,93 @@ export function AddRepoModal({ onClose, onAdded }: Props) {
 
         {detected && (
           <>
-            {/* CLAUDE.md status */}
-            <div
-              className="form-group"
-              style={{
-                padding: "10px 12px",
-                background: hasClaudeMd
-                  ? "rgba(90,138,92,0.1)"
-                  : "rgba(184,148,74,0.1)",
-                borderRadius: 6,
-                border: `1px solid ${hasClaudeMd ? "var(--success)" : "var(--warning)"}`,
-              }}
-            >
-              {hasClaudeMd ? (
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span
-                    style={{
-                      color: "var(--success)",
-                      fontWeight: 600,
-                      fontSize: 13,
-                    }}
-                  >
-                    CLAUDE.md found
-                  </span>
-                  {claudeMdGenerated && (
-                    <span
-                      style={{ color: "var(--text-secondary)", fontSize: 12 }}
-                    >
-                      — fresh loot from the goblins
-                    </span>
-                  )}
-                </div>
-              ) : generatingClaudeMd ? (
-                <div style={{ fontSize: 13 }}>
-                  <span style={{ color: "var(--warning)", fontWeight: 600 }}>
-                    Generating CLAUDE.md...
-                  </span>
-                  <span
-                    style={{
-                      color: "var(--text-secondary)",
-                      marginLeft: 8,
-                      fontSize: 12,
-                    }}
-                  >
-                    Goblins exploring the lair
-                  </span>
-                </div>
-              ) : (
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                  }}
-                >
-                  <div>
+            {/* CLAUDE.md status — skip for empty repos (nothing to analyze) */}
+            {!isRepoEmpty && (
+              <div
+                className="form-group"
+                style={{
+                  padding: "10px 12px",
+                  background: hasClaudeMd
+                    ? "rgba(90,138,92,0.1)"
+                    : "rgba(184,148,74,0.1)",
+                  borderRadius: 6,
+                  border: `1px solid ${hasClaudeMd ? "var(--success)" : "var(--warning)"}`,
+                }}
+              >
+                {hasClaudeMd ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <span
                       style={{
-                        color: "var(--warning)",
+                        color: "var(--success)",
                         fontWeight: 600,
                         fontSize: 13,
                       }}
                     >
-                      No CLAUDE.md
+                      CLAUDE.md found
                     </span>
-                    <div
+                    {claudeMdGenerated && (
+                      <span
+                        style={{ color: "var(--text-secondary)", fontSize: 12 }}
+                      >
+                        — fresh loot from the goblins
+                      </span>
+                    )}
+                  </div>
+                ) : generatingClaudeMd ? (
+                  <div style={{ fontSize: 13 }}>
+                    <span style={{ color: "var(--warning)", fontWeight: 600 }}>
+                      Generating CLAUDE.md...
+                    </span>
+                    <span
                       style={{
                         color: "var(--text-secondary)",
+                        marginLeft: 8,
                         fontSize: 12,
-                        marginTop: 2,
                       }}
                     >
-                      Your mob works better with a CLAUDE.md — it tells agents
-                      how the lair is set up.
-                    </div>
+                      Goblins exploring the lair
+                    </span>
                   </div>
-                  <button
-                    className="btn btn-primary btn-sm"
-                    onClick={handleGenerateClaudeMd}
-                    style={{ whiteSpace: "nowrap", marginLeft: 12 }}
+                ) : (
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                    }}
                   >
-                    Generate
-                  </button>
-                </div>
-              )}
-            </div>
+                    <div>
+                      <span
+                        style={{
+                          color: "var(--warning)",
+                          fontWeight: 600,
+                          fontSize: 13,
+                        }}
+                      >
+                        No CLAUDE.md
+                      </span>
+                      <div
+                        style={{
+                          color: "var(--text-secondary)",
+                          fontSize: 12,
+                          marginTop: 2,
+                        }}
+                      >
+                        Your mob works better with a CLAUDE.md — it tells agents
+                        how the lair is set up.
+                      </div>
+                    </div>
+                    <button
+                      className="btn btn-primary btn-sm"
+                      onClick={handleGenerateClaudeMd}
+                      style={{ whiteSpace: "nowrap", marginLeft: 12 }}
+                    >
+                      Generate
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="form-group">
               <label className="form-label">Name</label>

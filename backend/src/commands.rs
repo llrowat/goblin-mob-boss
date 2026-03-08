@@ -108,7 +108,8 @@ pub fn detect_repo_info(path: String) -> Result<serde_json::Value, String> {
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| "unknown".to_string());
     let has_claude_md = has_claude_md_file(&path);
-    Ok(serde_json::json!({ "name": name, "base_branch": base_branch, "has_claude_md": has_claude_md }))
+    let is_empty = git::is_repo_empty(&path);
+    Ok(serde_json::json!({ "name": name, "base_branch": base_branch, "has_claude_md": has_claude_md, "is_empty": is_empty }))
 }
 
 /// Check whether a CLAUDE.md file exists at the repo root.
@@ -138,6 +139,9 @@ pub fn generate_claude_md(path: String) -> Result<(), String> {
     }
     if !git::is_git_repo(&path) {
         return Err("Path is not a git repository".to_string());
+    }
+    if git::is_repo_empty(&path) {
+        return Err("Cannot generate CLAUDE.md for an empty repository — there's nothing to analyze yet".to_string());
     }
 
     let prompt = r#"Analyze this codebase and generate a lean CLAUDE.md file in the project root. Keep it focused — only include what an AI coding agent actually needs to work here. No filler, no generic advice.
@@ -2390,6 +2394,35 @@ mod tests {
         let result = generate_claude_md(dir.path().to_string_lossy().to_string());
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("not a git repository"));
+    }
+
+    #[test]
+    fn generate_claude_md_errors_on_empty_repo() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().to_string_lossy().to_string();
+        // git init creates a repo with no commits
+        std::process::Command::new("git")
+            .args(["init", "-b", "main"])
+            .current_dir(dir.path())
+            .output()
+            .expect("git init failed");
+        let result = generate_claude_md(path);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("empty repository"));
+    }
+
+    #[test]
+    fn detect_repo_info_reports_empty_repo() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().to_string_lossy().to_string();
+        std::process::Command::new("git")
+            .args(["init", "-b", "main"])
+            .current_dir(dir.path())
+            .output()
+            .expect("git init failed");
+        let result = detect_repo_info(path).unwrap();
+        assert_eq!(result["is_empty"], true);
+        assert_eq!(result["has_claude_md"], false);
     }
 
     #[test]

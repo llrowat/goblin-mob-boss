@@ -144,6 +144,62 @@ describe("AddRepoModal", () => {
     });
   });
 
+  it("hides CLAUDE.md section for empty repos", async () => {
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "list_repositories") return Promise.resolve([]);
+      if (cmd === "detect_repo_info")
+        return Promise.resolve({
+          name: "empty-project",
+          base_branch: "main",
+          has_claude_md: false,
+          is_empty: true,
+        });
+      return Promise.resolve(undefined);
+    });
+
+    render(<AddRepoModal onClose={onClose} onAdded={onAdded} />);
+
+    fireEvent.change(screen.getByPlaceholderText("/home/user/my-project"), {
+      target: { value: "/some/empty/path" },
+    });
+    fireEvent.click(screen.getByText("Detect"));
+
+    await waitFor(() => {
+      // Form fields should still appear
+      expect(screen.getByDisplayValue("empty-project")).toBeInTheDocument();
+      // But CLAUDE.md section should not
+      expect(screen.queryByText("No CLAUDE.md")).not.toBeInTheDocument();
+      expect(screen.queryByText("CLAUDE.md found")).not.toBeInTheDocument();
+      expect(screen.queryByText("Generate")).not.toBeInTheDocument();
+    });
+  });
+
+  it("shows CLAUDE.md section for non-empty repos without CLAUDE.md", async () => {
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "list_repositories") return Promise.resolve([]);
+      if (cmd === "detect_repo_info")
+        return Promise.resolve({
+          name: "my-project",
+          base_branch: "main",
+          has_claude_md: false,
+          is_empty: false,
+        });
+      return Promise.resolve(undefined);
+    });
+
+    render(<AddRepoModal onClose={onClose} onAdded={onAdded} />);
+
+    fireEvent.change(screen.getByPlaceholderText("/home/user/my-project"), {
+      target: { value: "/some/path" },
+    });
+    fireEvent.click(screen.getByText("Detect"));
+
+    await waitFor(() => {
+      expect(screen.getByText("No CLAUDE.md")).toBeInTheDocument();
+      expect(screen.getByText("Generate")).toBeInTheDocument();
+    });
+  });
+
   it("shows similar repos checkboxes after detection when repos exist", async () => {
     vi.mocked(invoke).mockImplementation((cmd: string) => {
       if (cmd === "list_repositories")

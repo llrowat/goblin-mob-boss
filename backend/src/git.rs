@@ -192,6 +192,11 @@ pub fn parse_numstat(output: &str) -> Vec<(String, u32, u32)> {
     files
 }
 
+/// Check if a git repo is empty (has no commits).
+pub fn is_repo_empty(repo_path: &str) -> bool {
+    run_git(repo_path, &["rev-parse", "HEAD"]).is_err()
+}
+
 pub fn get_default_branch(repo_path: &str) -> GitResult<String> {
     for branch in &["main", "master"] {
         if run_git(repo_path, &["rev-parse", "--verify", branch]).is_ok() {
@@ -406,6 +411,21 @@ mod tests {
         assert_eq!(wts_after.len(), wts_before.len() + 1);
 
         cleanup_feature_worktrees(&repo_path, "feat-789").unwrap();
+    }
+
+    #[test]
+    fn is_repo_empty_true_for_no_commits() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().to_string_lossy().to_string();
+        run_git_raw(&path, &["init", "-b", "main"]);
+        assert!(is_repo_empty(&path));
+    }
+
+    #[test]
+    fn is_repo_empty_false_after_commit() {
+        let dir = TempDir::new().unwrap();
+        let path = init_test_repo(&dir);
+        assert!(!is_repo_empty(&path));
     }
 
     #[test]
