@@ -33,6 +33,7 @@ When working on tasks:
             is_global: true,
             color: "#5b8abd".to_string(),
             role: "developer".to_string(),
+            enabled: true,
         },
         AgentFile {
             filename: "backend-developer.md".to_string(),
@@ -59,6 +60,7 @@ When working on tasks:
             is_global: true,
             color: "#6b9e6b".to_string(),
             role: "developer".to_string(),
+            enabled: true,
         },
         AgentFile {
             filename: "test-engineer.md".to_string(),
@@ -85,6 +87,7 @@ When working on tasks:
             is_global: true,
             color: "#c9a84c".to_string(),
             role: "quality".to_string(),
+            enabled: true,
         },
         AgentFile {
             filename: "code-reviewer.md".to_string(),
@@ -110,6 +113,7 @@ When reviewing code:
             is_global: true,
             color: "#9b6b9e".to_string(),
             role: "quality".to_string(),
+            enabled: true,
         },
         AgentFile {
             filename: "devops-engineer.md".to_string(),
@@ -136,6 +140,7 @@ When working on tasks:
             is_global: true,
             color: "#c45a6a".to_string(),
             role: "infrastructure".to_string(),
+            enabled: true,
         },
         AgentFile {
             filename: "documentation-writer.md".to_string(),
@@ -161,6 +166,7 @@ When working on tasks:
             is_global: true,
             color: "#7ba3cc".to_string(),
             role: "documentation".to_string(),
+            enabled: true,
         },
         AgentFile {
             filename: "repo-explorer.md".to_string(),
@@ -216,6 +222,7 @@ Produce a single JSON object with the exact schema requested. Be thorough but pr
             is_global: true,
             color: "#d4aa5a".to_string(),
             role: "explorer".to_string(),
+            enabled: true,
         },
     ]
 }

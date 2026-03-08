@@ -1261,6 +1261,56 @@ body {
   gap: 6px;
 }
 
+/* Agent disabled state */
+.agent-card-disabled {
+  opacity: 0.5;
+}
+
+/* Agent toggle switch */
+.agent-toggle {
+  position: relative;
+  display: inline-block;
+  width: 36px;
+  height: 20px;
+  margin-left: auto;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.agent-toggle input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.agent-toggle-slider {
+  position: absolute;
+  inset: 0;
+  background: var(--bg-tertiary, #333);
+  border-radius: 10px;
+  transition: background 0.2s;
+}
+
+.agent-toggle-slider::before {
+  content: "";
+  position: absolute;
+  height: 14px;
+  width: 14px;
+  left: 3px;
+  bottom: 3px;
+  background: white;
+  border-radius: 50%;
+  transition: transform 0.2s;
+}
+
+.agent-toggle input:checked + .agent-toggle-slider {
+  background: var(--accent, #5a8a5c);
+}
+
+.agent-toggle input:checked + .agent-toggle-slider::before {
+  transform: translateX(16px);
+}
+
 /* Agent Form Modal */
 .agent-form-modal {
   max-width: 640px;

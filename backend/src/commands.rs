@@ -340,11 +340,13 @@ pub fn start_feature(
         )
     };
 
-    let agent_list: String = all_agents.iter().map(&format_agent).collect::<Vec<_>>().join("\n");
-    let quality_agent_list: String = all_agents
+    // Exclude disabled agents from ideation
+    let enabled_agents: Vec<&AgentFile> = all_agents.iter().filter(|a| a.enabled).collect();
+    let agent_list: String = enabled_agents.iter().map(|a| format_agent(a)).collect::<Vec<_>>().join("\n");
+    let quality_agent_list: String = enabled_agents
         .iter()
         .filter(|a| a.role == "quality")
-        .map(&format_agent)
+        .map(|a| format_agent(a))
         .collect::<Vec<_>>()
         .join("\n");
 
@@ -1300,12 +1302,15 @@ fn build_agent_lists(repos: &[Repository]) -> (String, String) {
         )
     };
 
-    let agent_list = all_agents.iter().map(&format_agent).collect::<Vec<_>>().join("\n");
+    // Exclude disabled agents from ideation
+    let enabled_agents: Vec<&AgentFile> = all_agents.iter().filter(|a| a.enabled).collect();
 
-    let quality_list = all_agents
+    let agent_list = enabled_agents.iter().map(|a| format_agent(a)).collect::<Vec<_>>().join("\n");
+
+    let quality_list = enabled_agents
         .iter()
         .filter(|a| a.role == "quality")
-        .map(&format_agent)
+        .map(|a| format_agent(a))
         .collect::<Vec<_>>()
         .join("\n");
 

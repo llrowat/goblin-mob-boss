@@ -98,6 +98,7 @@ export function AgentsPage() {
       is_global: true,
       color: data.color,
       role: data.role as AgentFile["role"],
+      enabled: modalAgent ? modalAgent.enabled : true,
     };
 
     try {
@@ -114,6 +115,16 @@ export function AgentsPage() {
     try {
       await tauri.deleteGlobalAgent(filename);
       setDeleteConfirm(null);
+      loadAgents();
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const handleToggleEnabled = async (agent: AgentFile) => {
+    setError("");
+    try {
+      await tauri.saveGlobalAgent({ ...agent, enabled: !agent.enabled });
       loadAgents();
     } catch (e) {
       setError(String(e));
@@ -174,6 +185,7 @@ export function AgentsPage() {
               onConfirmDelete={() => handleRemove(agent.filename)}
               deleteConfirm={deleteConfirm === agent.filename}
               onCancelDelete={() => setDeleteConfirm(null)}
+              onToggleEnabled={() => handleToggleEnabled(agent)}
             />
           ))}
         </div>
@@ -232,6 +244,7 @@ function AgentCard({
   onConfirmDelete,
   deleteConfirm,
   onCancelDelete,
+  onToggleEnabled,
 }: {
   agent: AgentFile;
   onEdit: () => void;
@@ -239,9 +252,11 @@ function AgentCard({
   onConfirmDelete: (() => void) | undefined;
   deleteConfirm: boolean;
   onCancelDelete: (() => void) | undefined;
+  onToggleEnabled: () => void;
 }) {
+  const disabled = agent.enabled === false;
   return (
-    <div className="agent-card">
+    <div className={`agent-card${disabled ? " agent-card-disabled" : ""}`}>
       <div
         className="agent-card-color-bar"
         style={{ background: agent.color || "#5a8a5c" }}
@@ -263,6 +278,17 @@ function AgentCard({
               )}
             </div>
           </div>
+          <label
+            className="agent-toggle"
+            title={disabled ? "Enable agent" : "Disable agent"}
+          >
+            <input
+              type="checkbox"
+              checked={agent.enabled !== false}
+              onChange={onToggleEnabled}
+            />
+            <span className="agent-toggle-slider" />
+          </label>
         </div>
         {agent.description && (
           <div

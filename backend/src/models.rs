@@ -61,6 +61,10 @@ pub struct AgentFile {
     /// Quality agents are automatically included as verification steps in planning.
     #[serde(default = "default_agent_role")]
     pub role: String,
+    /// Whether this agent is enabled for task assignment. Disabled agents are still
+    /// listed in the UI but excluded from ideation and launch.
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
 }
 
 fn default_agent_color() -> String {
@@ -69,6 +73,10 @@ fn default_agent_color() -> String {
 
 fn default_agent_role() -> String {
     "developer".to_string()
+}
+
+fn default_enabled() -> bool {
+    true
 }
 
 impl AgentFile {
@@ -91,6 +99,7 @@ impl AgentFile {
                 is_global: false,
                 color: default_agent_color(),
                 role: default_agent_role(),
+                enabled: default_enabled(),
             });
         }
 
@@ -109,6 +118,7 @@ impl AgentFile {
         let mut model = None;
         let mut color = default_agent_color();
         let mut role = default_agent_role();
+        let mut enabled = default_enabled();
 
         for line in frontmatter.lines() {
             let line = line.trim();
@@ -125,6 +135,7 @@ impl AgentFile {
                     "model" => model = Some(value.to_string()),
                     "color" => color = value.to_string(),
                     "role" => role = value.to_string(),
+                    "enabled" => enabled = value != "false",
                     _ => {}
                 }
             }
@@ -147,6 +158,7 @@ impl AgentFile {
             is_global: false,
             color,
             role,
+            enabled,
         })
     }
 
@@ -168,6 +180,9 @@ impl AgentFile {
         }
         if self.role != default_agent_role() {
             fm.push_str(&format!("role: \"{}\"\n", self.role));
+        }
+        if !self.enabled {
+            fm.push_str("enabled: \"false\"\n");
         }
         fm.push_str("---\n\n");
         fm.push_str(&self.system_prompt);
@@ -795,6 +810,7 @@ You are a frontend specialist. Focus on UI components, styling, and accessibilit
             is_global: false,
             color: default_agent_color(),
             role: default_agent_role(),
+            enabled: true,
         };
         let md = agent.to_markdown();
         let parsed = AgentFile::parse("test-writer.md", &md).unwrap();
@@ -958,6 +974,7 @@ You are a backend developer."#;
             is_global: false,
             color: "#c45a6a".to_string(),
             role: default_agent_role(),
+            enabled: true,
         };
         let md = agent.to_markdown();
         assert!(md.contains("color: \"#c45a6a\""));
@@ -977,6 +994,7 @@ You are a backend developer."#;
             is_global: false,
             color: "#5a8a5c".to_string(),
             role: default_agent_role(),
+            enabled: true,
         };
         let md = agent.to_markdown();
         assert!(!md.contains("color:"));
@@ -1026,6 +1044,7 @@ You develop."#;
             is_global: false,
             color: default_agent_color(),
             role: "quality".to_string(),
+            enabled: true,
         };
         let md = agent.to_markdown();
         assert!(md.contains("role: \"quality\""));
@@ -1045,9 +1064,79 @@ You develop."#;
             is_global: false,
             color: default_agent_color(),
             role: default_agent_role(),
+            enabled: true,
         };
         let md = agent.to_markdown();
         assert!(!md.contains("role:"));
+    }
+
+    // ── Enabled Tests ──
+
+    #[test]
+    fn agent_file_parse_with_enabled_false() {
+        let content = r#"---
+name: "Disabled Agent"
+enabled: "false"
+---
+
+You are disabled."#;
+        let agent = AgentFile::parse("disabled.md", content).unwrap();
+        assert!(!agent.enabled);
+    }
+
+    #[test]
+    fn agent_file_parse_without_enabled_defaults_true() {
+        let content = r#"---
+name: "Normal Agent"
+---
+
+You are enabled by default."#;
+        let agent = AgentFile::parse("normal.md", content).unwrap();
+        assert!(agent.enabled);
+    }
+
+    #[test]
+    fn agent_file_no_frontmatter_defaults_enabled() {
+        let agent = AgentFile::parse("test.md", "Just a prompt.").unwrap();
+        assert!(agent.enabled);
+    }
+
+    #[test]
+    fn agent_file_roundtrip_disabled() {
+        let agent = AgentFile {
+            filename: "disabled.md".to_string(),
+            name: "Disabled".to_string(),
+            description: String::new(),
+            tools: None,
+            model: None,
+            system_prompt: "prompt".to_string(),
+            is_global: false,
+            color: default_agent_color(),
+            role: default_agent_role(),
+            enabled: false,
+        };
+        let md = agent.to_markdown();
+        assert!(md.contains("enabled: \"false\""));
+        let parsed = AgentFile::parse("disabled.md", &md).unwrap();
+        assert!(!parsed.enabled);
+    }
+
+    #[test]
+    fn agent_file_enabled_true_not_written_to_markdown() {
+        let agent = AgentFile {
+            filename: "default.md".to_string(),
+            name: "Default".to_string(),
+            description: String::new(),
+            tools: None,
+            model: None,
+            system_prompt: "prompt".to_string(),
+            is_global: false,
+            color: default_agent_color(),
+            role: default_agent_role(),
+            enabled: true,
+        };
+        let md = agent.to_markdown();
+        assert!(!md.contains("enabled:"));
     }
 
     // ── System Map Tests ──
