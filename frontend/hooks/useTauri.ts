@@ -261,6 +261,9 @@ export function useTauri() {
     startMapDiscovery: (mapId: string, repoIds: string[]) =>
       invoke<string>("start_map_discovery", { mapId, repoIds }),
 
+    startDiscoveryPty: (mapId: string, repoIds: string[], cols: number, rows: number) =>
+      invoke<string>("start_discovery_pty", { mapId, repoIds, cols, rows }),
+
     pollMapDiscovery: (mapId: string, repoIds: string[]) =>
       invoke<DiscoveryStatus>("poll_map_discovery", { mapId, repoIds }),
   };

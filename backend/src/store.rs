@@ -639,8 +639,6 @@ mod tests {
             runtime: "rust".to_string(),
             framework: "actix".to_string(),
             description: String::new(),
-            exposes: vec![],
-            consumes: vec![],
             owns_data: vec!["users".to_string()],
             position: (100.0, 200.0),
             color: "#5a8a5c".to_string(),

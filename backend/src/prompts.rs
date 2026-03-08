@@ -184,8 +184,9 @@ pub fn map_discovery_system_prompt(repo_name: &str, repo_context: &str) -> Strin
 
 {repo_context}
 
-You are a system architecture analyst. Your job is to explore this repository
-and identify all services, components, data stores, and communication patterns."#,
+You are a system architecture analyst. Your job is to quickly survey this repository
+and identify the high-level services, data stores, and how they connect. Focus on
+system topology — not code-level details."#,
         repo_name = repo_name,
         repo_context = repo_context,
     )
@@ -194,34 +195,29 @@ and identify all services, components, data stores, and communication patterns."
 /// User prompt for map discovery — tells the agent what to find and where to write results.
 pub fn map_discovery_user_prompt(repo_name: &str, output_path: &str) -> String {
     format!(
-        r#"Explore the repository "{repo_name}" and discover its system architecture.
+        r#"Survey the repository "{repo_name}" and map its high-level system architecture.
 
 ## What to Find
 
-1. **Services/Components** — Identify every distinct service, app, or deployable unit.
+1. **Services/Components** — What deployable units exist?
    Look at: directory structure, Dockerfiles, docker-compose.yml, Kubernetes manifests,
-   serverless configs, package.json workspaces, Cargo workspace members, separate main
-   entrypoints, microservice directories.
+   workspace configs (package.json workspaces, Cargo workspace), top-level README.
 
-2. **Data Stores** — Find all databases, caches, queues, and blob storage.
-   Look at: connection strings, ORM configs, migration directories, queue client imports,
-   Redis/Memcached usage, S3/blob storage clients.
+2. **Data Stores** — What databases, caches, or queues does the system use?
+   Look at: docker-compose services, environment variable names, config files.
 
-3. **APIs & Connections** — Map how components talk to each other.
-   Look at: HTTP client calls to other services, gRPC proto imports, GraphQL schema
-   stitching, WebSocket handlers, message queue publishers/subscribers, shared database
-   connections, IPC mechanisms, event emitters/listeners.
+3. **System Connections** — How do the pieces connect at a system level?
+   Look at: docker-compose networks/links, environment variables referencing other services,
+   infrastructure configs, README architecture sections.
 
-4. **Data Ownership** — What data does each component own?
-   Look at: database migration files, model/entity definitions, schema files.
+4. **Library/Package Outputs** — Does this repo produce a library, SDK, or package
+   consumed by other repositories? Look at: published package names in package.json,
+   Cargo.toml, pyproject.toml, or build output configs. Note these in the service
+   description so cross-repo dependencies are visible.
 
-## How to Explore
-
-- Read directory listings, config files, and key source files
-- Follow imports to understand dependencies
-- Check for infrastructure-as-code (docker-compose, k8s, terraform)
-- Look at environment variable references for service URLs
-- Examine CI/CD configs for deployment topology
+Keep it high-level. You are mapping system topology, not analyzing code — except
+for recognizing when a repo's output (library, package, SDK) is a dependency used
+by other repos in the system.
 
 ## Output
 
@@ -236,23 +232,8 @@ Write a single JSON file to `{output_path}`:
       "service_type": "backend|frontend|worker|gateway|database|queue|cache|external",
       "runtime": "node|python|rust|go|java|etc",
       "framework": "express|fastapi|actix|etc or empty",
-      "description": "What this service does",
-      "owns_data": ["table or collection names"],
-      "exposes": [
-        {{{{
-          "type": "rest|grpc|graphql|websocket|event|shared_db|file_system|ipc",
-          "path": "/api/endpoint or topic name",
-          "description": "What this endpoint does"
-        }}}}
-      ],
-      "consumes": [
-        {{{{
-          "type": "rest|grpc|graphql|websocket|event|shared_db|file_system|ipc",
-          "target": "name of target service",
-          "description": "Why it connects",
-          "sync": true
-        }}}}
-      ]
+      "description": "One-line summary of what this does",
+      "owns_data": ["table or collection names if obvious"]
     }}}}
   ],
   "connections": [
@@ -261,7 +242,7 @@ Write a single JSON file to `{output_path}`:
       "to": "service name",
       "connection_type": "rest|grpc|graphql|websocket|event|shared_db|file_system|ipc",
       "sync": true,
-      "label": "/api/path or event.name",
+      "label": "short label",
       "description": "What flows through this connection"
     }}}}
   ]
@@ -272,9 +253,9 @@ Write a single JSON file to `{output_path}`:
 
 - The ONLY file you may write is `{output_path}`.
 - Do NOT modify any source files.
-- Be thorough — look beyond top-level directories into actual source code.
+- Skim config and infrastructure files — do not deep-dive into source code.
 - If the repo is a monorepo, identify each service within it.
-- For external dependencies (third-party APIs, SaaS), add them as "external" type services.
+- For key external dependencies (databases, third-party APIs), add them as "external" or appropriate type.
 - Write the JSON file and stop."#,
         repo_name = repo_name,
         output_path = output_path,
@@ -364,7 +345,6 @@ mod tests {
         let prompt = map_discovery_user_prompt("api", "/tmp/out.json");
         assert!(prompt.contains("Dockerfiles"));
         assert!(prompt.contains("docker-compose"));
-        assert!(prompt.contains("migration"));
         assert!(prompt.contains("Do NOT modify any source files"));
     }
 

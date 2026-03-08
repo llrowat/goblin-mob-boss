@@ -468,27 +468,6 @@ pub enum ConnectionType {
     Ipc,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ServiceEndpoint {
-    #[serde(rename = "type")]
-    pub endpoint_type: ConnectionType,
-    #[serde(default)]
-    pub path: String,
-    #[serde(default)]
-    pub description: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ServiceDependency {
-    #[serde(rename = "type")]
-    pub dep_type: ConnectionType,
-    pub target: String,
-    #[serde(default)]
-    pub description: String,
-    #[serde(default = "default_sync")]
-    pub sync: bool,
-}
-
 fn default_sync() -> bool {
     true
 }
@@ -506,10 +485,6 @@ pub struct MapService {
     pub framework: String,
     #[serde(default)]
     pub description: String,
-    #[serde(default)]
-    pub exposes: Vec<ServiceEndpoint>,
-    #[serde(default)]
-    pub consumes: Vec<ServiceDependency>,
     #[serde(default)]
     pub owns_data: Vec<String>,
     /// Position on the map canvas (x, y)
@@ -574,10 +549,6 @@ pub struct DiscoveredService {
     pub description: String,
     #[serde(default)]
     pub owns_data: Vec<String>,
-    #[serde(default)]
-    pub exposes: Vec<ServiceEndpoint>,
-    #[serde(default)]
-    pub consumes: Vec<ServiceDependency>,
 }
 
 fn default_backend_type() -> String {
@@ -1101,17 +1072,6 @@ You develop."#;
             runtime: "node".to_string(),
             framework: "express".to_string(),
             description: "Handles auth".to_string(),
-            exposes: vec![ServiceEndpoint {
-                endpoint_type: ConnectionType::Rest,
-                path: "/api/auth".to_string(),
-                description: "Auth API".to_string(),
-            }],
-            consumes: vec![ServiceDependency {
-                dep_type: ConnectionType::SharedDb,
-                target: "postgres".to_string(),
-                description: "User store".to_string(),
-                sync: true,
-            }],
             owns_data: vec!["users".to_string(), "sessions".to_string()],
             position: (100.0, 200.0),
             color: "#5a8a5c".to_string(),
@@ -1122,8 +1082,6 @@ You develop."#;
         assert_eq!(parsed.service_type, ServiceType::Backend);
         assert_eq!(parsed.owns_data.len(), 2);
         assert_eq!(parsed.position, (100.0, 200.0));
-        assert_eq!(parsed.exposes.len(), 1);
-        assert_eq!(parsed.consumes.len(), 1);
     }
 
     #[test]
@@ -1157,8 +1115,6 @@ You develop."#;
             runtime: String::new(),
             framework: String::new(),
             description: String::new(),
-            exposes: vec![],
-            consumes: vec![],
             owns_data: vec![],
             position: (0.0, 0.0),
             color: "#b8944a".to_string(),
@@ -1171,8 +1127,6 @@ You develop."#;
             runtime: String::new(),
             framework: String::new(),
             description: String::new(),
-            exposes: vec![],
-            consumes: vec![],
             owns_data: vec!["all".to_string()],
             position: (300.0, 200.0),
             color: "#d4aa5a".to_string(),
@@ -1210,22 +1164,9 @@ You develop."#;
         assert_eq!(svc.service_type, ServiceType::Worker);
         assert!(svc.repo_id.is_none());
         assert!(svc.runtime.is_empty());
-        assert!(svc.exposes.is_empty());
-        assert!(svc.consumes.is_empty());
         assert!(svc.owns_data.is_empty());
         assert_eq!(svc.position, (0.0, 0.0));
         assert_eq!(svc.color, "#5a8a5c");
-    }
-
-    #[test]
-    fn service_dependency_defaults_sync_true() {
-        let json = r#"{
-            "type": "rest",
-            "target": "other-svc",
-            "description": ""
-        }"#;
-        let dep: ServiceDependency = serde_json::from_str(json).unwrap();
-        assert!(dep.sync);
     }
 
     // ── Planning Questions Tests ──

@@ -3,6 +3,15 @@ import { MemoryRouter } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { SystemMapPage } from "./SystemMapPage";
 
+// Mock Terminal component (xterm not available in jsdom)
+vi.mock("../components/Terminal", () => ({
+  Terminal: ({ sessionId }: { sessionId: string }) => (
+    <div data-testid="terminal" data-session-id={sessionId}>
+      Terminal
+    </div>
+  ),
+}));
+
 // Mock crypto.randomUUID for tests
 if (!globalThis.crypto?.randomUUID) {
   Object.defineProperty(globalThis, "crypto", {
@@ -44,8 +53,6 @@ const mockMap = {
       runtime: "node",
       framework: "express",
       description: "Handles authentication",
-      exposes: [],
-      consumes: [],
       owns_data: ["users", "sessions"],
       position: [200, 200] as [number, number],
       color: "#5a8a5c",
@@ -58,8 +65,6 @@ const mockMap = {
       runtime: "node",
       framework: "react",
       description: "Main UI",
-      exposes: [],
-      consumes: [],
       owns_data: [],
       position: [500, 200] as [number, number],
       color: "#5b8abd",
