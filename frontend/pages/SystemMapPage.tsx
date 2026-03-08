@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useTauri } from "../hooks/useTauri";
 import { Terminal } from "../components/Terminal";
+import { CommandDisplay } from "../components/CommandDisplay";
 import type {
   SystemMap,
   MapService,
@@ -115,6 +116,7 @@ export function SystemMapPage() {
   const [exploring, setExploring] = useState(false);
   const [discoverySessionId, setDiscoverySessionId] = useState<string | null>(null);
   const [discoveryStatus, setDiscoveryStatus] = useState<DiscoveryStatus | null>(null);
+  const [discoveryCommand, setDiscoveryCommand] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Dragging
@@ -400,6 +402,8 @@ export function SystemMapPage() {
     setDiscoverySessionId(null);
     try {
       const sessionId = await tauri.startDiscoveryPty(activeMapId, exploreRepoIds, 120, 30);
+      // Fetch the command for transparency (after PTY starts, so prompt files exist)
+      tauri.startMapDiscovery(activeMapId, exploreRepoIds).then(setDiscoveryCommand).catch(() => {});
       setDiscoverySessionId(sessionId);
       setShowExploreModal(false);
       startDiscoveryPolling();
@@ -1115,6 +1119,7 @@ export function SystemMapPage() {
   function renderDiscoveryProgress() {
     return (
       <div className="discovery-progress">
+        <CommandDisplay command={discoveryCommand} />
         {discoverySessionId && (
           <div style={{ height: 300, marginBottom: 12 }}>
             <Terminal sessionId={discoverySessionId} onExit={handleDiscoveryExit} />
