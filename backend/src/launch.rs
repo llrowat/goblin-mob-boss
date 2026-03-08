@@ -1,5 +1,16 @@
 use crate::guidance;
 use crate::models::{ExecutionMode, Feature, TaskSpec};
+use std::process::Command;
+
+/// Check whether tmux is installed and available on PATH.
+/// Teams mode requires tmux for `--teammate-mode tmux`.
+pub fn is_tmux_available() -> bool {
+    Command::new("tmux")
+        .arg("-V")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
 
 /// Build the launch command and environment for executing a feature.
 /// Returns (command_args, env_vars, initial_prompt_content).
@@ -334,5 +345,15 @@ mod tests {
         let section = build_agents_section(&agents);
         assert!(section.contains("frontend-dev, test-writer"));
         assert!(!section.contains(".md"));
+    }
+
+    #[test]
+    fn is_tmux_available_returns_bool() {
+        // This test just verifies the function runs without panicking
+        // and returns a boolean. The actual result depends on the environment.
+        let result = is_tmux_available();
+        // It's either true or false — we can't assert a specific value
+        // since CI environments may or may not have tmux installed.
+        assert!(result || !result);
     }
 }

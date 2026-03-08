@@ -124,6 +124,8 @@ export function useTauri() {
       invoke<IdeationResult>("poll_ideation_result", { featureId }),
 
     // Launch Configuration
+    checkTmuxInstalled: () => invoke<boolean>("check_tmux_installed"),
+
     configureLaunch: (
       featureId: string,
       executionMode: ExecutionMode,

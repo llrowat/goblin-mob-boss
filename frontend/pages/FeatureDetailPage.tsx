@@ -51,6 +51,7 @@ export function FeatureDetailPage() {
 
   // Launch
   const [launching, setLaunching] = useState(false);
+  const [tmuxAvailable, setTmuxAvailable] = useState<boolean | null>(null);
 
   // Task progress tracking during execution
   const [taskProgress, setTaskProgress] = useState<TaskProgress | null>(null);
@@ -60,6 +61,11 @@ export function FeatureDetailPage() {
   const [verifyResult, setVerifyResult] = useState<VerifyResult | null>(null);
   const [verifying, setVerifying] = useState(false);
   const [analysis, setAnalysis] = useState<ExecutionAnalysis | null>(null);
+
+  // Check tmux availability for Teams mode
+  useEffect(() => {
+    tauri.checkTmuxInstalled().then(setTmuxAvailable).catch(() => setTmuxAvailable(false));
+  }, []);
 
   // Load repos for name display
   useEffect(() => {
@@ -563,6 +569,8 @@ export function FeatureDetailPage() {
   const isPushed = feature.status === "pushed";
   const isComplete = feature.status === "complete";
   const isReadOnly = isExecuting || isReady || isPushed || isComplete;
+  const activeMode = modeOverride ?? recommendation?.recommended ?? "subagents";
+  const teamsMissingTmux = activeMode === "teams" && tmuxAvailable === false;
 
   const featureRepoIds = feature.repo_ids?.length > 0 ? feature.repo_ids : feature.repo_id ? [feature.repo_id] : [];
   const featureRepoNames = featureRepoIds
@@ -860,6 +868,23 @@ export function FeatureDetailPage() {
               </span>
             </div>
           )}
+          {tmuxAvailable === false &&
+            (modeOverride ?? recommendation?.recommended) === "teams" && (
+            <div className="tmux-warning" style={{
+              marginTop: 8,
+              padding: "8px 12px",
+              background: "var(--warning-bg, #3d2e00)",
+              border: "1px solid var(--warning-border, #665000)",
+              borderRadius: 6,
+              color: "var(--warning-text, #ffd866)",
+              fontSize: 13,
+            }}>
+              tmux is not installed. Agent Teams mode requires tmux.
+              Install it with: <code>brew install tmux</code> (macOS),{" "}
+              <code>sudo apt install tmux</code> (Ubuntu/Debian), or{" "}
+              <code>sudo pacman -S tmux</code> (Arch).
+            </div>
+          )}
 
           {/* Task list — JIRA-style table */}
           <div className="jira-table">
@@ -958,7 +983,8 @@ export function FeatureDetailPage() {
               <button
                 className="btn btn-primary"
                 onClick={handleLaunch}
-                disabled={launching}
+                disabled={launching || teamsMissingTmux}
+                title={teamsMissingTmux ? "tmux must be installed for Agent Teams mode" : undefined}
               >
                 {launching ? "Launching..." : "Launch"}
               </button>
