@@ -36,30 +36,7 @@ function AppLayout() {
           </div>
         </div>
         <div className="sidebar-nav">
-          <NavLink
-            to="/"
-            end
-            className={({ isActive }) =>
-              `sidebar-nav-item ${isActive ? "active" : ""}`
-            }
-          >
-            Features
-            <span className="sidebar-badges">
-              {planningCount > 0 && (
-                <span className="sidebar-planning-badge" title={`${planningCount} planning`}>
-                  <span className="spinner spinner-planning" style={{ width: 10, height: 10, borderWidth: 1.5 }} />
-                  {planningCount}
-                </span>
-              )}
-              {executingCount > 0 && (
-                <span className="sidebar-executing-badge" title={`${executingCount} executing`}>
-                  <span className="spinner" style={{ width: 10, height: 10, borderWidth: 1.5 }} />
-                  {executingCount}
-                </span>
-              )}
-            </span>
-          </NavLink>
-          <div className="sidebar-section-label">Settings</div>
+          <div className="sidebar-section-label">Setup</div>
           <NavLink
             to="/agents"
             className={({ isActive }) =>
@@ -84,6 +61,31 @@ function AppLayout() {
           >
             System Map
           </NavLink>
+          <div className="sidebar-section-label">Work</div>
+          <NavLink
+            to="/"
+            end
+            className={({ isActive }) =>
+              `sidebar-nav-item ${isActive ? "active" : ""}`
+            }
+          >
+            Features
+            <span className="sidebar-badges">
+              {planningCount > 0 && (
+                <span className="sidebar-planning-badge" title={`${planningCount} planning`}>
+                  <span className="spinner spinner-planning" style={{ width: 10, height: 10, borderWidth: 1.5 }} />
+                  {planningCount}
+                </span>
+              )}
+              {executingCount > 0 && (
+                <span className="sidebar-executing-badge" title={`${executingCount} executing`}>
+                  <span className="spinner" style={{ width: 10, height: 10, borderWidth: 1.5 }} />
+                  {executingCount}
+                </span>
+              )}
+            </span>
+          </NavLink>
+          <div className="sidebar-spacer" />
           <NavLink
             to="/settings"
             className={({ isActive }) =>
