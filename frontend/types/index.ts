@@ -21,6 +21,7 @@ export interface AgentFile {
   is_global: boolean;
   color: string;
   role: AgentRole;
+  enabled: boolean;
 }
 
 export type ExecutionMode = "teams" | "subagents";

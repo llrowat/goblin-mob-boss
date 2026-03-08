@@ -522,6 +522,7 @@ mod tests {
             is_global: false,
             color: "#5b8abd".to_string(),
             role: "developer".to_string(),
+            enabled: true,
         };
 
         save_repo_agent(&repo_path, &agent).unwrap();
@@ -548,6 +549,7 @@ mod tests {
             is_global: false,
             color: "#5a8a5c".to_string(),
             role: "developer".to_string(),
+            enabled: true,
         };
 
         save_repo_agent(&repo_path, &agent).unwrap();

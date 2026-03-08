@@ -18,6 +18,7 @@ describe("AgentsPage", () => {
       is_global: true,
       color: "#5a8a5c",
       role: "developer",
+      enabled: true,
     },
     {
       filename: "frontend-dev.md",
@@ -29,6 +30,7 @@ describe("AgentsPage", () => {
       is_global: true,
       color: "#5b8abd",
       role: "developer",
+      enabled: true,
     },
   ];
 
@@ -43,6 +45,7 @@ describe("AgentsPage", () => {
       is_global: true,
       color: "#5b8abd",
       role: "developer",
+      enabled: true,
     },
     {
       filename: "test-engineer.md",
@@ -54,6 +57,7 @@ describe("AgentsPage", () => {
       is_global: true,
       color: "#c9a84c",
       role: "quality",
+      enabled: true,
     },
   ];
 
@@ -316,6 +320,66 @@ describe("AgentsPage", () => {
     });
 
     expect(screen.queryByText("No Agents")).not.toBeInTheDocument();
+  });
+
+  it("shows enabled toggle on agent cards", async () => {
+    mockInvokeForAgents();
+
+    render(<AgentsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Full-Stack Developer")).toBeInTheDocument();
+    });
+
+    const toggles = document.querySelectorAll(".agent-toggle input");
+    expect(toggles.length).toBe(2);
+    expect((toggles[0] as HTMLInputElement).checked).toBe(true);
+    expect((toggles[1] as HTMLInputElement).checked).toBe(true);
+  });
+
+  it("calls save_global_agent with enabled=false when toggle is clicked", async () => {
+    mockInvokeForAgents();
+
+    render(<AgentsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Full-Stack Developer")).toBeInTheDocument();
+    });
+
+    const toggles = document.querySelectorAll(".agent-toggle input");
+    fireEvent.click(toggles[0]);
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("save_global_agent", {
+        agent: expect.objectContaining({
+          filename: "fullstack-dev.md",
+          enabled: false,
+        }),
+      });
+    });
+  });
+
+  it("shows disabled styling for disabled agents", async () => {
+    const disabledAgents = [
+      { ...mockAgents[0], enabled: false },
+      mockAgents[1],
+    ];
+
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "list_global_agents") return Promise.resolve(disabledAgents);
+      if (cmd === "list_built_in_agents") return Promise.resolve([]);
+      return Promise.resolve([]);
+    });
+
+    render(<AgentsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Full-Stack Developer")).toBeInTheDocument();
+    });
+
+    const cards = document.querySelectorAll(".agent-card");
+    expect(cards[0].classList.contains("agent-card-disabled")).toBe(true);
+    expect(cards[1].classList.contains("agent-card-disabled")).toBe(false);
   });
 
   it("shows filename and description fields in create modal", async () => {
