@@ -63,15 +63,16 @@ describe("App sidebar", () => {
     mockCounts(1, 1, 1);
   });
 
-  it("renders Setup section before Work section", () => {
+  it("renders Setup section before Work section", async () => {
     render(<App />);
     const sectionLabels = screen.getAllByText(/^(Setup|Work)$/i);
     expect(sectionLabels).toHaveLength(2);
     expect(sectionLabels[0]).toHaveTextContent("Setup");
     expect(sectionLabels[1]).toHaveTextContent("Work");
+    await waitFor(() => {});
   });
 
-  it("renders Agents, Repositories, and System Map before Features", () => {
+  it("renders Agents, Repositories, and System Map before Features", async () => {
     render(<App />);
     const nav = screen.getByRole("navigation");
     const items = nav.querySelectorAll(".sidebar-nav-item");
@@ -85,14 +86,16 @@ describe("App sidebar", () => {
     expect(agentsIdx).toBeLessThan(featuresIdx);
     expect(reposIdx).toBeLessThan(featuresIdx);
     expect(mapIdx).toBeLessThan(featuresIdx);
+    await waitFor(() => {});
   });
 
-  it("renders Preferences as the last nav item", () => {
+  it("renders Preferences as the last nav item", async () => {
     render(<App />);
     const nav = screen.getByRole("navigation");
     const items = nav.querySelectorAll(".sidebar-nav-item");
     const last = items[items.length - 1];
     expect(last).toHaveTextContent("Preferences");
+    await waitFor(() => {});
   });
 
   it("shows count badges for agents, repos, and system maps", async () => {

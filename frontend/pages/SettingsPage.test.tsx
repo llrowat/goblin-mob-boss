@@ -7,7 +7,7 @@ describe("SettingsPage", () => {
     vi.clearAllMocks();
   });
 
-  it("renders page header", () => {
+  it("renders page header", async () => {
     vi.mocked(invoke).mockResolvedValue({ shell: "bash" });
 
     render(<SettingsPage />);
@@ -16,6 +16,8 @@ describe("SettingsPage", () => {
     expect(
       screen.getByText("Tune things to your liking."),
     ).toBeInTheDocument();
+
+    await waitFor(() => {});
   });
 
   it("loads and displays current preferences", async () => {
@@ -75,12 +77,14 @@ describe("SettingsPage", () => {
     });
   });
 
-  it("renders terminal section", () => {
+  it("renders terminal section", async () => {
     vi.mocked(invoke).mockResolvedValue({ shell: "bash" });
 
     render(<SettingsPage />);
 
     expect(screen.getByText("Terminal")).toBeInTheDocument();
     expect(screen.getByText("Shell")).toBeInTheDocument();
+
+    await waitFor(() => {});
   });
 });
