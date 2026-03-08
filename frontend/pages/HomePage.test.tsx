@@ -335,6 +335,70 @@ describe("HomePage", () => {
     });
   });
 
+  it("shows completed features in a separate section", async () => {
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "list_repositories") return Promise.resolve([mockRepo]);
+      if (cmd === "list_features") {
+        return Promise.resolve([
+          {
+            id: "f1",
+            repo_ids: ["r1"],
+            name: "Active Feature",
+            description: "Still in progress",
+            branch: "feature/active",
+            status: "executing",
+            execution_mode: null,
+            execution_rationale: null,
+            selected_agents: [],
+            task_specs: [],
+            pty_session_id: null,
+            launched_command: null,
+            worktree_paths: {},
+            created_at: "2025-01-01T00:00:00Z",
+            updated_at: "2025-01-01T00:00:00Z",
+          },
+          {
+            id: "f2",
+            repo_ids: ["r1"],
+            name: "Done Feature",
+            description: "All wrapped up",
+            branch: "feature/done",
+            status: "complete",
+            execution_mode: null,
+            execution_rationale: null,
+            selected_agents: [],
+            task_specs: [],
+            pty_session_id: null,
+            launched_command: null,
+            worktree_paths: {},
+            created_at: "2025-01-01T00:00:00Z",
+            updated_at: "2025-01-01T00:00:00Z",
+          },
+        ]);
+      }
+      return Promise.resolve([]);
+    });
+
+    render(
+      <MemoryRouter>
+        <HomePage />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Active Feature")).toBeInTheDocument();
+      expect(screen.getByText("Done Feature")).toBeInTheDocument();
+    });
+
+    // Should show both section labels
+    expect(screen.getByText("Active Features")).toBeInTheDocument();
+    expect(screen.getByText("Completed")).toBeInTheDocument();
+
+    // Completed card should be greyed out (opacity 0.5)
+    const doneCard = screen.getByText("Done Feature").closest(".feature-card");
+    expect(doneCard).toHaveStyle({ opacity: "0.5" });
+  });
+
   it("closes modal when Cancel is clicked", async () => {
     vi.mocked(invoke).mockImplementation((cmd: string) => {
       if (cmd === "list_repositories") return Promise.resolve([mockRepo]);

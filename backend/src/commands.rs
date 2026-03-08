@@ -833,6 +833,37 @@ pub fn mark_feature_ready(state: State<AppState>, feature_id: String) -> Result<
     Ok(updated)
 }
 
+/// Mark a feature as complete: delete worktrees and set final status.
+#[tauri::command]
+pub fn complete_feature(state: State<AppState>, feature_id: String) -> Result<Feature, String> {
+    let mut features = state.features.lock().unwrap();
+    let feature = features.get_mut(&feature_id).ok_or("Feature not found")?;
+    feature.status = FeatureStatus::Complete;
+    feature.updated_at = Utc::now();
+
+    // Collect worktree info before clearing
+    let worktrees: Vec<(String, String)> = feature
+        .worktree_paths
+        .iter()
+        .map(|(repo_id, wt_path)| (repo_id.clone(), wt_path.clone()))
+        .collect();
+    feature.worktree_paths.clear();
+
+    let updated = feature.clone();
+    drop(features);
+    state.save_features();
+
+    // Delete worktrees (best-effort)
+    let repos = state.repositories.lock().unwrap();
+    for (repo_id, wt_path) in &worktrees {
+        if let Some(repo) = repos.get(repo_id) {
+            let _ = git::remove_worktree(&repo.path, wt_path);
+        }
+    }
+
+    Ok(updated)
+}
+
 /// Cancel execution: kill the PTY session and reset the feature back to ideation.
 #[tauri::command]
 pub fn cancel_execution(
@@ -936,7 +967,14 @@ pub fn get_feature_diff(state: State<AppState>, feature_id: String) -> Result<Di
 
     let mut all_files = Vec::new();
     for repo in &repos {
-        let file_diffs = git::diff_stat(&repo.path, &repo.base_branch, &feature.branch)
+        // Use worktree path if available — the branch ref is shared but the
+        // worktree might have uncommitted changes we want to include
+        let diff_path = feature
+            .worktree_paths
+            .get(&repo.id)
+            .map(|s| s.as_str())
+            .unwrap_or(&repo.path);
+        let file_diffs = git::diff_stat(diff_path, &repo.base_branch, &feature.branch)
             .map_err(|e| e.to_string())?;
 
         let prefix = if repos.len() > 1 {
@@ -981,11 +1019,32 @@ pub fn push_feature(state: State<AppState>, feature_id: String) -> Result<String
 
     let mut outputs = Vec::new();
     for repo in &repos {
-        let output = git::push_branch(&repo.path, &feature.branch)
+        // Commit any uncommitted changes in the worktree (or main checkout)
+        let work_dir = feature
+            .worktree_paths
+            .get(&repo.id)
+            .map(|s| s.as_str())
+            .unwrap_or(&repo.path);
+        match git::commit_all(work_dir, &format!("chore: finalize {}", feature.name)) {
+            Ok(true) => outputs.push(format!("{}: committed changes", repo.name)),
+            Ok(false) => {} // nothing to commit
+            Err(e) => outputs.push(format!("{}: commit skipped ({})", repo.name, e)),
+        }
+
+        let output = git::push_branch(work_dir, &feature.branch)
             .map(|o| format!("{}: pushed {}\n{}", repo.name, feature.branch, o))
             .map_err(|e| format!("Failed to push in {}: {}", repo.name, e))?;
         outputs.push(output);
     }
+
+    // Mark feature as pushed
+    let mut features = state.features.lock().unwrap();
+    if let Some(f) = features.get_mut(&feature_id) {
+        f.status = FeatureStatus::Pushed;
+        f.updated_at = Utc::now();
+    }
+    drop(features);
+    state.save_features();
 
     Ok(outputs.join("\n"))
 }

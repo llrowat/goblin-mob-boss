@@ -36,7 +36,9 @@ export type FeatureStatus =
   | "configuring"
   | "executing"
   | "ready"
-  | "failed";
+  | "failed"
+  | "pushed"
+  | "complete";
 
 export interface Feature {
   id: string;

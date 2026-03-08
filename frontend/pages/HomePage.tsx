@@ -107,6 +107,8 @@ export function HomePage() {
     executing: "Executing",
     ready: "Ready",
     failed: "Failed",
+    pushed: "Pushed",
+    complete: "Complete",
   };
 
   const featureRoute = (f: Feature) => {
@@ -138,47 +140,17 @@ export function HomePage() {
       </div>
 
       {/* Active features */}
-      <div>
-        <div
-          className="sidebar-section-label"
-          style={{
-            padding: "0 0 8px",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-          }}
-        >
-          <span>Active Features</span>
-          <select
-            className="form-select"
-            style={{ width: "auto", fontSize: 12, padding: "2px 8px" }}
-            value={filterRepoId}
-            onChange={(e) => setFilterRepoId(e.target.value)}
-          >
-            <option value="">All Repos</option>
-            {repos.map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        {features.length === 0 ? (
-          <div className="empty-state">
-            <h3>No active features</h3>
-            <p>The crew is idle. Click &quot;New Feature&quot; to start a scheme.</p>
-          </div>
-        ) : (
-          [...features].sort((a, b) => {
-            if (a.status === "executing" && b.status !== "executing") return -1;
-            if (a.status !== "executing" && b.status === "executing") return 1;
-            return 0;
-          }).map((f) => {
-            const hasWorktree = f.worktree_paths && Object.keys(f.worktree_paths).length > 0;
-            return (
+      {(() => {
+        const activeFeatures = features.filter((f) => f.status !== "complete");
+        const completedFeatures = features.filter((f) => f.status === "complete");
+
+        const renderFeatureCard = (f: Feature, isCompleted = false) => {
+          const hasWorktree = f.worktree_paths && Object.keys(f.worktree_paths).length > 0;
+          return (
             <div
               key={f.id}
               className="feature-card panel"
+              style={isCompleted ? { opacity: 0.5 } : undefined}
               onClick={() => navigate(featureRoute(f))}
             >
               <div className="feature-card-top">
@@ -218,10 +190,64 @@ export function HomePage() {
                 )}
               </div>
             </div>
-            );
-          })
-        )}
-      </div>
+          );
+        };
+
+        return (
+          <>
+            <div>
+              <div
+                className="sidebar-section-label"
+                style={{
+                  padding: "0 0 8px",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                }}
+              >
+                <span>Active Features</span>
+                <select
+                  className="form-select"
+                  style={{ width: "auto", fontSize: 12, padding: "2px 8px" }}
+                  value={filterRepoId}
+                  onChange={(e) => setFilterRepoId(e.target.value)}
+                >
+                  <option value="">All Repos</option>
+                  {repos.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {activeFeatures.length === 0 ? (
+                <div className="empty-state">
+                  <h3>No active features</h3>
+                  <p>The mob is idle. Click &quot;New Feature&quot; to start something new.</p>
+                </div>
+              ) : (
+                [...activeFeatures].sort((a, b) => {
+                  if (a.status === "executing" && b.status !== "executing") return -1;
+                  if (a.status !== "executing" && b.status === "executing") return 1;
+                  return 0;
+                }).map((f) => renderFeatureCard(f))
+              )}
+            </div>
+
+            {completedFeatures.length > 0 && (
+              <div style={{ marginTop: 24 }}>
+                <div
+                  className="sidebar-section-label"
+                  style={{ padding: "0 0 8px" }}
+                >
+                  Completed
+                </div>
+                {completedFeatures.map((f) => renderFeatureCard(f, true))}
+              </div>
+            )}
+          </>
+        );
+      })()}
 
       {/* New Feature Modal */}
       {showNewFeature && (

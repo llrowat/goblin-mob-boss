@@ -83,6 +83,19 @@ pub fn create_branch(repo_path: &str, branch: &str, base: &str) -> GitResult<()>
     Ok(())
 }
 
+/// Stage all changes and commit. Returns true if a commit was created,
+/// false if there was nothing to commit.
+pub fn commit_all(repo_path: &str, message: &str) -> GitResult<bool> {
+    run_git(repo_path, &["add", "-A"])?;
+    // Check if there's anything staged
+    let status = run_git(repo_path, &["status", "--porcelain"])?;
+    if status.is_empty() {
+        return Ok(false);
+    }
+    run_git(repo_path, &["commit", "-m", message])?;
+    Ok(true)
+}
+
 /// Checkout an existing branch.
 pub fn checkout_branch(repo_path: &str, branch: &str) -> GitResult<()> {
     run_git(repo_path, &["checkout", branch])?;
@@ -143,8 +156,26 @@ pub fn is_git_repo(path: &str) -> bool {
 /// Get diff stats between two branches.
 /// Returns a list of `(file_path, insertions, deletions)` tuples.
 pub fn diff_stat(repo_path: &str, base: &str, head: &str) -> GitResult<Vec<(String, u32, u32)>> {
-    let output = run_git(repo_path, &["diff", "--numstat", &format!("{}...{}", base, head)])?;
-    Ok(parse_numstat(&output))
+    // Use two-dot diff (base..head) to show all changes between the branches.
+    // Also include uncommitted working tree changes with the HEAD of the feature branch.
+    let committed = run_git(repo_path, &["diff", "--numstat", &format!("{}..{}", base, head)])?;
+    let mut result = parse_numstat(&committed);
+
+    // Include uncommitted changes (staged + unstaged) relative to HEAD
+    let uncommitted = run_git(repo_path, &["diff", "--numstat", "HEAD"]).unwrap_or_default();
+    let uncommitted_files = parse_numstat(&uncommitted);
+
+    // Merge uncommitted changes — add to existing entries or append new ones
+    for (path, ins, del) in uncommitted_files {
+        if let Some(entry) = result.iter_mut().find(|(p, _, _)| *p == path) {
+            entry.1 += ins;
+            entry.2 += del;
+        } else {
+            result.push((path, ins, del));
+        }
+    }
+
+    Ok(result)
 }
 
 /// Parse `git diff --numstat` output into `(file, insertions, deletions)` tuples.
