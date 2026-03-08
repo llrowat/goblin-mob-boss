@@ -834,10 +834,27 @@ pub fn mark_feature_ready(state: State<AppState>, feature_id: String) -> Result<
 }
 
 /// Mark a feature as complete: delete worktrees and set final status.
+/// For multi-repo features, all repos must be pushed before completion is allowed.
 #[tauri::command]
 pub fn complete_feature(state: State<AppState>, feature_id: String) -> Result<Feature, String> {
     let mut features = state.features.lock().unwrap();
     let feature = features.get_mut(&feature_id).ok_or("Feature not found")?;
+
+    // Gate: all repos must be pushed before completing
+    let repo_ids = feature.effective_repo_ids();
+    if repo_ids.len() > 1 {
+        let unpushed: Vec<&String> = repo_ids
+            .iter()
+            .filter(|rid| feature.repo_push_status.get(*rid) != Some(&RepoPushStatus::Pushed))
+            .collect();
+        if !unpushed.is_empty() {
+            return Err(format!(
+                "Cannot complete: {} repo(s) not yet pushed",
+                unpushed.len()
+            ));
+        }
+    }
+
     feature.status = FeatureStatus::Complete;
     feature.updated_at = Utc::now();
 
@@ -1006,6 +1023,85 @@ pub fn get_feature_diff(state: State<AppState>, feature_id: String) -> Result<Di
 
 // ── Feature PR Commands ──
 
+/// Push a single repo within a feature: commit uncommitted changes and push to origin.
+/// Updates per-repo push status and promotes feature to Pushed when all repos are done.
+#[tauri::command]
+pub fn push_feature_repo(
+    state: State<AppState>,
+    feature_id: String,
+    repo_id: String,
+) -> Result<String, String> {
+    let features = state.features.lock().unwrap();
+    let feature = features
+        .get(&feature_id)
+        .ok_or("Feature not found")?
+        .clone();
+    drop(features);
+
+    // Verify repo belongs to this feature
+    let repo_ids = feature.effective_repo_ids();
+    if !repo_ids.contains(&repo_id) {
+        return Err("Repository is not part of this feature".to_string());
+    }
+
+    let repo = get_repo(&state, &repo_id)?;
+    let work_dir = feature
+        .worktree_paths
+        .get(&repo_id)
+        .map(|s| s.as_str())
+        .unwrap_or(&repo.path);
+
+    let mut outputs = Vec::new();
+
+    // Commit any uncommitted changes
+    match git::commit_all(work_dir, &format!("chore: finalize {}", feature.name)) {
+        Ok(true) => outputs.push(format!("{}: committed changes", repo.name)),
+        Ok(false) => {} // nothing to commit
+        Err(e) => outputs.push(format!("{}: commit skipped ({})", repo.name, e)),
+    }
+
+    // Push to origin
+    let push_result = git::push_branch(work_dir, &feature.branch);
+    let push_status = match &push_result {
+        Ok(o) => {
+            outputs.push(format!("{}: pushed {}\n{}", repo.name, feature.branch, o));
+            RepoPushStatus::Pushed
+        }
+        Err(e) => {
+            let msg = format!("Failed to push in {}: {}", repo.name, e);
+            outputs.push(msg.clone());
+            RepoPushStatus::Failed
+        }
+    };
+
+    // Update per-repo push status
+    let mut features = state.features.lock().unwrap();
+    if let Some(f) = features.get_mut(&feature_id) {
+        f.repo_push_status.insert(repo_id, push_status.clone());
+        f.updated_at = Utc::now();
+
+        // If all repos are pushed, promote feature status to Pushed
+        let all_repo_ids = f.effective_repo_ids();
+        let all_pushed = all_repo_ids.iter().all(|rid| {
+            f.repo_push_status.get(rid) == Some(&RepoPushStatus::Pushed)
+        });
+        if all_pushed {
+            f.status = FeatureStatus::Pushed;
+        }
+    }
+    drop(features);
+    state.save_features();
+
+    // If the push itself failed, return an error
+    if push_status == RepoPushStatus::Failed {
+        return Err(outputs.join("\n"));
+    }
+
+    Ok(outputs.join("\n"))
+}
+
+/// Push all repos in a feature at once (legacy behavior).
+/// Updates per-repo push status for each repo.
 #[tauri::command]
 pub fn push_feature(state: State<AppState>, feature_id: String) -> Result<String, String> {
     let features = state.features.lock().unwrap();
@@ -1018,6 +1114,9 @@ pub fn push_feature(state: State<AppState>, feature_id: String) -> Result<String
     let repos = get_all_repos(&state, &feature)?;
 
     let mut outputs = Vec::new();
+    let mut per_repo_status: std::collections::HashMap<String, RepoPushStatus> =
+        std::collections::HashMap::new();
+
     for repo in &repos {
         // Commit any uncommitted changes in the worktree (or main checkout)
         let work_dir = feature
@@ -1031,20 +1130,42 @@ pub fn push_feature(state: State<AppState>, feature_id: String) -> Result<String
             Err(e) => outputs.push(format!("{}: commit skipped ({})", repo.name, e)),
         }
 
-        let output = git::push_branch(work_dir, &feature.branch)
-            .map(|o| format!("{}: pushed {}\n{}", repo.name, feature.branch, o))
-            .map_err(|e| format!("Failed to push in {}: {}", repo.name, e))?;
-        outputs.push(output);
+        match git::push_branch(work_dir, &feature.branch) {
+            Ok(o) => {
+                outputs.push(format!("{}: pushed {}\n{}", repo.name, feature.branch, o));
+                per_repo_status.insert(repo.id.clone(), RepoPushStatus::Pushed);
+            }
+            Err(e) => {
+                outputs.push(format!("Failed to push in {}: {}", repo.name, e));
+                per_repo_status.insert(repo.id.clone(), RepoPushStatus::Failed);
+            }
+        }
     }
 
-    // Mark feature as pushed
+    // Update per-repo status and feature status
     let mut features = state.features.lock().unwrap();
     if let Some(f) = features.get_mut(&feature_id) {
-        f.status = FeatureStatus::Pushed;
+        f.repo_push_status = per_repo_status;
         f.updated_at = Utc::now();
+
+        let all_repo_ids = f.effective_repo_ids();
+        let all_pushed = all_repo_ids.iter().all(|rid| {
+            f.repo_push_status.get(rid) == Some(&RepoPushStatus::Pushed)
+        });
+        if all_pushed {
+            f.status = FeatureStatus::Pushed;
+        }
     }
     drop(features);
     state.save_features();
+
+    // If any repo failed to push, return error
+    let any_failed = repos
+        .iter()
+        .any(|r| feature.effective_repo_ids().contains(&r.id) && outputs.iter().any(|o| o.contains(&format!("Failed to push in {}", r.name))));
+    if any_failed {
+        return Err(outputs.join("\n"));
+    }
 
     Ok(outputs.join("\n"))
 }

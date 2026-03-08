@@ -76,6 +76,7 @@ pub fn run() {
             commands::get_feature_diff,
             // Feature PR
             commands::push_feature,
+            commands::push_feature_repo,
             commands::get_pr_command,
             // Ideation (background)
             commands::run_ideation,

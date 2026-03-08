@@ -2,7 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { invoke } from "@tauri-apps/api/core";
 import { FeatureDetailPage } from "./FeatureDetailPage";
-import type { Feature, IdeationResult, PlanningQuestion, TaskProgress } from "../types";
+import type { Feature, Repository, IdeationResult, PlanningQuestion, TaskProgress } from "../types";
 
 // Mock the useTerminalSession hook
 const mockStartSession = vi.fn();
@@ -36,6 +36,11 @@ vi.mock("react-router-dom", () => ({
   useNavigate: () => mockNavigate,
 }));
 
+const mockRepos: Repository[] = [
+  { id: "r1", name: "frontend-app", path: "/tmp/frontend", base_branch: "main", description: "", validators: [], pr_command: null, created_at: "2026-01-01T00:00:00Z" },
+  { id: "r2", name: "backend-api", path: "/tmp/backend", base_branch: "main", description: "", validators: [], pr_command: null, created_at: "2026-01-01T00:00:00Z" },
+];
+
 const mockFeature: Feature = {
   id: "f1",
   repo_ids: ["r1"],
@@ -50,6 +55,7 @@ const mockFeature: Feature = {
   pty_session_id: null,
   launched_command: null,
   worktree_paths: {},
+  repo_push_status: {},
   created_at: "2026-01-01T00:00:00Z",
   updated_at: "2026-01-01T00:00:00Z",
 };
@@ -676,5 +682,172 @@ describe("FeatureDetailPage", () => {
       "run_ideation",
       expect.anything(),
     );
+  });
+
+  it("shows per-repo push status for multi-repo ready features", async () => {
+    const multiRepoFeature: Feature = {
+      ...mockFeature,
+      repo_ids: ["r1", "r2"],
+      status: "ready",
+      task_specs: mockIdeationResult.tasks,
+      repo_push_status: { r1: "pushed", r2: "pending" },
+    };
+
+    mockedInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "get_feature") return multiRepoFeature;
+      if (cmd === "get_ideation_prompt") return "system prompt";
+      if (cmd === "poll_ideation_result") return mockIdeationResult;
+      if (cmd === "list_repositories") return mockRepos;
+      return undefined;
+    });
+
+    render(<FeatureDetailPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Per-Repo Push Status")).toBeInTheDocument();
+    });
+
+    // Should show repo names
+    expect(screen.getByText("frontend-app")).toBeInTheDocument();
+    expect(screen.getByText("backend-api")).toBeInTheDocument();
+
+    // Should show push status labels
+    expect(screen.getByText("pushed")).toBeInTheDocument();
+    expect(screen.getByText("pending")).toBeInTheDocument();
+
+    // Should show Commit & Push only for the pending repo
+    const pushButtons = screen.getAllByText("Commit & Push");
+    expect(pushButtons).toHaveLength(1);
+  });
+
+  it("calls push_feature_repo when per-repo push button is clicked", async () => {
+    const multiRepoFeature: Feature = {
+      ...mockFeature,
+      repo_ids: ["r1", "r2"],
+      status: "ready",
+      task_specs: mockIdeationResult.tasks,
+      repo_push_status: {},
+    };
+
+    const afterPushFeature: Feature = {
+      ...multiRepoFeature,
+      repo_push_status: { r1: "pushed" },
+    };
+
+    mockedInvoke.mockImplementation(async (cmd: string, args?: Record<string, unknown>) => {
+      if (cmd === "get_feature") {
+        if (mockedInvoke.mock.calls.some(c => c[0] === "push_feature_repo")) {
+          return afterPushFeature;
+        }
+        return multiRepoFeature;
+      }
+      if (cmd === "get_ideation_prompt") return "system prompt";
+      if (cmd === "poll_ideation_result") return mockIdeationResult;
+      if (cmd === "list_repositories") return mockRepos;
+      if (cmd === "push_feature_repo") return "r1: pushed";
+      return undefined;
+    });
+
+    render(<FeatureDetailPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Per-Repo Push Status")).toBeInTheDocument();
+    });
+
+    // Both repos should show push buttons since neither is pushed
+    const pushButtons = screen.getAllByText("Commit & Push");
+    expect(pushButtons).toHaveLength(2);
+
+    // Click the first push button
+    await userEvent.click(pushButtons[0]);
+
+    await waitFor(() => {
+      expect(mockedInvoke).toHaveBeenCalledWith("push_feature_repo", {
+        featureId: "f1",
+        repoId: "r1",
+      });
+    });
+  });
+
+  it("shows Mark Complete only when all repos are pushed in multi-repo feature", async () => {
+    const allPushedFeature: Feature = {
+      ...mockFeature,
+      repo_ids: ["r1", "r2"],
+      status: "ready",
+      task_specs: mockIdeationResult.tasks,
+      repo_push_status: { r1: "pushed", r2: "pushed" },
+    };
+
+    mockedInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "get_feature") return allPushedFeature;
+      if (cmd === "get_ideation_prompt") return "system prompt";
+      if (cmd === "poll_ideation_result") return mockIdeationResult;
+      if (cmd === "list_repositories") return mockRepos;
+      return undefined;
+    });
+
+    render(<FeatureDetailPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Mark Complete")).toBeInTheDocument();
+    });
+    expect(screen.getByText("Make Changes")).toBeInTheDocument();
+  });
+
+  it("does not show Mark Complete when not all repos are pushed in multi-repo feature", async () => {
+    const partialPushFeature: Feature = {
+      ...mockFeature,
+      repo_ids: ["r1", "r2"],
+      status: "ready",
+      task_specs: mockIdeationResult.tasks,
+      repo_push_status: { r1: "pushed" },
+    };
+
+    mockedInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "get_feature") return partialPushFeature;
+      if (cmd === "get_ideation_prompt") return "system prompt";
+      if (cmd === "poll_ideation_result") return mockIdeationResult;
+      if (cmd === "list_repositories") return mockRepos;
+      return undefined;
+    });
+
+    render(<FeatureDetailPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Per-Repo Push Status")).toBeInTheDocument();
+    });
+
+    // Should NOT show Mark Complete since r2 is not pushed
+    expect(screen.queryByText("Mark Complete")).not.toBeInTheDocument();
+  });
+
+  it("does not show per-repo panel for single-repo ready features", async () => {
+    const singleRepoReady: Feature = {
+      ...mockFeature,
+      repo_ids: ["r1"],
+      status: "ready",
+      task_specs: mockIdeationResult.tasks,
+      repo_push_status: {},
+    };
+
+    mockedInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "get_feature") return singleRepoReady;
+      if (cmd === "get_ideation_prompt") return "system prompt";
+      if (cmd === "poll_ideation_result") return mockIdeationResult;
+      if (cmd === "list_repositories") return mockRepos;
+      return undefined;
+    });
+
+    render(<FeatureDetailPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Ready: Test Feature/)).toBeInTheDocument();
+    });
+
+    // Should NOT show per-repo panel
+    expect(screen.queryByText("Per-Repo Push Status")).not.toBeInTheDocument();
+
+    // Should show the standard single Commit & Push button
+    expect(screen.getByText("Commit & Push")).toBeInTheDocument();
   });
 });
