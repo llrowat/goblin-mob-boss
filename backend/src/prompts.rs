@@ -210,7 +210,14 @@ pub fn map_discovery_user_prompt(repo_name: &str, output_path: &str) -> String {
    Look at: docker-compose networks/links, environment variables referencing other services,
    infrastructure configs, README architecture sections.
 
-Keep it high-level. You are mapping system topology, not analyzing code.
+4. **Library/Package Outputs** — Does this repo produce a library, SDK, or package
+   consumed by other repositories? Look at: published package names in package.json,
+   Cargo.toml, pyproject.toml, or build output configs. Note these in the service
+   description so cross-repo dependencies are visible.
+
+Keep it high-level. You are mapping system topology, not analyzing code — except
+for recognizing when a repo's output (library, package, SDK) is a dependency used
+by other repos in the system.
 
 ## Output
 

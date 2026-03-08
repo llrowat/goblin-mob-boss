@@ -427,7 +427,7 @@ export function SystemMapPage() {
         setDiscoveryStatus(status);
         if (status.complete) {
           setExploring(false);
-          setExploreCommand("");
+          setDiscoverySessionId(null);
           // Reload the map to show discovered services
           const updated = await tauri.getSystemMap(activeMapId!);
           setMaps((prev) => prev.map((m) => (m.id === updated.id ? updated : m)));
