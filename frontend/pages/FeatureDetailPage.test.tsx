@@ -263,6 +263,7 @@ describe("FeatureDetailPage", () => {
       if (cmd === "get_feature") return executingFeature;
       if (cmd === "get_ideation_prompt") return "system prompt";
       if (cmd === "poll_ideation_result") return mockIdeationResult;
+      if (cmd === "pty_session_exists") return true;
       return undefined;
     });
 
@@ -442,6 +443,7 @@ describe("FeatureDetailPage", () => {
       if (cmd === "get_ideation_prompt") return "system prompt";
       if (cmd === "poll_ideation_result") return mockIdeationResult;
       if (cmd === "poll_task_progress") return mockProgress;
+      if (cmd === "pty_session_exists") return true;
       return undefined;
     });
 
@@ -495,6 +497,7 @@ describe("FeatureDetailPage", () => {
       if (cmd === "get_ideation_prompt") return "system prompt";
       if (cmd === "poll_ideation_result") return mockIdeationResult;
       if (cmd === "poll_task_progress") return mockProgress;
+      if (cmd === "pty_session_exists") return true;
       return undefined;
     });
 

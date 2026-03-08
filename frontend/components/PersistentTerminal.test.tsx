@@ -80,7 +80,7 @@ describe("PersistentTerminal", () => {
     expect(mockClearSession).toHaveBeenCalled();
   });
 
-  it("shows completion state with restart on terminal exit", async () => {
+  it("marks feature ready and clears session on terminal exit", async () => {
     render(<PersistentTerminal />);
 
     await userEvent.click(screen.getByText("exit"));
@@ -88,11 +88,7 @@ describe("PersistentTerminal", () => {
     expect(mockedInvoke).toHaveBeenCalledWith("mark_feature_ready", {
       featureId: "f1",
     });
-    // Session is NOT cleared — panel stays visible in collapsed state
-    expect(mockClearSession).not.toHaveBeenCalled();
-    expect(screen.getByText("Execution Complete")).toBeInTheDocument();
-    expect(screen.getByText("Restart Execution")).toBeInTheDocument();
-    expect(screen.getByText("Show Terminal")).toBeInTheDocument();
+    expect(mockClearSession).toHaveBeenCalled();
   });
 
   it("shows View Command button when launched_command exists", async () => {

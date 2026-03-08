@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useTauri } from "../hooks/useTauri";
 import { useTerminalSession } from "../hooks/useTerminalSession";
@@ -63,16 +63,31 @@ export function FeatureDetailPage() {
   // Load feature data
   useEffect(() => {
     if (!featureId) return;
-    tauri.getFeature(featureId).then((f) => {
-      setFeature(f);
+    tauri.getFeature(featureId).then(async (f) => {
       // Restore execution mode override from saved feature config
       if (f.execution_mode) {
         setModeOverride(f.execution_mode);
       }
-      // If already executing, restore the terminal session via context
       if (f.status === "executing" && f.pty_session_id) {
-        startSession(f.id, f.pty_session_id);
+        // Check whether the PTY session still exists
+        // (it won't after an app refresh since the backend restarts)
+        const exists = await tauri.ptySessionExists(f.pty_session_id).catch(() => false);
+        if (exists) {
+          startSession(f.id, f.pty_session_id);
+        } else {
+          // PTY session is gone — mark feature as ready
+          try {
+            const updated = await tauri.markFeatureReady(featureId);
+            f = updated;
+          } catch {
+            // best-effort
+          }
+        }
+      } else if (f.status !== "executing") {
+        // Feature is not executing — ensure no stale terminal session remains
+        clearSession();
       }
+      setFeature(f);
       // If task_specs exist (set by configureLaunch), always use them as the plan source.
       // This covers executing, ready, failed, and cancelled-back-to-ideation features.
       if (f.task_specs.length > 0) {
@@ -83,6 +98,13 @@ export function FeatureDetailPage() {
     tauri.getIdeationPrompt(featureId).then(setSystemPrompt).catch(() => {});
   }, [featureId]);
 
+  // Refresh feature when terminal session clears (execution completed or cancelled)
+  useEffect(() => {
+    if (!featureId || terminalSession) return;
+    // Session just cleared — refresh feature to pick up ready/failed status
+    tauri.getFeature(featureId).then(setFeature).catch(() => {});
+  }, [featureId, terminalSession]);
+
   // Poll feature status while executing to detect when it transitions to ready
   useEffect(() => {
     if (!featureId || feature?.status !== "executing") return;
@@ -90,11 +112,16 @@ export function FeatureDetailPage() {
       tauri.getFeature(featureId).then((f) => {
         if (f.status !== "executing") {
           setFeature(f);
+          clearSession();
         }
       }).catch(() => {});
     }, 3000);
     return () => clearInterval(interval);
   }, [featureId, feature?.status]);
+
+  // Keep a ref to the terminal session ID so the progress handler always has the latest value
+  const terminalSessionIdRef = useRef<string | null>(null);
+  terminalSessionIdRef.current = terminalSession?.sessionId ?? null;
 
   // Load task progress — once for completed features, poll during execution
   useEffect(() => {
@@ -102,19 +129,47 @@ export function FeatureDetailPage() {
     const isExecuting = feature?.status === "executing";
     const isComplete = feature?.status === "ready" || feature?.status === "failed";
     if (!isExecuting && !isComplete) return;
+
+    // Number of planned tasks (from ideation/launch config)
+    const expectedTaskCount = ideationResult?.tasks?.length ?? 0;
+    let autoEnded = false;
+
+    const handleProgress = (p: TaskProgress | null) => {
+      if (!p) return;
+      setTaskProgress(p);
+      // If all tasks are done during execution, end execution automatically.
+      // Cross-reference against expected task count to avoid premature completion
+      // when Claude has only written a subset of tasks to progress.json.
+      if (
+        isExecuting &&
+        !autoEnded &&
+        p.tasks.length > 0 &&
+        (expectedTaskCount === 0 || p.tasks.length >= expectedTaskCount) &&
+        p.tasks.every((t) => t.status === "done")
+      ) {
+        autoEnded = true;
+        const sid = terminalSessionIdRef.current;
+        // Kill the PTY, mark feature ready, and clear session directly.
+        // Don't rely on pty-exit event chain — it can be unreliable on Windows.
+        if (sid) {
+          tauri.killPty(sid).catch(() => {});
+        }
+        tauri.markFeatureReady(featureId).then((f) => {
+          setFeature(f);
+          clearSession();
+        }).catch(() => {});
+      }
+    };
+
     // Fetch once immediately
-    tauri.pollTaskProgress(featureId).then((p) => {
-      if (p) setTaskProgress(p);
-    }).catch(() => {});
+    tauri.pollTaskProgress(featureId).then(handleProgress).catch(() => {});
     // Only keep polling while executing
     if (!isExecuting) return;
     const interval = setInterval(() => {
-      tauri.pollTaskProgress(featureId).then((p) => {
-        if (p) setTaskProgress(p);
-      }).catch(() => {});
+      tauri.pollTaskProgress(featureId).then(handleProgress).catch(() => {});
     }, 5000);
     return () => clearInterval(interval);
-  }, [featureId, feature?.status]);
+  }, [featureId, feature?.status, ideationResult?.tasks?.length]);
 
   // Start ideation on mount
   const startIdeation = useCallback(async () => {
@@ -389,6 +444,7 @@ export function FeatureDetailPage() {
     if (!featureId) return;
     setRestarting(true);
     setError("");
+    setTaskProgress(null);
     try {
       const sessionId = await tauri.startLaunchPty(featureId, 120, 30);
       startSession(featureId, sessionId);
@@ -861,8 +917,12 @@ export function FeatureDetailPage() {
         </div>
       )}
 
+      {/* Portal target for PersistentTerminal — renders the active terminal here
+          instead of at the bottom of the page (App level) */}
+      <div id="terminal-portal-target" />
+
       {/* Ready state: validation, diff, PR, analytics */}
-      {isReady && (
+      {isReady && !hasActiveTerminal && (
         <>
           <div className="panel" style={{ marginTop: 16 }}>
             <div className="panel-title" style={{ marginBottom: 8 }}>

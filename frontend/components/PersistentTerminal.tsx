@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useLocation, useNavigate } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { useTerminalSession } from "../hooks/useTerminalSession";
@@ -6,20 +7,30 @@ import { Terminal } from "./Terminal";
 import type { Feature } from "../types";
 
 export function PersistentTerminal() {
-  const { session, startSession, clearSession } = useTerminalSession();
+  const { session, clearSession } = useTerminalSession();
   const location = useLocation();
   const navigate = useNavigate();
   const containerRef = useRef<HTMLDivElement>(null);
   const [cancelling, setCancelling] = useState(false);
-  const [exited, setExited] = useState(false);
-  const [collapsed, setCollapsed] = useState(false);
   const [showCommand, setShowCommand] = useState(false);
   const [launchedCommand, setLaunchedCommand] = useState<string | null>(null);
-  const [restarting, setRestarting] = useState(false);
+  const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
 
   const isOnFeaturePage = session
     ? location.pathname === `/feature/${session.featureId}/detail`
     : false;
+
+  // Look for the portal target element on the feature detail page
+  useEffect(() => {
+    if (isOnFeaturePage) {
+      const timer = setTimeout(() => {
+        setPortalTarget(document.getElementById("terminal-portal-target"));
+      }, 0);
+      return () => clearTimeout(timer);
+    } else {
+      setPortalTarget(null);
+    }
+  }, [isOnFeaturePage, location.pathname]);
 
   // Fetch launched_command when session starts
   useEffect(() => {
@@ -38,8 +49,6 @@ export function PersistentTerminal() {
 
   // Reset state when session changes
   useEffect(() => {
-    setExited(false);
-    setCollapsed(false);
     setShowCommand(false);
   }, [session?.sessionId]);
 
@@ -51,8 +60,7 @@ export function PersistentTerminal() {
     } catch {
       // Feature may already be in ready state
     }
-    setExited(true);
-    setCollapsed(true);
+    clearSession();
   };
 
   const handleCancel = async () => {
@@ -67,25 +75,7 @@ export function PersistentTerminal() {
     navigate(0);
   };
 
-  const handleRestart = async () => {
-    setRestarting(true);
-    try {
-      const featureId = session.featureId;
-      const sessionId = await invoke<string>("start_launch_pty", {
-        featureId,
-        cols: 120,
-        rows: 30,
-      });
-      // Start new session — this triggers a new sessionId, which remounts the Terminal
-      startSession(featureId, sessionId);
-    } catch (e) {
-      console.error("Failed to restart execution:", e);
-    } finally {
-      setRestarting(false);
-    }
-  };
-
-  return (
+  const content = (
     <div
       ref={containerRef}
       className="persistent-terminal-inline"
@@ -97,11 +87,11 @@ export function PersistentTerminal() {
             <span
               className="status-dot"
               style={{
-                backgroundColor: exited ? "var(--muted)" : "var(--success)",
+                backgroundColor: "var(--success)",
                 marginRight: 8,
               }}
             />
-            {exited ? "Execution Complete" : "Execution"}
+            Execution
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             {launchedCommand && (
@@ -112,32 +102,14 @@ export function PersistentTerminal() {
                 {showCommand ? "Hide Command" : "View Command"}
               </button>
             )}
-            {exited ? (
-              <>
-                <button
-                  className="btn btn-secondary btn-sm"
-                  onClick={() => setCollapsed(!collapsed)}
-                >
-                  {collapsed ? "Show Terminal" : "Hide Terminal"}
-                </button>
-                <button
-                  className="btn btn-primary btn-sm"
-                  onClick={handleRestart}
-                  disabled={restarting}
-                >
-                  {restarting ? "Restarting..." : "Restart Execution"}
-                </button>
-              </>
-            ) : (
-              <button
-                className="btn btn-secondary btn-sm"
-                onClick={handleCancel}
-                disabled={cancelling}
-                style={{ color: "var(--danger)" }}
-              >
-                {cancelling ? "Cancelling..." : "Cancel Execution"}
-              </button>
-            )}
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={handleCancel}
+              disabled={cancelling}
+              style={{ color: "var(--danger)" }}
+            >
+              {cancelling ? "Cancelling..." : "Cancel Execution"}
+            </button>
           </div>
         </div>
         {showCommand && launchedCommand && (
@@ -145,10 +117,16 @@ export function PersistentTerminal() {
             {launchedCommand}
           </div>
         )}
-        <div style={collapsed ? { display: "none" } : undefined}>
-          <Terminal sessionId={session.sessionId} onExit={handleExit} />
-        </div>
+        <Terminal sessionId={session.sessionId} onExit={handleExit} />
       </div>
     </div>
   );
+
+  // When on the feature detail page and the portal target exists,
+  // render into the portal target so the terminal appears above Validation & PR
+  if (portalTarget) {
+    return createPortal(content, portalTarget);
+  }
+
+  return content;
 }

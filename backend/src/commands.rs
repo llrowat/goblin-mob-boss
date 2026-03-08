@@ -756,6 +756,10 @@ pub fn start_launch_pty(
     let (args, env, _prompt) =
         launch::build_launch_with_repo(&feature, &system_prompt_content, Some(&repo.path));
 
+    // Clear any previous progress file so the UI starts fresh
+    let progress_path = feature_dir.join("tasks").join("progress.json");
+    let _ = std::fs::remove_file(&progress_path);
+
     let session_id = format!("launch-{}", feature_id);
 
     // args[0] is "claude", rest are arguments
@@ -1365,6 +1369,11 @@ pub fn resize_pty(
 #[tauri::command]
 pub fn kill_pty(pty_sessions: State<pty::PtySessions>, session_id: String) -> Result<(), String> {
     pty::kill_pty_session(&pty_sessions, &session_id)
+}
+
+#[tauri::command]
+pub fn pty_session_exists(pty_sessions: State<pty::PtySessions>, session_id: String) -> bool {
+    pty::session_exists(&pty_sessions, &session_id)
 }
 
 // ── Preferences Commands ──
