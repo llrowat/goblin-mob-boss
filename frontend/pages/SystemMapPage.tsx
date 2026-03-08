@@ -908,8 +908,8 @@ export function SystemMapPage() {
     return (
       <div className="map-detail-panel panel">
         <div className="panel-header">
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <svg width={24} height={24} style={{ flexShrink: 0 }}>
+          <div className="map-detail-title">
+            <svg width={24} height={24} className="map-detail-icon">
               {SERVICE_SHAPE[svc.service_type] === "circle" ? (
                 <circle cx={12} cy={12} r={10} fill="none" stroke={svc.color} strokeWidth={2} />
               ) : (
@@ -926,53 +926,36 @@ export function SystemMapPage() {
           </button>
         </div>
 
-        <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>
+        <div className="map-detail-meta">
           {SERVICE_LABELS[svc.service_type]}
           {svc.runtime && ` \u00B7 ${svc.runtime}`}
           {svc.framework && ` \u00B7 ${svc.framework}`}
         </div>
 
         {svc.description && (
-          <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 12 }}>
-            {svc.description}
-          </p>
+          <p className="map-detail-desc">{svc.description}</p>
         )}
 
         {svc.owns_data.length > 0 && (
-          <div style={{ marginBottom: 12 }}>
-            <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600, textTransform: "uppercase", marginBottom: 4 }}>
-              Owned Data
-            </div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+          <div className="map-detail-section">
+            <div className="map-detail-section-label">Owned Data</div>
+            <div className="map-detail-tags">
               {svc.owns_data.map((d) => (
-                <span
-                  key={d}
-                  style={{
-                    fontSize: 11,
-                    padding: "2px 8px",
-                    borderRadius: 10,
-                    background: "rgba(184, 148, 74, 0.12)",
-                    color: "var(--accent-brass)",
-                  }}
-                >
-                  {d}
-                </span>
+                <span key={d} className="map-detail-tag">{d}</span>
               ))}
             </div>
           </div>
         )}
 
         {incoming.length > 0 && (
-          <div style={{ marginBottom: 8 }}>
-            <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600, textTransform: "uppercase", marginBottom: 4 }}>
-              Incoming Routes
-            </div>
+          <div className="map-detail-section">
+            <div className="map-detail-section-label">Incoming Routes</div>
             {incoming.map((c) => {
               const fromSvc = activeMap.services.find((s) => s.id === c.from_service);
               return (
                 <div
                   key={c.id}
-                  style={{ fontSize: 12, color: "var(--text-secondary)", padding: "2px 0", cursor: "pointer" }}
+                  className="map-detail-route"
                   onClick={() => openEditConnection(c)}
                 >
                   {fromSvc?.name ?? "?"} \u2192 {c.connection_type}
@@ -985,16 +968,14 @@ export function SystemMapPage() {
         )}
 
         {outgoing.length > 0 && (
-          <div>
-            <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600, textTransform: "uppercase", marginBottom: 4 }}>
-              Outgoing Routes
-            </div>
+          <div className="map-detail-section">
+            <div className="map-detail-section-label">Outgoing Routes</div>
             {outgoing.map((c) => {
               const toSvc = activeMap.services.find((s) => s.id === c.to_service);
               return (
                 <div
                   key={c.id}
-                  style={{ fontSize: 12, color: "var(--text-secondary)", padding: "2px 0", cursor: "pointer" }}
+                  className="map-detail-route"
                   onClick={() => openEditConnection(c)}
                 >
                   \u2192 {toSvc?.name ?? "?"} ({c.connection_type})
@@ -1057,12 +1038,12 @@ export function SystemMapPage() {
       <div className="modal-overlay" onClick={() => setShowExploreModal(false)}>
         <div className="modal" onClick={(e) => e.stopPropagation()}>
           <div className="modal-title">Explore Repositories</div>
-          <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 16 }}>
+          <p className="modal-desc">
             Scan your repositories to discover services, connections, and data
             ownership. Select which repos to explore.
           </p>
           {repos.length === 0 ? (
-            <div style={{ fontSize: 13, color: "var(--muted)", padding: "16px 0" }}>
+            <div className="explore-empty">
               No repositories registered. Add repositories first.
             </div>
           ) : (
@@ -1121,27 +1102,27 @@ export function SystemMapPage() {
       <div className="discovery-progress">
         <CommandDisplay command={discoveryCommand} />
         {discoverySessionId && (
-          <div style={{ height: 300, marginBottom: 12 }}>
+          <div className="discovery-terminal">
             <Terminal sessionId={discoverySessionId} onExit={handleDiscoveryExit} />
           </div>
         )}
         {discoveryStatus && (
           <div className="discovery-status">
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+            <div className="discovery-status-header">
               {!discoveryStatus.complete && <span className="discovery-spinner" />}
-              <span style={{ fontSize: 13, fontWeight: 500 }}>
+              <span className="discovery-status-title">
                 {discoveryStatus.complete
                   ? "Discovery complete!"
                   : `${discoveryStatus.found} of ${discoveryStatus.total} repos scanned...`}
               </span>
             </div>
-            <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+            <div className="discovery-status-counts">
               {discoveryStatus.services_discovered} service{discoveryStatus.services_discovered !== 1 ? "s" : ""} discovered
               {" \u00B7 "}
               {discoveryStatus.connections_discovered} route{discoveryStatus.connections_discovered !== 1 ? "s" : ""} mapped
             </div>
             {discoveryStatus.errors.length > 0 && (
-              <div style={{ fontSize: 12, color: "var(--danger)", marginTop: 6 }}>
+              <div className="discovery-errors">
                 {discoveryStatus.errors.map((err, i) => (
                   <div key={i}>{err}</div>
                 ))}
@@ -1150,7 +1131,7 @@ export function SystemMapPage() {
           </div>
         )}
         {!discoverySessionId && !discoveryStatus && exploring && (
-          <div style={{ fontSize: 13, color: "var(--muted)", display: "flex", alignItems: "center", gap: 8 }}>
+          <div className="discovery-preparing">
             <span className="discovery-spinner" />
             Preparing discovery...
           </div>
@@ -1162,16 +1143,15 @@ export function SystemMapPage() {
   // ── Main render ──
   return (
     <div className="system-map-page">
-      <div className="page-header" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+      <div className="page-header map-page-header">
         <div>
           <h2>System Map</h2>
           <p>Visualize how your services connect and interact.</p>
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div className="map-header-actions">
           {maps.length > 1 && (
             <select
-              className="form-select"
-              style={{ width: "auto" }}
+              className="form-select map-select"
               value={activeMapId ?? ""}
               onChange={(e) => setActiveMapId(e.target.value)}
             >
@@ -1194,45 +1174,47 @@ export function SystemMapPage() {
         <>
           {/* Toolbar */}
           <div className="map-toolbar">
-            <button className="btn btn-brass btn-sm" onClick={openAddService}>
-              Add Service
-            </button>
-            <button
-              className="btn btn-secondary btn-sm"
-              onClick={openAddConnection}
-              disabled={activeMap.services.length < 2}
-            >
-              Add Connection
-            </button>
-            <button
-              className="btn btn-brass btn-sm"
-              onClick={() => setShowExploreModal(true)}
-              disabled={exploring || repos.length === 0}
-            >
-              {exploring ? "Exploring..." : "Explore"}
-            </button>
-            <div style={{ flex: 1 }} />
-            <span style={{ fontSize: 12, color: "var(--muted)" }}>
+            <div className="map-toolbar-group">
+              <button className="btn btn-brass btn-sm" onClick={openAddService}>
+                Add Service
+              </button>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={openAddConnection}
+                disabled={activeMap.services.length < 2}
+              >
+                Add Connection
+              </button>
+              <button
+                className="btn btn-brass btn-sm"
+                onClick={() => setShowExploreModal(true)}
+                disabled={exploring || repos.length === 0}
+              >
+                {exploring ? "Exploring..." : "Explore"}
+              </button>
+            </div>
+            <span className="map-toolbar-stats">
               {activeMap.services.length} service{activeMap.services.length !== 1 ? "s" : ""}
               {" \u00B7 "}
               {activeMap.connections.length} connection{activeMap.connections.length !== 1 ? "s" : ""}
             </span>
-            <div style={{ flex: 1 }} />
-            {confirmDeleteMap ? (
-              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                <span style={{ fontSize: 12, color: "var(--danger)" }}>Delete this map?</span>
-                <button className="btn btn-danger btn-sm" onClick={handleDeleteMap}>
-                  Yes
+            <div className="map-toolbar-group">
+              {confirmDeleteMap ? (
+                <div className="map-delete-confirm">
+                  <span className="map-delete-prompt">Delete this map?</span>
+                  <button className="btn btn-danger btn-sm" onClick={handleDeleteMap}>
+                    Yes
+                  </button>
+                  <button className="btn btn-secondary btn-sm" onClick={() => setConfirmDeleteMap(false)}>
+                    No
+                  </button>
+                </div>
+              ) : (
+                <button className="btn btn-danger btn-sm" onClick={() => setConfirmDeleteMap(true)}>
+                  Delete Map
                 </button>
-                <button className="btn btn-secondary btn-sm" onClick={() => setConfirmDeleteMap(false)}>
-                  No
-                </button>
-              </div>
-            ) : (
-              <button className="btn btn-danger btn-sm" onClick={() => setConfirmDeleteMap(true)}>
-                Delete Map
-              </button>
-            )}
+              )}
+            </div>
           </div>
 
           {/* Discovery progress */}
@@ -1242,10 +1224,10 @@ export function SystemMapPage() {
           <div className="map-canvas-container">
             <div className="map-canvas-wrapper">
               {activeMap.services.length === 0 ? (
-                <div className="empty-state" style={{ padding: "80px 24px" }}>
+                <div className="empty-state map-empty-canvas">
                   <h3>No services yet</h3>
                   <p>Add a service or explore your repos to see what&apos;s out there.</p>
-                  <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+                  <div className="map-empty-actions">
                     <button className="btn btn-brass" onClick={openAddService}>
                       Add Service
                     </button>

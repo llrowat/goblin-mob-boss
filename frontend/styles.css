@@ -1612,14 +1612,57 @@ body {
   height: calc(100vh - 64px);
 }
 
+/* ── Page header ── */
+.map-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.map-header-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.map-select {
+  width: auto;
+}
+
+/* ── Toolbar ── */
 .map-toolbar {
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: space-between;
+  gap: 12px;
   padding: 8px 0;
   margin-bottom: 8px;
 }
 
+.map-toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.map-toolbar-stats {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.map-delete-confirm {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.map-delete-prompt {
+  font-size: 12px;
+  color: var(--danger);
+}
+
+/* ── Canvas ── */
 .map-canvas-container {
   display: flex;
   gap: 16px;
@@ -1641,6 +1684,16 @@ body {
   height: 100%;
   display: block;
   user-select: none;
+}
+
+.map-empty-canvas {
+  padding: 80px 24px;
+}
+
+.map-empty-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
 }
 
 /* ── Service nodes ── */
@@ -1722,6 +1775,70 @@ body {
   to { opacity: 1; transform: translateX(0); }
 }
 
+/* ── Detail panel ── */
+.map-detail-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.map-detail-icon {
+  flex-shrink: 0;
+}
+
+.map-detail-meta {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+.map-detail-desc {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+}
+
+.map-detail-section {
+  margin-bottom: 12px;
+}
+
+.map-detail-section:last-child {
+  margin-bottom: 0;
+}
+
+.map-detail-section-label {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.map-detail-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.map-detail-tag {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: rgba(184, 148, 74, 0.12);
+  color: var(--accent-brass);
+}
+
+.map-detail-route {
+  font-size: 12px;
+  color: var(--text-secondary);
+  padding: 2px 0;
+  cursor: pointer;
+}
+
+.map-detail-route:hover {
+  color: var(--text);
+}
+
 /* ── Legend ── */
 .map-legend {
   background: var(--panel);
@@ -1792,11 +1909,28 @@ body {
   border-color: var(--accent-brass);
 }
 
+.explore-empty {
+  font-size: 13px;
+  color: var(--muted);
+  padding: 16px 0;
+}
+
+.modal-desc {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+}
+
 .discovery-progress {
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 16px;
+  margin-bottom: 12px;
+}
+
+.discovery-terminal {
+  height: 300px;
   margin-bottom: 12px;
 }
 
@@ -1819,6 +1953,37 @@ body {
 
 .discovery-status {
   padding-top: 8px;
+}
+
+.discovery-status-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.discovery-status-title {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.discovery-status-counts {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.discovery-errors {
+  font-size: 12px;
+  color: var(--danger);
+  margin-top: 6px;
+}
+
+.discovery-preparing {
+  font-size: 13px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .discovery-spinner,
