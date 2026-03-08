@@ -8,6 +8,7 @@ import type {
   IdeationResult,
   TaskSpec,
   ExecutionMode,
+  TaskProgress,
   DiffSummary,
   VerifyResult,
   ExecutionAnalysis,
@@ -50,6 +51,9 @@ export function FeatureDetailPage() {
   // Launch
   const [launching, setLaunching] = useState(false);
 
+  // Task progress tracking during execution
+  const [taskProgress, setTaskProgress] = useState<TaskProgress | null>(null);
+
   // Ready-state: validation, diff, PR, analytics
   const [diff, setDiff] = useState<DiffSummary | null>(null);
   const [verifyResult, setVerifyResult] = useState<VerifyResult | null>(null);
@@ -78,6 +82,34 @@ export function FeatureDetailPage() {
     }).catch(console.error);
     tauri.getIdeationPrompt(featureId).then(setSystemPrompt).catch(() => {});
   }, [featureId]);
+
+  // Poll feature status while executing to detect when it transitions to ready
+  useEffect(() => {
+    if (!featureId || feature?.status !== "executing") return;
+    const interval = setInterval(() => {
+      tauri.getFeature(featureId).then((f) => {
+        if (f.status !== "executing") {
+          setFeature(f);
+        }
+      }).catch(() => {});
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [featureId, feature?.status]);
+
+  // Poll task progress during execution
+  useEffect(() => {
+    if (!featureId || feature?.status !== "executing") return;
+    // Immediately fetch once
+    tauri.pollTaskProgress(featureId).then((p) => {
+      if (p) setTaskProgress(p);
+    }).catch(() => {});
+    const interval = setInterval(() => {
+      tauri.pollTaskProgress(featureId).then((p) => {
+        if (p) setTaskProgress(p);
+      }).catch(() => {});
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [featureId, feature?.status]);
 
   // Start ideation on mount
   const startIdeation = useCallback(async () => {
@@ -621,14 +653,26 @@ export function FeatureDetailPage() {
               <div className="jira-col-ac">AC</div>
               {!isReadOnly && <div className="jira-col-edit" />}
             </div>
-            {ideationResult.tasks.map((spec, i) => (
+            {ideationResult.tasks.map((spec, i) => {
+              const tp = taskProgress?.tasks.find((t) => t.task === i + 1);
+              const doneCount = tp?.acceptance_criteria.filter((c) => c.done).length ?? 0;
+              const totalCount = spec.acceptance_criteria.length;
+              return (
               <div key={i} className="jira-row-group">
                 <div
                   className={`jira-row${expandedTask === i ? " jira-row-expanded" : ""}`}
                   onClick={() => setExpandedTask(expandedTask === i ? null : i)}
                 >
                   <div className="jira-col-key">
-                    <span className="jira-task-icon" />
+                    {tp ? (
+                      <span
+                        className="jira-task-status-icon"
+                        data-status={tp.status}
+                        title={tp.status.replace("_", " ")}
+                      />
+                    ) : (
+                      <span className="jira-task-icon" />
+                    )}
                     TASK-{i + 1}
                   </div>
                   <div className="jira-col-summary">{spec.title}</div>
@@ -643,9 +687,9 @@ export function FeatureDetailPage() {
                       : "\u2014"}
                   </div>
                   <div className="jira-col-ac">
-                    {spec.acceptance_criteria.length > 0 && (
-                      <span className="jira-ac-count">
-                        {spec.acceptance_criteria.length}
+                    {totalCount > 0 && (
+                      <span className={`jira-ac-count${doneCount === totalCount && totalCount > 0 ? " jira-ac-done" : ""}`}>
+                        {tp ? `${doneCount}/${totalCount}` : totalCount}
                       </span>
                     )}
                   </div>
@@ -667,17 +711,23 @@ export function FeatureDetailPage() {
                   <div className="jira-detail">
                     <div className="jira-detail-label">Acceptance Criteria</div>
                     <ul className="jira-checklist">
-                      {spec.acceptance_criteria.map((c, j) => (
+                      {spec.acceptance_criteria.map((c, j) => {
+                        const criterionDone = tp?.acceptance_criteria.find((cp) => cp.criterion === c)?.done ?? false;
+                        return (
                         <li key={j}>
-                          <span className="jira-check-box" />
-                          {c}
+                          <span className={`jira-check-box${criterionDone ? " jira-check-done" : ""}`} />
+                          <span style={criterionDone ? { textDecoration: "line-through", color: "var(--muted)" } : undefined}>
+                            {c}
+                          </span>
                         </li>
-                      ))}
+                        );
+                      })}
                     </ul>
                   </div>
                 )}
               </div>
-            ))}
+              );
+            })}
           </div>
 
           {/* Actions */}

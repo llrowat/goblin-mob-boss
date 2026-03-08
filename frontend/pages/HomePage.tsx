@@ -28,10 +28,16 @@ export function HomePage() {
   }, []);
 
   useEffect(() => {
-    const loadFeatures = filterRepoId
-      ? tauri.listFeatures(filterRepoId)
-      : tauri.listAllFeatures();
-    loadFeatures.then(setFeatures).catch(() => {});
+    const loadFeatures = () => {
+      const fetcher = filterRepoId
+        ? tauri.listFeatures(filterRepoId)
+        : tauri.listAllFeatures();
+      fetcher.then(setFeatures).catch(() => {});
+    };
+    loadFeatures();
+    // Poll to keep statuses fresh (executing -> ready, etc.)
+    const interval = setInterval(loadFeatures, 5000);
+    return () => clearInterval(interval);
   }, [filterRepoId]);
 
   const handleStartFeature = async () => {

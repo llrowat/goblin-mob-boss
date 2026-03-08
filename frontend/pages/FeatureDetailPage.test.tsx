@@ -2,7 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { invoke } from "@tauri-apps/api/core";
 import { FeatureDetailPage } from "./FeatureDetailPage";
-import type { Feature, IdeationResult, PlanningQuestion } from "../types";
+import type { Feature, IdeationResult, PlanningQuestion, TaskProgress } from "../types";
 
 // Mock the useTerminalSession hook
 const mockStartSession = vi.fn();
@@ -453,6 +453,118 @@ describe("FeatureDetailPage", () => {
     });
 
     expect(screen.queryByText("View Command")).not.toBeInTheDocument();
+  });
+
+  it("shows task progress during execution", async () => {
+    const executingFeature: Feature = {
+      ...mockFeature,
+      status: "executing",
+      pty_session_id: "launch-f1",
+      task_specs: mockIdeationResult.tasks,
+    };
+
+    const mockProgress: TaskProgress = {
+      tasks: [
+        {
+          task: 1,
+          title: "Add auth module",
+          status: "in_progress",
+          acceptance_criteria: [
+            { criterion: "Login works", done: true },
+            { criterion: "Logout works", done: false },
+          ],
+        },
+        {
+          task: 2,
+          title: "Add auth UI",
+          status: "pending",
+          acceptance_criteria: [
+            { criterion: "Form renders", done: false },
+          ],
+        },
+      ],
+    };
+
+    mockedInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "get_feature") return executingFeature;
+      if (cmd === "get_ideation_prompt") return "system prompt";
+      if (cmd === "poll_ideation_result") return mockIdeationResult;
+      if (cmd === "poll_task_progress") return mockProgress;
+      return undefined;
+    });
+
+    render(<FeatureDetailPage />);
+
+    // Wait for tasks to load and progress to be polled
+    await waitFor(() => {
+      expect(screen.getByText("Add auth module")).toBeInTheDocument();
+    });
+
+    // Should show progress fraction for task 1 (1/2) and task 2 (0/1)
+    await waitFor(() => {
+      expect(screen.getByText("1/2")).toBeInTheDocument();
+    });
+    expect(screen.getByText("0/1")).toBeInTheDocument();
+
+    // Should show task status icons
+    const statusIcons = document.querySelectorAll(".jira-task-status-icon");
+    expect(statusIcons.length).toBe(2);
+    expect(statusIcons[0].getAttribute("data-status")).toBe("in_progress");
+    expect(statusIcons[1].getAttribute("data-status")).toBe("pending");
+
+    // poll_task_progress should have been called
+    expect(mockedInvoke).toHaveBeenCalledWith("poll_task_progress", { featureId: "f1" });
+  });
+
+  it("shows checked criteria when expanded during execution", async () => {
+    const executingFeature: Feature = {
+      ...mockFeature,
+      status: "executing",
+      pty_session_id: "launch-f1",
+      task_specs: mockIdeationResult.tasks,
+    };
+
+    const mockProgress: TaskProgress = {
+      tasks: [
+        {
+          task: 1,
+          title: "Add auth module",
+          status: "in_progress",
+          acceptance_criteria: [
+            { criterion: "Login works", done: true },
+            { criterion: "Logout works", done: false },
+          ],
+        },
+      ],
+    };
+
+    mockedInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "get_feature") return executingFeature;
+      if (cmd === "get_ideation_prompt") return "system prompt";
+      if (cmd === "poll_ideation_result") return mockIdeationResult;
+      if (cmd === "poll_task_progress") return mockProgress;
+      return undefined;
+    });
+
+    render(<FeatureDetailPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Add auth module")).toBeInTheDocument();
+    });
+
+    // Wait for progress data
+    await waitFor(() => {
+      expect(screen.getByText("1/2")).toBeInTheDocument();
+    });
+
+    // Click on TASK-1 row to expand
+    await userEvent.click(screen.getByText("Add auth module"));
+
+    // Should show checked/unchecked criteria
+    const checkBoxes = document.querySelectorAll(".jira-check-box");
+    expect(checkBoxes.length).toBe(2);
+    expect(checkBoxes[0].classList.contains("jira-check-done")).toBe(true);
+    expect(checkBoxes[1].classList.contains("jira-check-done")).toBe(false);
   });
 
   it("does not run ideation for ready features", async () => {

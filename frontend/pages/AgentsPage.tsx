@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useTauri } from "../hooks/useTauri";
-import type { AgentFile, Repository } from "../types";
+import type { AgentFile } from "../types";
 
 const PRESET_COLORS = [
   "#5a8a5c",
@@ -41,8 +41,6 @@ const emptyForm: AgentFormData = {
 
 export function AgentsPage() {
   const tauri = useTauri();
-  const [repos, setRepos] = useState<Repository[]>([]);
-  const [selectedRepoId, setSelectedRepoId] = useState<string>("");
   const [agents, setAgents] = useState<AgentFile[]>([]);
   const [error, setError] = useState("");
   const [modalAgent, setModalAgent] = useState<AgentFile | null>(null);
@@ -55,26 +53,14 @@ export function AgentsPage() {
     tauri.listBuiltInAgents().then(setBuiltInAgents).catch(() => setBuiltInAgents([]));
   }, []);
 
-  useEffect(() => {
-    tauri.listRepositories().then((r) => {
-      setRepos(r);
-      if (r.length > 0) {
-        setSelectedRepoId(r[0].id);
-      }
-    });
-  }, []);
-
-  const selectedRepo = repos.find((r) => r.id === selectedRepoId);
-
   const loadAgents = () => {
-    if (!selectedRepo) return;
     tauri
-      .listAgents(selectedRepo.path)
+      .listGlobalAgents()
       .then(setAgents)
       .catch(() => setAgents([]));
   };
 
-  useEffect(loadAgents, [selectedRepoId, repos]);
+  useEffect(loadAgents, []);
 
   const openCreate = () => {
     setModalAgent(null);
@@ -95,8 +81,7 @@ export function AgentsPage() {
   };
 
   const handleSave = async (data: AgentFormData) => {
-    if (!selectedRepo || !data.name.trim() || !data.system_prompt.trim())
-      return;
+    if (!data.name.trim() || !data.system_prompt.trim()) return;
     setError("");
 
     const filename =
@@ -110,13 +95,13 @@ export function AgentsPage() {
       tools: data.tools.trim() || null,
       model: data.model.trim() || null,
       system_prompt: data.system_prompt.trim(),
-      is_global: false,
+      is_global: true,
       color: data.color,
       role: data.role as AgentFile["role"],
     };
 
     try {
-      await tauri.saveAgent(selectedRepo.path, agent);
+      await tauri.saveGlobalAgent(agent);
       closeModal();
       loadAgents();
     } catch (e) {
@@ -125,10 +110,9 @@ export function AgentsPage() {
   };
 
   const handleRemove = async (filename: string) => {
-    if (!selectedRepo) return;
     setError("");
     try {
-      await tauri.deleteAgent(selectedRepo.path, filename);
+      await tauri.deleteGlobalAgent(filename);
       setDeleteConfirm(null);
       loadAgents();
     } catch (e) {
@@ -137,11 +121,15 @@ export function AgentsPage() {
   };
 
   const handleAddBuiltIn = async (filename: string) => {
-    if (!selectedRepo || addingBuiltIn) return;
+    if (addingBuiltIn) return;
     setAddingBuiltIn(filename);
     setError("");
     try {
-      await tauri.addBuiltInAgent(selectedRepo.path, filename);
+      // Find the built-in agent template and save it globally
+      const template = builtInAgents.find((a) => a.filename === filename);
+      if (template) {
+        await tauri.saveGlobalAgent({ ...template, is_global: true });
+      }
       loadAgents();
     } catch (e) {
       setError(String(e));
@@ -149,9 +137,6 @@ export function AgentsPage() {
       setAddingBuiltIn(null);
     }
   };
-
-  const repoAgents = agents.filter((a) => !a.is_global);
-  const globalAgents = agents.filter((a) => a.is_global);
 
   // Built-in agents not yet added (match by filename)
   const agentFilenames = new Set(agents.map((a) => a.filename));
@@ -164,30 +149,12 @@ export function AgentsPage() {
       <div className="page-header">
         <h2>Agents</h2>
         <p>
-          Manage your agents. These .claude/agents/*.md files define who&apos;s
-          available for task execution.
+          Manage your global agents. These ~/.claude/agents/*.md files define
+          who&apos;s available for task execution across all repos.
         </p>
       </div>
 
       {error && !modalMode && <div className="error-banner">{error}</div>}
-
-      {repos.length > 1 && (
-        <div className="form-group" style={{ marginBottom: 16 }}>
-          <label className="form-label">Repository</label>
-          <select
-            className="form-select"
-            value={selectedRepoId}
-            onChange={(e) => setSelectedRepoId(e.target.value)}
-            style={{ maxWidth: 300 }}
-          >
-            {repos.map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.name}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
 
       <div style={{ marginBottom: 20 }}>
         <button className="btn btn-primary" onClick={openCreate}>
@@ -195,58 +162,25 @@ export function AgentsPage() {
         </button>
       </div>
 
-      {/* Repo agents */}
-      {repoAgents.length > 0 && (
-        <>
-          <div
-            className="sidebar-section-label"
-            style={{ padding: "0 0 8px" }}
-          >
-            Repository Agents
-          </div>
-          <div className="agent-grid">
-            {repoAgents.map((agent) => (
-              <AgentCard
-                key={agent.filename}
-                agent={agent}
-                onEdit={() => openEdit(agent)}
-                onRemove={() => setDeleteConfirm(agent.filename)}
-                onConfirmDelete={() => handleRemove(agent.filename)}
-                deleteConfirm={deleteConfirm === agent.filename}
-                onCancelDelete={() => setDeleteConfirm(null)}
-              />
-            ))}
-          </div>
-        </>
-      )}
-
       {/* Global agents */}
-      {globalAgents.length > 0 && (
-        <>
-          <div
-            className="sidebar-section-label"
-            style={{ padding: "20px 0 8px" }}
-          >
-            Global Agents (~/.claude/agents/)
-          </div>
-          <div className="agent-grid">
-            {globalAgents.map((agent) => (
-              <AgentCard
-                key={agent.filename}
-                agent={agent}
-                onEdit={() => openEdit(agent)}
-                onRemove={undefined}
-                onConfirmDelete={undefined}
-                deleteConfirm={false}
-                onCancelDelete={undefined}
-              />
-            ))}
-          </div>
-        </>
+      {agents.length > 0 && (
+        <div className="agent-grid">
+          {agents.map((agent) => (
+            <AgentCard
+              key={agent.filename}
+              agent={agent}
+              onEdit={() => openEdit(agent)}
+              onRemove={() => setDeleteConfirm(agent.filename)}
+              onConfirmDelete={() => handleRemove(agent.filename)}
+              deleteConfirm={deleteConfirm === agent.filename}
+              onCancelDelete={() => setDeleteConfirm(null)}
+            />
+          ))}
+        </div>
       )}
 
       {/* Built-in agents (not yet added) */}
-      {unappliedBuiltIns.length > 0 && selectedRepo && (
+      {unappliedBuiltIns.length > 0 && (
         <>
           <div
             className="sidebar-section-label"
@@ -271,8 +205,8 @@ export function AgentsPage() {
         <div className="empty-state">
           <h3>No Agents</h3>
           <p>
-            No crew members yet. Create .md files in your repo&apos;s .claude/agents/ directory, or
-            add one above.
+            No crew members yet. Add an agent above to populate your
+            ~/.claude/agents/ directory.
           </p>
         </div>
       )}
@@ -455,7 +389,7 @@ function BuiltInAgentCard({
             onClick={onAdd}
             disabled={adding}
           >
-            {adding ? "Adding..." : "+ Add to Repo"}
+            {adding ? "Adding..." : "+ Add"}
           </button>
         </div>
       </div>

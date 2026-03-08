@@ -92,6 +92,26 @@ export interface IdeationResult {
   answered_questions: PlanningAnswer[] | null;
 }
 
+// ── Task Progress ──
+
+export type TaskStatus = "pending" | "in_progress" | "done";
+
+export interface CriterionProgress {
+  criterion: string;
+  done: boolean;
+}
+
+export interface TaskProgressEntry {
+  task: number;
+  title: string;
+  status: TaskStatus;
+  acceptance_criteria: CriterionProgress[];
+}
+
+export interface TaskProgress {
+  tasks: TaskProgressEntry[];
+}
+
 export interface ValidatorResult {
   command: string;
   exit_code: number;

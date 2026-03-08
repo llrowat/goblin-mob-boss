@@ -7,6 +7,7 @@ import type {
   ExecutionMode,
   IdeationResult,
   PlanningAnswer,
+  TaskProgress,
   VerifyResult,
   DiffSummary,
   Preferences,
@@ -83,6 +84,15 @@ export function useTauri() {
 
     deleteAgent: (repoPath: string, filename: string) =>
       invoke<void>("delete_agent", { repoPath, filename }),
+
+    listGlobalAgents: () =>
+      invoke<AgentFile[]>("list_global_agents"),
+
+    saveGlobalAgent: (agent: AgentFile) =>
+      invoke<void>("save_global_agent", { agent }),
+
+    deleteGlobalAgent: (filename: string) =>
+      invoke<void>("delete_global_agent", { filename }),
 
     // Features
     startFeature: (repoIds: string[], name: string, description: string) =>
@@ -194,6 +204,10 @@ export function useTauri() {
 
     listFeatureRecipes: () =>
       invoke<FeatureRecipe[]>("list_feature_recipes"),
+
+    // Task Progress
+    pollTaskProgress: (featureId: string) =>
+      invoke<TaskProgress | null>("poll_task_progress", { featureId }),
 
     // Execution Observability
     pollExecutionStatus: (featureId: string) =>

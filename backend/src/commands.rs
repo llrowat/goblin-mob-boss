@@ -193,6 +193,21 @@ pub fn delete_agent(repo_path: String, filename: String) -> Result<(), String> {
     store::delete_repo_agent(&repo_path, &filename)
 }
 
+#[tauri::command]
+pub fn list_global_agents() -> Result<Vec<AgentFile>, String> {
+    store::list_global_agents()
+}
+
+#[tauri::command]
+pub fn save_global_agent(agent: AgentFile) -> Result<(), String> {
+    store::save_global_agent(&agent)
+}
+
+#[tauri::command]
+pub fn delete_global_agent(filename: String) -> Result<(), String> {
+    store::delete_global_agent(&filename)
+}
+
 // ── Feature Commands ──
 
 /// Validate a feature name: must not be empty, not too long, no path traversal.
@@ -1413,6 +1428,52 @@ pub fn poll_execution_status(
 
     let repo = get_primary_repo(&state, &feature)?;
     observer::poll_execution_snapshot(&repo.path, &repo.base_branch, &feature.branch)
+}
+
+/// Poll task progress from the progress.json file written by Claude during execution.
+#[tauri::command]
+pub fn poll_task_progress(
+    state: State<AppState>,
+    feature_id: String,
+) -> Result<Option<TaskProgress>, String> {
+    let features = state.features.lock().unwrap();
+    let feature = features
+        .get(&feature_id)
+        .ok_or("Feature not found")?
+        .clone();
+    drop(features);
+
+    let repo = get_primary_repo(&state, &feature)?;
+    let work_dir = feature
+        .worktree_paths
+        .get(&repo.id)
+        .map(|s| s.as_str())
+        .unwrap_or(&repo.path);
+
+    let progress_path = Path::new(work_dir)
+        .join(".gmb")
+        .join("features")
+        .join(&feature.id)
+        .join("tasks")
+        .join("progress.json");
+
+    if !progress_path.exists() {
+        return Ok(None);
+    }
+
+    match std::fs::read_to_string(&progress_path) {
+        Ok(data) => match serde_json::from_str::<TaskProgress>(&data) {
+            Ok(progress) => Ok(Some(progress)),
+            Err(e) => {
+                log::warn!("Malformed progress.json for feature {}: {}", feature_id, e);
+                Ok(None)
+            }
+        },
+        Err(e) => {
+            log::warn!("Failed to read progress.json for feature {}: {}", feature_id, e);
+            Ok(None)
+        }
+    }
 }
 
 // ── Analytics Commands ──

@@ -305,6 +305,46 @@ pub struct TaskSpec {
     pub agent: String,
 }
 
+// ── Task Progress ──
+// Written by Claude during execution to track task and acceptance criteria completion.
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskProgress {
+    pub tasks: Vec<TaskProgressEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskProgressEntry {
+    /// 1-based task number matching the plan
+    pub task: u32,
+    pub title: String,
+    #[serde(default)]
+    pub status: TaskStatus,
+    #[serde(default)]
+    pub acceptance_criteria: Vec<CriterionProgress>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskStatus {
+    Pending,
+    InProgress,
+    Done,
+}
+
+impl Default for TaskStatus {
+    fn default() -> Self {
+        TaskStatus::Pending
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CriterionProgress {
+    pub criterion: String,
+    #[serde(default)]
+    pub done: bool,
+}
+
 // ── Planning Questions ──
 // When the planner encounters ambiguity, it writes questions.json instead of plan.json.
 // The user answers in the UI, then ideation resumes with answers as context.

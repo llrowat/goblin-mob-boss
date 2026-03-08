@@ -7,18 +7,6 @@ describe("AgentsPage", () => {
     vi.clearAllMocks();
   });
 
-  const mockRepos = [
-    {
-      id: "repo-1",
-      name: "my-project",
-      path: "/home/user/my-project",
-      base_branch: "main",
-      validators: [],
-      pr_command: null,
-      created_at: "2025-01-01T00:00:00Z",
-    },
-  ];
-
   const mockAgents = [
     {
       filename: "fullstack-dev.md",
@@ -27,7 +15,7 @@ describe("AgentsPage", () => {
       tools: "Read, Edit, Write, Bash",
       model: null,
       system_prompt: "You are a senior full-stack developer.",
-      is_global: false,
+      is_global: true,
       color: "#5a8a5c",
       role: "developer",
     },
@@ -71,8 +59,7 @@ describe("AgentsPage", () => {
 
   function mockInvokeForAgents() {
     vi.mocked(invoke).mockImplementation((cmd: string) => {
-      if (cmd === "list_repositories") return Promise.resolve(mockRepos);
-      if (cmd === "list_agents") return Promise.resolve(mockAgents);
+      if (cmd === "list_global_agents") return Promise.resolve(mockAgents);
       if (cmd === "list_built_in_agents") return Promise.resolve(mockBuiltInAgents);
       return Promise.resolve([]);
     });
@@ -80,7 +67,7 @@ describe("AgentsPage", () => {
 
   it("renders page header", async () => {
     vi.mocked(invoke).mockImplementation((cmd: string) => {
-      if (cmd === "list_repositories") return Promise.resolve([]);
+      if (cmd === "list_global_agents") return Promise.resolve([]);
       if (cmd === "list_built_in_agents") return Promise.resolve([]);
       return Promise.resolve([]);
     });
@@ -89,24 +76,22 @@ describe("AgentsPage", () => {
 
     expect(screen.getByText("Agents")).toBeInTheDocument();
     expect(
-      screen.getByText(/Manage your agents/),
+      screen.getByText(/Manage your global agents/),
     ).toBeInTheDocument();
   });
 
-  it("displays repo and global agents", async () => {
+  it("displays global agents", async () => {
     mockInvokeForAgents();
 
     render(<AgentsPage />);
 
     await waitFor(() => {
       expect(screen.getByText("Full-Stack Developer")).toBeInTheDocument();
-      // "Frontend Developer" appears in both agent list and built-in section
       expect(screen.getAllByText("Frontend Developer").length).toBeGreaterThanOrEqual(1);
-      expect(screen.getByText("Repository Agents")).toBeInTheDocument();
     });
   });
 
-  it("shows Remove button only for repo agents, not global", async () => {
+  it("shows Remove button for all agents", async () => {
     mockInvokeForAgents();
 
     render(<AgentsPage />);
@@ -115,9 +100,8 @@ describe("AgentsPage", () => {
       expect(screen.getByText("Full-Stack Developer")).toBeInTheDocument();
     });
 
-    // Only one Remove button for the repo agent
     const removeButtons = screen.getAllByText("Remove");
-    expect(removeButtons).toHaveLength(1);
+    expect(removeButtons).toHaveLength(2);
   });
 
   it("opens create modal when Add Agent is clicked", async () => {
@@ -170,20 +154,9 @@ describe("AgentsPage", () => {
 
     const avatars = document.querySelectorAll(".agent-card-avatar");
     expect(avatars.length).toBeGreaterThanOrEqual(2);
-    // First avatar is the repo agent with color #5a8a5c
     expect((avatars[0] as HTMLElement).style.background).toBe(
       "rgb(90, 138, 92)",
     );
-  });
-
-  it("shows global badge for global agents", async () => {
-    mockInvokeForAgents();
-
-    render(<AgentsPage />);
-
-    await waitFor(() => {
-      expect(screen.getByText("global")).toBeInTheDocument();
-    });
   });
 
   it("shows color picker in create modal", async () => {
@@ -217,7 +190,7 @@ describe("AgentsPage", () => {
     expect(screen.queryAllByText("Create Agent")).toHaveLength(0);
   });
 
-  it("shows delete confirmation for repo agents", async () => {
+  it("shows delete confirmation", async () => {
     mockInvokeForAgents();
 
     render(<AgentsPage />);
@@ -226,7 +199,8 @@ describe("AgentsPage", () => {
       expect(screen.getByText("Full-Stack Developer")).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByText("Remove"));
+    const removeButtons = screen.getAllByText("Remove");
+    fireEvent.click(removeButtons[0]);
 
     await waitFor(() => {
       expect(screen.getByText("Delete?")).toBeInTheDocument();
@@ -235,10 +209,34 @@ describe("AgentsPage", () => {
     });
   });
 
+  it("calls delete_global_agent on confirm delete", async () => {
+    mockInvokeForAgents();
+
+    render(<AgentsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Full-Stack Developer")).toBeInTheDocument();
+    });
+
+    const removeButtons = screen.getAllByText("Remove");
+    fireEvent.click(removeButtons[0]);
+
+    await waitFor(() => {
+      expect(screen.getByText("Yes")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText("Yes"));
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("delete_global_agent", {
+        filename: "fullstack-dev.md",
+      });
+    });
+  });
+
   it("shows empty state when no agents and no built-in agents exist", async () => {
     vi.mocked(invoke).mockImplementation((cmd: string) => {
-      if (cmd === "list_repositories") return Promise.resolve(mockRepos);
-      if (cmd === "list_agents") return Promise.resolve([]);
+      if (cmd === "list_global_agents") return Promise.resolve([]);
       if (cmd === "list_built_in_agents") return Promise.resolve([]);
       return Promise.resolve([]);
     });
@@ -263,7 +261,7 @@ describe("AgentsPage", () => {
     });
   });
 
-  it("shows unapplied built-in agents as greyed-out cards", async () => {
+  it("shows unapplied built-in agents", async () => {
     mockInvokeForAgents();
 
     render(<AgentsPage />);
@@ -272,21 +270,16 @@ describe("AgentsPage", () => {
       expect(screen.getByText("Built-in Agents")).toBeInTheDocument();
     });
 
-    // test-engineer built-in is not in agents, so should appear
     expect(screen.getByText("Test Engineer")).toBeInTheDocument();
 
-    // built-in cards have "Add to Repo" buttons
-    const addButtons = screen.getAllByText("+ Add to Repo");
+    const addButtons = screen.getAllByText("+ Add");
     expect(addButtons.length).toBeGreaterThan(0);
 
-    // The built-in card should have the built-in badge
     const builtInBadges = screen.getAllByText("built-in");
     expect(builtInBadges.length).toBeGreaterThan(0);
   });
 
-  it("hides built-in agents already added as agents", async () => {
-    // frontend-developer.md built-in has a different filename than "frontend-dev.md" in agents
-    // so both built-ins should show (neither matches agent filenames exactly)
+  it("saves built-in agent globally when Add is clicked", async () => {
     mockInvokeForAgents();
 
     render(<AgentsPage />);
@@ -295,36 +288,22 @@ describe("AgentsPage", () => {
       expect(screen.getByText("Built-in Agents")).toBeInTheDocument();
     });
 
-    // Both built-ins should show since agent filenames are "fullstack-dev.md" and "frontend-dev.md"
-    // but built-in filenames are "frontend-developer.md" and "test-engineer.md"
-    const addButtons = screen.getAllByText("+ Add to Repo");
-    expect(addButtons).toHaveLength(2);
-  });
-
-  it("calls addBuiltInAgent when Add to Repo is clicked", async () => {
-    mockInvokeForAgents();
-
-    render(<AgentsPage />);
-
-    await waitFor(() => {
-      expect(screen.getByText("Built-in Agents")).toBeInTheDocument();
-    });
-
-    const addButtons = screen.getAllByText("+ Add to Repo");
+    const addButtons = screen.getAllByText("+ Add");
     fireEvent.click(addButtons[0]);
 
     await waitFor(() => {
-      expect(invoke).toHaveBeenCalledWith("add_built_in_agent", {
-        repoPath: "/home/user/my-project",
-        filename: "frontend-developer.md",
+      expect(invoke).toHaveBeenCalledWith("save_global_agent", {
+        agent: expect.objectContaining({
+          filename: "frontend-developer.md",
+          is_global: true,
+        }),
       });
     });
   });
 
   it("shows built-in agents section when no agents but built-ins exist", async () => {
     vi.mocked(invoke).mockImplementation((cmd: string) => {
-      if (cmd === "list_repositories") return Promise.resolve(mockRepos);
-      if (cmd === "list_agents") return Promise.resolve([]);
+      if (cmd === "list_global_agents") return Promise.resolve([]);
       if (cmd === "list_built_in_agents") return Promise.resolve(mockBuiltInAgents);
       return Promise.resolve([]);
     });
@@ -333,10 +312,9 @@ describe("AgentsPage", () => {
 
     await waitFor(() => {
       expect(screen.getByText("Built-in Agents")).toBeInTheDocument();
-      expect(screen.getAllByText("+ Add to Repo")).toHaveLength(2);
+      expect(screen.getAllByText("+ Add")).toHaveLength(2);
     });
 
-    // Empty state should NOT show when built-in agents are available
     expect(screen.queryByText("No Agents")).not.toBeInTheDocument();
   });
 

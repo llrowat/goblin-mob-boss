@@ -48,6 +48,9 @@ pub fn run() {
             commands::list_agents,
             commands::save_agent,
             commands::delete_agent,
+            commands::list_global_agents,
+            commands::save_global_agent,
+            commands::delete_global_agent,
             // Features
             commands::start_feature,
             commands::list_features,
@@ -89,6 +92,7 @@ pub fn run() {
             commands::list_feature_recipes,
             // Execution Observability
             commands::poll_execution_status,
+            commands::poll_task_progress,
             // Analytics
             commands::analyze_feature_execution,
             // Guidance

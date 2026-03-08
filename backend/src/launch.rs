@@ -55,6 +55,7 @@ pub fn build_launch_with_repo(
 fn build_prompt(feature: &Feature, mode: &ExecutionMode, repo_path: Option<&str>) -> String {
     let tasks_section = build_tasks_section(&feature.task_specs);
     let agents_section = build_agents_section(&feature.selected_agents);
+    let progress_section = build_progress_section(repo_path, &feature.id, &feature.task_specs);
 
     let guidance_note = repo_path
         .map(|rp| {
@@ -86,12 +87,14 @@ fn build_prompt(feature: &Feature, mode: &ExecutionMode, repo_path: Option<&str>
 - Coordinate via the shared task list
 - Each teammate should work on their assigned tasks in parallel
 - If any tasks are assigned to quality/review agents, ensure they run after implementation tasks and verify all changes before signaling completion
-- When all tasks pass, signal completion{guidance_note}"#,
+- When all tasks pass, signal completion
+{progress_section}{guidance_note}"#,
                 name = feature.name,
                 description = feature.description,
                 tasks_section = tasks_section,
                 agents_section = agents_section,
                 branch = feature.branch,
+                progress_section = progress_section,
                 guidance_note = guidance_note,
             )
         }
@@ -113,16 +116,77 @@ fn build_prompt(feature: &Feature, mode: &ExecutionMode, repo_path: Option<&str>
 - Use the Agent tool to delegate work to subagents when beneficial
 - The task list above is a suggestion — you may reorganize as needed
 - If any tasks are assigned to quality/review agents, ensure they run after implementation tasks and verify all changes
-- When all tasks are complete, ensure everything works together{guidance_note}"#,
+- When all tasks are complete, ensure everything works together
+{progress_section}{guidance_note}"#,
                 name = feature.name,
                 description = feature.description,
                 tasks_section = tasks_section,
                 agents_section = agents_section,
                 branch = feature.branch,
+                progress_section = progress_section,
                 guidance_note = guidance_note,
             )
         }
     }
+}
+
+fn build_progress_section(repo_path: Option<&str>, feature_id: &str, specs: &[TaskSpec]) -> String {
+    let Some(rp) = repo_path else {
+        return String::new();
+    };
+    let progress_path = std::path::Path::new(rp)
+        .join(".gmb")
+        .join("features")
+        .join(feature_id)
+        .join("tasks")
+        .join("progress.json");
+
+    // Build the initial progress JSON inline so Claude knows the exact format
+    let mut tasks_json = Vec::new();
+    for (i, spec) in specs.iter().enumerate() {
+        let criteria: Vec<String> = spec
+            .acceptance_criteria
+            .iter()
+            .map(|c| format!(r#"        {{"criterion": "{}", "done": false}}"#, c.replace('"', "\\\"")))
+            .collect();
+        let criteria_str = if criteria.is_empty() {
+            "[]".to_string()
+        } else {
+            format!("[\n{}\n      ]", criteria.join(",\n"))
+        };
+        tasks_json.push(format!(
+            r#"    {{
+      "task": {},
+      "title": "{}",
+      "status": "pending",
+      "acceptance_criteria": {}
+    }}"#,
+            i + 1,
+            spec.title.replace('"', "\\\""),
+            criteria_str,
+        ));
+    }
+
+    format!(
+        r#"## Progress Tracking
+
+IMPORTANT: As you work, update the progress file at `{path}` to report which tasks and acceptance criteria are complete. Write this file frequently — the user sees live updates.
+
+The file must be valid JSON in this exact format:
+```json
+{{
+  "tasks": [
+{tasks}
+  ]
+}}
+```
+
+- Set task `status` to `"in_progress"` when you start working on it, and `"done"` when complete
+- Set each criterion's `"done"` to `true` when it is verified
+- Write the file after each significant milestone (task started, criterion met, task done)"#,
+        path = progress_path.to_string_lossy().replace('\\', "/"),
+        tasks = tasks_json.join(",\n"),
+    )
 }
 
 fn build_tasks_section(specs: &[TaskSpec]) -> String {
