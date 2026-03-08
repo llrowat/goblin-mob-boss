@@ -204,6 +204,25 @@ body {
   margin-left: auto;
 }
 
+.sidebar-count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  background: rgba(90, 138, 92, 0.15);
+  color: var(--accent);
+}
+
+.sidebar-count-warn {
+  background: rgba(184, 148, 74, 0.15);
+  color: var(--warning);
+}
+
 .sidebar-planning-badge {
   display: inline-flex;
   align-items: center;
