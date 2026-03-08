@@ -1,7 +1,8 @@
 {
   "name": "goblin-mob-boss",
-  "private": true,
   "version": "0.1.0",
+  "description": "A desktop app for agent-based AI development workflows",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "vite",
