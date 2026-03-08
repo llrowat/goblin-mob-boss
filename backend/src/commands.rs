@@ -1759,6 +1759,48 @@ pub fn start_map_discovery(
     Ok(full_command)
 }
 
+/// Start map discovery in an embedded PTY terminal.
+/// Spawns the discovery command (one or more Claude agents) inside a PTY so
+/// the user sees output in an embedded terminal within the app.
+#[tauri::command]
+pub fn start_discovery_pty(
+    app_handle: tauri::AppHandle,
+    state: State<AppState>,
+    pty_sessions: State<pty::PtySessions>,
+    map_id: String,
+    repo_ids: Vec<String>,
+    cols: u16,
+    rows: u16,
+) -> Result<String, String> {
+    // Build the discovery shell command (reuse start_map_discovery logic)
+    let full_command = start_map_discovery(state.clone(), map_id.clone(), repo_ids)?;
+
+    let session_id = format!("discovery-{}", map_id);
+
+    let prefs = state.preferences.lock().unwrap().clone();
+    let shell = if prefs.shell.is_empty() {
+        "/bin/bash".to_string()
+    } else {
+        prefs.shell.clone()
+    };
+
+    let home_dir = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+
+    pty::spawn_pty_session(
+        &app_handle,
+        &session_id,
+        &shell,
+        &["-c".to_string(), full_command],
+        &home_dir,
+        cols,
+        rows,
+        &pty_sessions,
+        &[],
+    )?;
+
+    Ok(session_id)
+}
+
 /// Poll for discovery results. Checks if per-repo discovery JSON files exist,
 /// parses them, and assembles the results into the system map.
 #[tauri::command]
@@ -1825,8 +1867,6 @@ pub fn poll_map_discovery(
                 runtime: svc.runtime.clone(),
                 framework: svc.framework.clone(),
                 description: svc.description.clone(),
-                exposes: svc.exposes.clone(),
-                consumes: svc.consumes.clone(),
                 owns_data: svc.owns_data.clone(),
                 position,
                 color,

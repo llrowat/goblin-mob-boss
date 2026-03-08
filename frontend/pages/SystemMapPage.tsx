@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useTauri } from "../hooks/useTauri";
+import { Terminal } from "../components/Terminal";
 import type {
   SystemMap,
   MapService,
@@ -112,7 +113,7 @@ export function SystemMapPage() {
   const [showExploreModal, setShowExploreModal] = useState(false);
   const [exploreRepoIds, setExploreRepoIds] = useState<string[]>([]);
   const [exploring, setExploring] = useState(false);
-  const [exploreCommand, setExploreCommand] = useState("");
+  const [discoverySessionId, setDiscoverySessionId] = useState<string | null>(null);
   const [discoveryStatus, setDiscoveryStatus] = useState<DiscoveryStatus | null>(null);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -254,8 +255,6 @@ export function SystemMapPage() {
         runtime: svcRuntime.trim(),
         framework: svcFramework.trim(),
         description: svcDesc.trim(),
-        exposes: [],
-        consumes: [],
         owns_data: svcData
           .split(",")
           .map((s) => s.trim())
@@ -398,10 +397,10 @@ export function SystemMapPage() {
     if (!activeMapId || exploreRepoIds.length === 0) return;
     setExploring(true);
     setDiscoveryStatus(null);
-    setExploreCommand("");
+    setDiscoverySessionId(null);
     try {
-      const cmd = await tauri.startMapDiscovery(activeMapId, exploreRepoIds);
-      setExploreCommand(cmd);
+      const sessionId = await tauri.startDiscoveryPty(activeMapId, exploreRepoIds, 120, 30);
+      setDiscoverySessionId(sessionId);
       setShowExploreModal(false);
       startDiscoveryPolling();
     } catch (e) {
@@ -1099,28 +1098,32 @@ export function SystemMapPage() {
     );
   }
 
+  const handleDiscoveryExit = async () => {
+    setExploring(false);
+    setDiscoverySessionId(null);
+    // Reload the map to show any discovered services
+    if (activeMapId) {
+      try {
+        const updated = await tauri.getSystemMap(activeMapId);
+        setMaps((prev) => prev.map((m) => (m.id === updated.id ? updated : m)));
+      } catch {
+        // Map may not exist if it was deleted
+      }
+    }
+  };
+
   function renderDiscoveryProgress() {
     return (
       <div className="discovery-progress">
-        {exploreCommand && (
-          <div className="discovery-command">
-            <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600, textTransform: "uppercase", marginBottom: 4 }}>
-              Run this command to start discovery
-            </div>
-            <pre className="command-display">{exploreCommand}</pre>
-            <button
-              className="btn btn-sm btn-secondary"
-              style={{ marginTop: 6 }}
-              onClick={() => navigator.clipboard.writeText(exploreCommand)}
-            >
-              Copy
-            </button>
+        {discoverySessionId && (
+          <div style={{ height: 300, marginBottom: 12 }}>
+            <Terminal sessionId={discoverySessionId} onExit={handleDiscoveryExit} />
           </div>
         )}
         {discoveryStatus && (
           <div className="discovery-status">
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-              <span className="discovery-spinner" />
+              {!discoveryStatus.complete && <span className="discovery-spinner" />}
               <span style={{ fontSize: 13, fontWeight: 500 }}>
                 {discoveryStatus.complete
                   ? "Discovery complete!"
@@ -1141,7 +1144,7 @@ export function SystemMapPage() {
             )}
           </div>
         )}
-        {!exploreCommand && !discoveryStatus && exploring && (
+        {!discoverySessionId && !discoveryStatus && exploring && (
           <div style={{ fontSize: 13, color: "var(--muted)", display: "flex", alignItems: "center", gap: 8 }}>
             <span className="discovery-spinner" />
             Preparing discovery...

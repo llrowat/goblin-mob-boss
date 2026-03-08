@@ -251,19 +251,6 @@ export type ConnectionType =
   | "file_system"
   | "ipc";
 
-export interface ServiceEndpoint {
-  type: ConnectionType;
-  path: string;
-  description: string;
-}
-
-export interface ServiceDependency {
-  type: ConnectionType;
-  target: string;
-  description: string;
-  sync: boolean;
-}
-
 export interface MapService {
   id: string;
   name: string;
@@ -272,8 +259,6 @@ export interface MapService {
   runtime: string;
   framework: string;
   description: string;
-  exposes: ServiceEndpoint[];
-  consumes: ServiceDependency[];
   owns_data: string[];
   position: [number, number];
   color: string;

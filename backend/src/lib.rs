@@ -110,6 +110,7 @@ pub fn run() {
             commands::update_system_map,
             commands::delete_system_map,
             commands::start_map_discovery,
+            commands::start_discovery_pty,
             commands::poll_map_discovery,
         ])
         .run(tauri::generate_context!())
