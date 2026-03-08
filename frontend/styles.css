@@ -1531,6 +1531,59 @@ body {
   color: var(--muted);
 }
 
+/* Account Overview */
+.account-counts {
+  display: flex;
+  gap: 12px;
+}
+
+.account-stat {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  transition: border-color 0.15s;
+}
+
+.account-stat-warn {
+  border-color: var(--warning);
+}
+
+.account-stat-icon {
+  font-size: 22px;
+  flex-shrink: 0;
+}
+
+.account-stat-body {
+  min-width: 0;
+}
+
+.account-stat-count {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.2;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.account-stat-warning {
+  font-size: 16px;
+  color: var(--warning);
+}
+
+.account-stat-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  font-weight: 500;
+}
+
 /* Terminal */
 .terminal-container {
   height: 600px;
