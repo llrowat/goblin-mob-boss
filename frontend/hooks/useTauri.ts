@@ -7,6 +7,7 @@ import type {
   ExecutionMode,
   IdeationResult,
   PlanningAnswer,
+  PlanSnapshot,
   TaskProgress,
   VerifyResult,
   DiffSummary,
@@ -113,6 +114,9 @@ export function useTauri() {
 
     getFeature: (featureId: string) =>
       invoke<Feature>("get_feature", { featureId }),
+
+    getPlanHistory: (featureId: string) =>
+      invoke<PlanSnapshot[]>("get_plan_history", { featureId }),
 
     deleteFeature: (featureId: string) =>
       invoke<void>("delete_feature", { featureId }),

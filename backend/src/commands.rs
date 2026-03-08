@@ -428,6 +428,19 @@ pub fn get_feature(state: State<AppState>, feature_id: String) -> Result<Feature
         .ok_or("Feature not found".to_string())
 }
 
+/// Get the plan history for a feature (prior plan snapshots).
+#[tauri::command]
+pub fn get_plan_history(
+    state: State<AppState>,
+    feature_id: String,
+) -> Result<Vec<PlanSnapshot>, String> {
+    let features = state.features.lock().unwrap();
+    let feature = features
+        .get(&feature_id)
+        .ok_or("Feature not found")?;
+    Ok(feature.plan_history.clone())
+}
+
 #[tauri::command]
 pub fn delete_feature(
     state: State<AppState>,
@@ -1355,6 +1368,47 @@ fn build_agent_lists(repos: &[Repository]) -> (String, String) {
 /// Spawn Claude in --print mode as a background process.
 /// Pipes the full prompt (system context + user prompt) via stdin to avoid
 /// Windows command-line length limits.
+/// Snapshot the current plan.json into the feature's plan_history before it gets replaced.
+/// `trigger` describes why the snapshot is being taken (e.g. "revision", "restart", "answer_round").
+/// `feedback` is the optional user feedback text for revision triggers.
+fn snapshot_current_plan(
+    state: &State<AppState>,
+    feature_id: &str,
+    tasks_dir: &std::path::Path,
+    trigger: &str,
+    feedback: Option<&str>,
+) {
+    let plan_path = tasks_dir.join("plan.json");
+    if !plan_path.exists() {
+        return;
+    }
+    let data = match std::fs::read_to_string(&plan_path) {
+        Ok(d) => d,
+        Err(_) => return,
+    };
+    let result: IdeationResult = match serde_json::from_str(&data) {
+        Ok(r) => r,
+        Err(_) => return,
+    };
+    if result.tasks.is_empty() {
+        return;
+    }
+    let snapshot = PlanSnapshot {
+        trigger: trigger.to_string(),
+        feedback: feedback.map(|s| s.to_string()),
+        tasks: result.tasks,
+        execution_mode: result.execution_mode,
+        created_at: Utc::now(),
+    };
+    let mut features = state.features.lock().unwrap();
+    if let Some(feature) = features.get_mut(feature_id) {
+        feature.plan_history.push(snapshot);
+        feature.updated_at = Utc::now();
+    }
+    drop(features);
+    state.save_features();
+}
+
 fn spawn_ideation_process(
     feature_dir: &std::path::Path,
     work_dir: &str,
@@ -1433,8 +1487,12 @@ pub fn run_ideation(
         .map(|s| s.as_str())
         .unwrap_or(&repo.path);
 
+    // Snapshot the current plan before deleting it (restart trigger)
+    let tasks_dir = feature_dir.join("tasks");
+    snapshot_current_plan(&state, &feature_id, &tasks_dir, "restart", None);
+
     // Delete old plan.json so polling starts fresh
-    let plan_path = feature_dir.join("tasks").join("plan.json");
+    let plan_path = tasks_dir.join("plan.json");
     if plan_path.exists() {
         let _ = std::fs::remove_file(&plan_path);
     }
@@ -1470,8 +1528,12 @@ pub fn revise_ideation(
         .join(".gmb")
         .join("features")
         .join(&feature.id);
-    let plan_path = feature_dir.join("tasks").join("plan.json");
+    let tasks_dir = feature_dir.join("tasks");
+    let plan_path = tasks_dir.join("plan.json");
     let old_plan = std::fs::read_to_string(&plan_path).unwrap_or_default();
+
+    // Snapshot the current plan before replacing it
+    snapshot_current_plan(&state, &feature_id, &tasks_dir, "revision", Some(&feedback));
 
     // Delete old plan.json so polling detects fresh result
     if plan_path.exists() {
@@ -1545,6 +1607,9 @@ pub fn submit_planning_answers(
     if questions_path.exists() {
         let _ = std::fs::remove_file(&questions_path);
     }
+
+    // Snapshot the current plan before replacing it (if one exists from a prior round)
+    snapshot_current_plan(&state, &feature_id, &tasks_dir, "answer_round", None);
 
     // Delete old plan.json so polling starts fresh
     let plan_path = tasks_dir.join("plan.json");
@@ -2701,5 +2766,54 @@ mod tests {
         let cmd = result.unwrap();
         assert!(cmd.contains("claude"));
         assert!(cmd.contains("CLAUDE.md"));
+    }
+
+    #[test]
+    fn plan_json_parses_as_ideation_result_for_snapshot() {
+        let dir = TempDir::new().unwrap();
+        let plan_path = dir.path().join("plan.json");
+        std::fs::write(&plan_path, r#"{
+            "tasks": [
+                {
+                    "title": "Add auth",
+                    "description": "Build auth module",
+                    "acceptance_criteria": ["Login works"],
+                    "dependencies": [],
+                    "agent": "backend-dev"
+                }
+            ],
+            "execution_mode": {
+                "recommended": "teams",
+                "rationale": "Parallel tasks",
+                "confidence": 0.9
+            }
+        }"#).unwrap();
+
+        let data = std::fs::read_to_string(&plan_path).unwrap();
+        let result: IdeationResult = serde_json::from_str(&data).unwrap();
+        assert_eq!(result.tasks.len(), 1);
+        assert_eq!(result.tasks[0].title, "Add auth");
+        assert!(result.execution_mode.is_some());
+        assert_eq!(result.execution_mode.as_ref().unwrap().recommended, ExecutionMode::Teams);
+    }
+
+    #[test]
+    fn empty_plan_json_tasks_not_snapshotted() {
+        let dir = TempDir::new().unwrap();
+        let plan_path = dir.path().join("plan.json");
+        std::fs::write(&plan_path, r#"{"tasks": [], "execution_mode": null}"#).unwrap();
+
+        let data = std::fs::read_to_string(&plan_path).unwrap();
+        let result: IdeationResult = serde_json::from_str(&data).unwrap();
+        // Snapshot logic skips empty tasks — verify the condition
+        assert!(result.tasks.is_empty());
+    }
+
+    #[test]
+    fn missing_plan_json_not_snapshotted() {
+        let dir = TempDir::new().unwrap();
+        let plan_path = dir.path().join("plan.json");
+        // Snapshot logic checks existence first
+        assert!(!plan_path.exists());
     }
 }

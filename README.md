@@ -22,6 +22,7 @@ A desktop app for agent-based AI development workflows. Configure agents, plan f
 - **Execution mode intelligence** — Ideation analyzes planned tasks and recommends Teams or Subagents mode with confidence scoring and rationale
 - **Agent management** — Agents stored as `.claude/agents/*.md` files with YAML frontmatter; form-based editor with color picker, role selector, tools, model, and system prompt configuration
 - **Interactive planning** — Back-and-forth conversation with Claude in plan mode; task specs written to `plan.json` with automatic polling. Planner can ask clarifying questions via `questions.json` when decisions would materially change the plan — users answer in the UI and planning resumes with full context
+- **Plan history** — Every plan revision, restart, or Q&A round automatically snapshots the previous plan. View prior versions inline with trigger labels, feedback, and task summaries to see how a plan evolved
 - **Launch command generation** — GMB builds the appropriate Claude Code command with environment variables, agent configs, and system prompts for the chosen execution mode
 - **Feature lifecycle** — Features progress through statuses: Ideation → Configuring → Executing → Ready (or Failed)
 
