@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useTauri } from "../hooks/useTauri";
+import { CommandDisplay } from "./CommandDisplay";
 import type { Repository } from "../types";
 
 interface Props {
@@ -28,6 +29,7 @@ export function AddRepoModal({ onClose, onAdded }: Props) {
   const [hasClaudeMd, setHasClaudeMd] = useState(false);
   const [generatingClaudeMd, setGeneratingClaudeMd] = useState(false);
   const [claudeMdGenerated, setClaudeMdGenerated] = useState(false);
+  const [claudeMdCommand, setClaudeMdCommand] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -68,6 +70,8 @@ export function AddRepoModal({ onClose, onAdded }: Props) {
     setGeneratingClaudeMd(true);
     setError("");
     try {
+      // Fetch the command for transparency
+      tauri.getClaudeMdCommand(path.trim()).then(setClaudeMdCommand).catch(() => {});
       await tauri.generateClaudeMd(path.trim());
       // Poll for CLAUDE.md creation
       pollRef.current = setInterval(async () => {
@@ -200,18 +204,23 @@ export function AddRepoModal({ onClose, onAdded }: Props) {
                   </div>
                 ) : generatingClaudeMd ? (
                   <div style={{ fontSize: 13 }}>
-                    <span style={{ color: "var(--warning)", fontWeight: 600 }}>
-                      Generating CLAUDE.md...
-                    </span>
-                    <span
-                      style={{
-                        color: "var(--text-secondary)",
-                        marginLeft: 8,
-                        fontSize: 12,
-                      }}
-                    >
-                      Goblins exploring the lair
-                    </span>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <div>
+                        <span style={{ color: "var(--warning)", fontWeight: 600 }}>
+                          Generating CLAUDE.md...
+                        </span>
+                        <span
+                          style={{
+                            color: "var(--text-secondary)",
+                            marginLeft: 8,
+                            fontSize: 12,
+                          }}
+                        >
+                          Goblins exploring the lair
+                        </span>
+                      </div>
+                    </div>
+                    <CommandDisplay command={claudeMdCommand} />
                   </div>
                 ) : (
                   <div

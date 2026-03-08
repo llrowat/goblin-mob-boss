@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useTauri } from "../hooks/useTauri";
 import { useTerminalSession } from "../hooks/useTerminalSession";
 import { useBackgroundPlanning } from "../hooks/useBackgroundPlanning";
+import { useCommandDisplay, CommandDisplayButton, CommandDisplayContent } from "../components/CommandDisplay";
 import type {
   Feature,
   Repository,
@@ -40,6 +41,8 @@ export function FeatureDetailPage() {
   const [questionAnswers, setQuestionAnswers] = useState<Record<string, string>>({});
   const [answeredHistory, setAnsweredHistory] = useState<PlanningAnswer[]>([]);
   const [systemPrompt, setSystemPrompt] = useState("");
+  const [ideationCommand, setIdeationCommand] = useState<string | null>(null);
+  const ideationCmd = useCommandDisplay(ideationCommand);
   const [expandedTask, setExpandedTask] = useState<number | null>(null);
 
   // Execution mode override
@@ -206,6 +209,8 @@ export function FeatureDetailPage() {
     setIdeationResult(null);
     clearSession();
     try {
+      // Fetch the command being run for transparency
+      tauri.getIdeationTerminalCommand(featureId).then(setIdeationCommand).catch(() => {});
       addPlanning(featureId);
       await tauri.runIdeation(featureId);
     } catch (err) {
@@ -219,6 +224,9 @@ export function FeatureDetailPage() {
     if (!featureId) return;
     // Skip if already executing (terminal session restored from feature load)
     if (terminalSession?.featureId === featureId) return;
+
+    // Always fetch the ideation command for transparency
+    tauri.getIdeationTerminalCommand(featureId).then(setIdeationCommand).catch(() => {});
 
     // If the feature already has saved task_specs (from configureLaunch), always use those.
     // This prevents plan.json (which may be stale or modified by execution) from overwriting
@@ -534,7 +542,7 @@ export function FeatureDetailPage() {
   };
 
   // Execution panel state (for ready/failed features without active terminal)
-  const [showCommand, setShowCommand] = useState(false);
+  const executionCmd = useCommandDisplay(feature?.launched_command ?? null);
   const [restarting, setRestarting] = useState(false);
   const handleRestartExecution = async () => {
     if (!featureId) return;
@@ -660,6 +668,7 @@ export function FeatureDetailPage() {
                 Restart
               </button>
             )}
+            <CommandDisplayButton {...ideationCmd} />
             <button
               className="btn btn-secondary btn-sm"
               onClick={() => setShowContext(!showContext)}
@@ -668,6 +677,8 @@ export function FeatureDetailPage() {
             </button>
           </div>
         </div>
+
+        <CommandDisplayContent {...ideationCmd} />
 
         {status === "running" && (
           <div style={{
@@ -1037,12 +1048,7 @@ export function FeatureDetailPage() {
               Execution Complete
             </div>
             <div style={{ display: "flex", gap: 8 }}>
-              <button
-                className="btn btn-secondary btn-sm"
-                onClick={() => setShowCommand(!showCommand)}
-              >
-                {showCommand ? "Hide Command" : "View Command"}
-              </button>
+              <CommandDisplayButton {...executionCmd} />
               {isReady && (
                 <button
                   className="btn btn-primary btn-sm"
@@ -1054,11 +1060,7 @@ export function FeatureDetailPage() {
               )}
             </div>
           </div>
-          {showCommand && (
-            <div className="code-block" style={{ wordBreak: "break-all" }}>
-              {feature.launched_command}
-            </div>
-          )}
+          <CommandDisplayContent {...executionCmd} />
         </div>
       )}
 

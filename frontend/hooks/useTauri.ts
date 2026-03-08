@@ -79,6 +79,9 @@ export function useTauri() {
     generateClaudeMd: (path: string) =>
       invoke<void>("generate_claude_md", { path }),
 
+    getClaudeMdCommand: (path: string) =>
+      invoke<string>("get_claude_md_command", { path }),
+
     // Agents (file-based)
     listAgents: (repoPath: string) =>
       invoke<AgentFile[]>("list_agents", { repoPath }),

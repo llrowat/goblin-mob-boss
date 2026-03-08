@@ -187,6 +187,23 @@ Skip any section where there's nothing project-specific to say. Aim for under 80
     Ok(())
 }
 
+/// Return the shell command that would be used to generate CLAUDE.md for a repo.
+/// This is for transparency — the user can see exactly what runs on their behalf.
+#[tauri::command]
+pub fn get_claude_md_command(path: String) -> Result<String, String> {
+    let repo_path = Path::new(&path);
+    if !repo_path.exists() {
+        return Err("Path does not exist".to_string());
+    }
+
+    let escaped_path = shell_quote(&path);
+
+    Ok(format!(
+        "cd {} && claude --print --permission-mode bypassPermissions --allowedTools 'Read,Glob,Grep,Write' [prompt via stdin]",
+        escaped_path
+    ))
+}
+
 // ── Agent Commands (file-based) ──
 
 #[tauri::command]

@@ -44,6 +44,7 @@ pub fn run() {
             commands::detect_repo_info,
             commands::check_claude_md,
             commands::generate_claude_md,
+            commands::get_claude_md_command,
             // Agents (file-based)
             commands::list_agents,
             commands::save_agent,
