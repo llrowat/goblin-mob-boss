@@ -439,6 +439,7 @@ mod tests {
             String::new(),
             vec!["cargo test".to_string()],
             None,
+            vec![],
         );
         let repo_id = repo.id.clone();
 
@@ -589,6 +590,7 @@ mod tests {
             String::new(),
             vec![],
             None,
+            vec![],
         );
         {
             let mut repos = state.repositories.lock().unwrap();

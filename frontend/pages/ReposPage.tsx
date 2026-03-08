@@ -13,6 +13,7 @@ export function ReposPage() {
   const [editBranch, setEditBranch] = useState("");
   const [editValidators, setEditValidators] = useState("");
   const [editPrCommand, setEditPrCommand] = useState("");
+  const [editSimilarRepoIds, setEditSimilarRepoIds] = useState<string[]>([]);
 
   const loadRepos = () => {
     tauri.listRepositories().then(setRepos);
@@ -27,6 +28,7 @@ export function ReposPage() {
     setEditBranch(repo.base_branch);
     setEditValidators(repo.validators.join("\n"));
     setEditPrCommand(repo.pr_command || "");
+    setEditSimilarRepoIds(repo.similar_repo_ids || []);
   };
 
   const handleSave = async () => {
@@ -41,6 +43,7 @@ export function ReposPage() {
         .map((v) => v.trim())
         .filter(Boolean),
       prCommand: editPrCommand.trim() || null,
+      similarRepoIds: editSimilarRepoIds.length > 0 ? editSimilarRepoIds : undefined,
     });
     setEditingId(null);
     loadRepos();
@@ -115,6 +118,58 @@ export function ReposPage() {
                     onChange={(e) => setEditPrCommand(e.target.value)}
                   />
                 </div>
+                {repos.filter((r) => r.id !== editingId).length > 0 && (
+                  <div className="form-group">
+                    <label className="form-label">Similar Repositories</label>
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 4,
+                        maxHeight: 150,
+                        overflowY: "auto",
+                        padding: "6px 0",
+                      }}
+                    >
+                      {repos
+                        .filter((r) => r.id !== editingId)
+                        .map((r) => (
+                          <label
+                            key={r.id}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 8,
+                              fontSize: 13,
+                              cursor: "pointer",
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={editSimilarRepoIds.includes(r.id)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setEditSimilarRepoIds((prev) => [
+                                    ...prev,
+                                    r.id,
+                                  ]);
+                                } else {
+                                  setEditSimilarRepoIds((prev) =>
+                                    prev.filter((id) => id !== r.id),
+                                  );
+                                }
+                              }}
+                            />
+                            <span>{r.name}</span>
+                          </label>
+                        ))}
+                    </div>
+                    <div className="form-help">
+                      Repos with similar patterns — agents will use them as
+                      hints
+                    </div>
+                  </div>
+                )}
                 <div className="actions-bar">
                   <button className="btn btn-primary" onClick={handleSave}>
                     Save
@@ -167,6 +222,15 @@ export function ReposPage() {
                   {repo.validators.length > 0 && (
                     <span style={{ marginLeft: 16 }}>
                       Validators: {repo.validators.length}
+                    </span>
+                  )}
+                  {repo.similar_repo_ids && repo.similar_repo_ids.length > 0 && (
+                    <span style={{ marginLeft: 16 }}>
+                      Similar:{" "}
+                      {repo.similar_repo_ids
+                        .map((id) => repos.find((r) => r.id === id)?.name)
+                        .filter(Boolean)
+                        .join(", ")}
                     </span>
                   )}
                 </div>

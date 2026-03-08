@@ -33,6 +33,7 @@ export function useTauri() {
       description?: string;
       validators: string[];
       prCommand: string | null;
+      similarRepoIds?: string[];
     }) =>
       invoke<Repository>("add_repository", {
         name: args.name,
@@ -41,6 +42,7 @@ export function useTauri() {
         description: args.description || null,
         validators: args.validators,
         prCommand: args.prCommand,
+        similarRepoIds: args.similarRepoIds || null,
       }),
 
     updateRepository: (args: {
@@ -50,6 +52,7 @@ export function useTauri() {
       description?: string;
       validators: string[];
       prCommand: string | null;
+      similarRepoIds?: string[];
     }) =>
       invoke<Repository>("update_repository", {
         id: args.id,
@@ -58,6 +61,7 @@ export function useTauri() {
         description: args.description || null,
         validators: args.validators,
         prCommand: args.prCommand,
+        similarRepoIds: args.similarRepoIds || null,
       }),
 
     removeRepository: (id: string) =>

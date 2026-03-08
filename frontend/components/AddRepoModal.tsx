@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useTauri } from "../hooks/useTauri";
+import type { Repository } from "../types";
 
 interface Props {
   onClose: () => void;
@@ -18,6 +19,8 @@ export function AddRepoModal({ onClose, onAdded }: Props) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [detected, setDetected] = useState(false);
+  const [similarRepoIds, setSimilarRepoIds] = useState<string[]>([]);
+  const [existingRepos, setExistingRepos] = useState<Repository[]>([]);
 
   // CLAUDE.md state
   const [hasClaudeMd, setHasClaudeMd] = useState(false);
@@ -26,6 +29,7 @@ export function AddRepoModal({ onClose, onAdded }: Props) {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
+    tauri.listRepositories().then(setExistingRepos);
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };
@@ -101,6 +105,7 @@ export function AddRepoModal({ onClose, onAdded }: Props) {
         description: description.trim() || undefined,
         validators: validatorList,
         prCommand: prCommand.trim() || null,
+        similarRepoIds: similarRepoIds.length > 0 ? similarRepoIds : undefined,
       });
       onAdded();
     } catch (e) {
@@ -292,6 +297,63 @@ export function AddRepoModal({ onClose, onAdded }: Props) {
               />
               <div className="form-help">Optional</div>
             </div>
+
+            {existingRepos.length > 0 && (
+              <div className="form-group">
+                <label className="form-label">Similar Repositories</label>
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 4,
+                    maxHeight: 150,
+                    overflowY: "auto",
+                    padding: "6px 0",
+                  }}
+                >
+                  {existingRepos.map((repo) => (
+                    <label
+                      key={repo.id}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        fontSize: 13,
+                        cursor: "pointer",
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={similarRepoIds.includes(repo.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSimilarRepoIds((prev) => [...prev, repo.id]);
+                          } else {
+                            setSimilarRepoIds((prev) =>
+                              prev.filter((id) => id !== repo.id),
+                            );
+                          }
+                        }}
+                      />
+                      <span>{repo.name}</span>
+                      {repo.description && (
+                        <span
+                          style={{
+                            color: "var(--text-secondary)",
+                            fontSize: 12,
+                          }}
+                        >
+                          — {repo.description}
+                        </span>
+                      )}
+                    </label>
+                  ))}
+                </div>
+                <div className="form-help">
+                  Repos with similar patterns — agents will use them as hints
+                </div>
+              </div>
+            )}
           </>
         )}
 

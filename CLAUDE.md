@@ -65,12 +65,16 @@ npm run tauri dev
 npm run tauri build
 ```
 
+## Environment Notes
+
+- **GTK/WebKit system dependencies** — Rust backend compilation requires `libgtk-3-dev`, `libwebkit2gtk-4.1-dev`, and `libjavascriptcoregtk-4.1-dev`. These **will not install** in the Claude mobile app (web) environment. When working from mobile, skip `cargo test --lib` and rely on frontend tests (`npm test`) only. CI will run the full Rust test suite.
+
 ## Testing
 
 ### Running Tests
 
 ```bash
-# Run Rust backend unit tests
+# Run Rust backend unit tests (requires GTK dev libs — skip on mobile/web)
 cd backend && cargo test --lib
 
 # Run frontend tests
