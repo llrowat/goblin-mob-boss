@@ -178,12 +178,18 @@ fn build_progress_section(repo_path: Option<&str>, feature_id: &str, specs: &[Ta
         ));
     }
 
+    let completion_path = std::path::Path::new(rp)
+        .join(".gmb")
+        .join("features")
+        .join(feature_id)
+        .join("execution-complete");
+
     format!(
         r#"## Progress Tracking
 
-IMPORTANT: As you work, update the progress file at `{path}` to report which tasks and acceptance criteria are complete. Write this file frequently — the user sees live updates.
+CRITICAL — YOU MUST DO THIS: A progress file already exists at `{path}`. Update it as you work. The user is watching live updates in a dashboard. If you do not update this file, the user will think you are stuck.
 
-The file must be valid JSON in this exact format:
+The file is pre-seeded with your task list in this format:
 ```json
 {{
   "tasks": [
@@ -192,11 +198,22 @@ The file must be valid JSON in this exact format:
 }}
 ```
 
-- Set task `status` to `"in_progress"` when you start working on it, and `"done"` when complete
-- Set each criterion's `"done"` to `true` when it is verified
-- Write the file after each significant milestone (task started, criterion met, task done)"#,
+### Rules (follow exactly):
+1. **Before starting a task**: Read the file, set that task's `status` to `"in_progress"`, write the file back
+2. **When a criterion is met**: Set its `"done"` to `true` and write the file
+3. **When a task is complete**: Set its `status` to `"done"` and write the file
+4. **Update frequency**: Write the file after EVERY significant action — do not batch updates
+5. **Keep valid JSON**: Always write the complete file, not partial updates
+
+### When all work is done:
+After all tasks are complete and verified, you MUST do two things:
+1. Ensure every task in `{path}` has `"status": "done"`
+2. Create a completion signal file: `echo "done" > {completion_path}`
+
+This signals the dashboard that execution is finished. If you skip this step, the feature will appear stuck."#,
         path = progress_path.to_string_lossy().replace('\\', "/"),
         tasks = tasks_json.join(",\n"),
+        completion_path = completion_path.to_string_lossy().replace('\\', "/"),
     )
 }
 
@@ -355,5 +372,42 @@ mod tests {
         // It's either true or false — we can't assert a specific value
         // since CI environments may or may not have tmux installed.
         assert!(result || !result);
+    }
+
+    #[test]
+    fn progress_section_includes_completion_signal_path() {
+        let specs = vec![TaskSpec {
+            title: "Task A".to_string(),
+            description: "Do A".to_string(),
+            acceptance_criteria: vec!["A works".to_string()],
+            dependencies: vec![],
+            agent: "dev".to_string(),
+        }];
+        let section = build_progress_section(Some("/tmp/repo"), "feat-123", &specs);
+        assert!(section.contains("CRITICAL"));
+        assert!(section.contains("execution-complete"));
+        assert!(section.contains("progress file already exists"));
+        assert!(section.contains("feat-123"));
+    }
+
+    #[test]
+    fn progress_section_empty_without_repo_path() {
+        let specs = vec![TaskSpec {
+            title: "Task A".to_string(),
+            description: "Do A".to_string(),
+            acceptance_criteria: vec![],
+            dependencies: vec![],
+            agent: "dev".to_string(),
+        }];
+        let section = build_progress_section(None, "feat-123", &specs);
+        assert!(section.is_empty());
+    }
+
+    #[test]
+    fn prompt_includes_progress_tracking_with_repo() {
+        let feature = make_feature(ExecutionMode::Subagents);
+        let (_, _, prompt) = build_launch_with_repo(&feature, "System prompt", Some("/tmp/repo"));
+        assert!(prompt.contains("CRITICAL"));
+        assert!(prompt.contains("execution-complete"));
     }
 }
