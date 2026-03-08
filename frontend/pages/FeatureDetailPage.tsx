@@ -33,7 +33,6 @@ export function FeatureDetailPage() {
   const [feedback, setFeedback] = useState("");
   const [showFeedback, setShowFeedback] = useState(false);
   const [showContext, setShowContext] = useState(false);
-  const [showCommand, setShowCommand] = useState(false);
   // Planning questions state
   const [questions, setQuestions] = useState<PlanningQuestion[]>([]);
   const [questionAnswers, setQuestionAnswers] = useState<Record<string, string>>({});
@@ -383,6 +382,25 @@ export function FeatureDetailPage() {
     }
   };
 
+  // Execution panel state (for ready/failed features without active terminal)
+  const [showCommand, setShowCommand] = useState(false);
+  const [restarting, setRestarting] = useState(false);
+  const handleRestartExecution = async () => {
+    if (!featureId) return;
+    setRestarting(true);
+    setError("");
+    try {
+      const sessionId = await tauri.startLaunchPty(featureId, 120, 30);
+      startSession(featureId, sessionId);
+      const updated = await tauri.getFeature(featureId);
+      setFeature(updated);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setRestarting(false);
+    }
+  };
+
   const hasActiveTerminal = terminalSession?.featureId === featureId;
 
   if (!feature) {
@@ -459,14 +477,6 @@ export function FeatureDetailPage() {
                 onClick={handleRestart}
               >
                 Restart
-              </button>
-            )}
-            {feature.launched_command && (
-              <button
-                className="btn btn-secondary btn-sm"
-                onClick={() => setShowCommand(!showCommand)}
-              >
-                {showCommand ? "Hide Command" : "View Command"}
               </button>
             )}
             <button
@@ -581,12 +591,6 @@ export function FeatureDetailPage() {
           <p style={{ color: "var(--danger)", fontSize: 13 }}>
             Something went wrong. Try restarting.
           </p>
-        )}
-
-        {showCommand && feature.launched_command && (
-          <div className="code-block" style={{ marginTop: 12, wordBreak: "break-all" }}>
-            {feature.launched_command}
-          </div>
         )}
 
         {showContext && (
@@ -821,6 +825,41 @@ export function FeatureDetailPage() {
         </>
       )}
       </div>
+
+      {/* Execution panel for ready/failed features (when no active terminal) */}
+      {isReady && !hasActiveTerminal && feature.launched_command && (
+        <div className="panel" style={{ marginTop: 16 }}>
+          <div className="panel-header">
+            <div className="panel-title">
+              <span
+                className="status-dot"
+                style={{ backgroundColor: "var(--muted)", marginRight: 8 }}
+              />
+              Execution Complete
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={() => setShowCommand(!showCommand)}
+              >
+                {showCommand ? "Hide Command" : "View Command"}
+              </button>
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={handleRestartExecution}
+                disabled={restarting}
+              >
+                {restarting ? "Restarting..." : "Restart Execution"}
+              </button>
+            </div>
+          </div>
+          {showCommand && (
+            <div className="code-block" style={{ wordBreak: "break-all" }}>
+              {feature.launched_command}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Ready state: validation, diff, PR, analytics */}
       {isReady && (

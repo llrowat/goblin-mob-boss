@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { invoke } from "@tauri-apps/api/core";
 
@@ -13,11 +13,12 @@ vi.mock("./Terminal", () => ({
 
 // Mock useTerminalSession
 const mockClearSession = vi.fn();
+const mockStartSession = vi.fn();
 let mockSession: { featureId: string; sessionId: string } | null = null;
 vi.mock("../hooks/useTerminalSession", () => ({
   useTerminalSession: () => ({
     session: mockSession,
-    startSession: vi.fn(),
+    startSession: mockStartSession,
     clearSession: mockClearSession,
   }),
 }));
@@ -39,8 +40,13 @@ describe("PersistentTerminal", () => {
     vi.clearAllMocks();
     mockSession = { featureId: "f1", sessionId: "pty-1" };
     mockPathname = "/feature/f1/detail";
-    // jsdom doesn't implement scrollIntoView
     Element.prototype.scrollIntoView = vi.fn();
+    mockedInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "get_feature") {
+        return { launched_command: "claude --prompt test", task_specs: [] };
+      }
+      return undefined;
+    });
   });
 
   it("renders nothing when no session", () => {
@@ -64,7 +70,6 @@ describe("PersistentTerminal", () => {
   });
 
   it("calls cancel_execution and clears session on cancel", async () => {
-    mockedInvoke.mockResolvedValue(undefined);
     render(<PersistentTerminal />);
 
     await userEvent.click(screen.getByText("Cancel Execution"));
@@ -75,8 +80,7 @@ describe("PersistentTerminal", () => {
     expect(mockClearSession).toHaveBeenCalled();
   });
 
-  it("calls mark_feature_ready on terminal exit", async () => {
-    mockedInvoke.mockResolvedValue(undefined);
+  it("shows completion state with restart on terminal exit", async () => {
     render(<PersistentTerminal />);
 
     await userEvent.click(screen.getByText("exit"));
@@ -84,6 +88,30 @@ describe("PersistentTerminal", () => {
     expect(mockedInvoke).toHaveBeenCalledWith("mark_feature_ready", {
       featureId: "f1",
     });
-    expect(mockClearSession).toHaveBeenCalled();
+    // Session is NOT cleared — panel stays visible in collapsed state
+    expect(mockClearSession).not.toHaveBeenCalled();
+    expect(screen.getByText("Execution Complete")).toBeInTheDocument();
+    expect(screen.getByText("Restart Execution")).toBeInTheDocument();
+    expect(screen.getByText("Show Terminal")).toBeInTheDocument();
+  });
+
+  it("shows View Command button when launched_command exists", async () => {
+    render(<PersistentTerminal />);
+
+    await waitFor(() => {
+      expect(screen.getByText("View Command")).toBeInTheDocument();
+    });
+  });
+
+  it("toggles command display on View Command click", async () => {
+    render(<PersistentTerminal />);
+
+    await waitFor(() => {
+      expect(screen.getByText("View Command")).toBeInTheDocument();
+    });
+
+    await userEvent.click(screen.getByText("View Command"));
+    expect(screen.getByText("claude --prompt test")).toBeInTheDocument();
+    expect(screen.getByText("Hide Command")).toBeInTheDocument();
   });
 });
