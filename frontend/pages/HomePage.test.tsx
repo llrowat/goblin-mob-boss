@@ -109,7 +109,7 @@ describe("HomePage", () => {
     expect(mockNavigate).toHaveBeenCalledWith("/repos");
   });
 
-  it("shows active features list", async () => {
+  it("shows active features with branch and repo tags", async () => {
     vi.mocked(invoke).mockImplementation((cmd: string) => {
       if (cmd === "list_repositories") return Promise.resolve([mockRepo]);
       if (cmd === "list_features") {
@@ -127,6 +127,7 @@ describe("HomePage", () => {
             task_specs: [],
             pty_session_id: null,
             launched_command: null,
+            worktree_paths: {},
             created_at: "2025-01-01T00:00:00Z",
             updated_at: "2025-01-01T00:00:00Z",
           },
@@ -144,10 +145,13 @@ describe("HomePage", () => {
     await waitFor(() => {
       expect(screen.getByText("Auth Feature")).toBeInTheDocument();
       expect(screen.getByText("Executing")).toBeInTheDocument();
+      expect(screen.getByText("feature/auth")).toBeInTheDocument();
+      // "my-app" appears in both the feature card and the repo filter dropdown
+      expect(screen.getAllByText("my-app").length).toBeGreaterThanOrEqual(2);
     });
   });
 
-  it("deletes a feature when Delete is clicked", async () => {
+  it("shows worktree tag when feature has a worktree", async () => {
     vi.mocked(invoke).mockImplementation((cmd: string) => {
       if (cmd === "list_repositories") return Promise.resolve([mockRepo]);
       if (cmd === "list_features") {
@@ -158,19 +162,19 @@ describe("HomePage", () => {
             name: "Auth Feature",
             description: "Add authentication",
             branch: "feature/auth",
-            status: "ideation",
+            status: "executing",
             execution_mode: null,
             execution_rationale: null,
             selected_agents: [],
             task_specs: [],
             pty_session_id: null,
             launched_command: null,
+            worktree_paths: { r1: "/app/.gmb/worktrees/f1/my-app" },
             created_at: "2025-01-01T00:00:00Z",
             updated_at: "2025-01-01T00:00:00Z",
           },
         ]);
       }
-      if (cmd === "delete_feature") return Promise.resolve();
       return Promise.resolve([]);
     });
 
@@ -181,14 +185,7 @@ describe("HomePage", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText("Auth Feature")).toBeInTheDocument();
-    });
-
-    fireEvent.click(screen.getByTitle("Delete feature"));
-
-    await waitFor(() => {
-      expect(invoke).toHaveBeenCalledWith("delete_feature", { featureId: "f1" });
-      expect(screen.queryByText("Auth Feature")).not.toBeInTheDocument();
+      expect(screen.getByText("Worktree")).toBeInTheDocument();
     });
   });
 
@@ -220,6 +217,7 @@ describe("HomePage", () => {
             task_specs: [],
             pty_session_id: null,
             launched_command: null,
+            worktree_paths: {},
             created_at: "2025-01-01T00:00:00Z",
             updated_at: "2025-01-01T00:00:00Z",
           },
@@ -236,7 +234,7 @@ describe("HomePage", () => {
 
     await waitFor(() => {
       expect(screen.getByText("Cross-Repo Feature")).toBeInTheDocument();
-      expect(screen.getByText("[my-app, api-service]")).toBeInTheDocument();
+      expect(screen.getByText("my-app, api-service")).toBeInTheDocument();
     });
   });
 

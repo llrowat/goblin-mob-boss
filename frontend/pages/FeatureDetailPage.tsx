@@ -363,6 +363,18 @@ export function FeatureDetailPage() {
     }
   };
 
+  // Delete
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const handleDelete = async () => {
+    if (!featureId) return;
+    try {
+      await tauri.deleteFeature(featureId);
+      navigate("/");
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
   const hasActiveTerminal = terminalSession?.featureId === featureId;
 
   if (!feature) {
@@ -386,16 +398,37 @@ export function FeatureDetailPage() {
 
   return (
     <div>
-      <div className="page-header">
-        <h2>{headerLabel}: {feature.name}</h2>
-        <p>
-          {feature.description}
-          {feature.branch && (
-            <span style={{ marginLeft: 12, fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--muted)" }}>
-              {feature.branch}
-            </span>
-          )}
-        </p>
+      <div className="page-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+        <div>
+          <h2>{headerLabel}: {feature.name}</h2>
+          <p>
+            {feature.description}
+            {feature.branch && (
+              <span style={{ marginLeft: 12, fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--muted)" }}>
+                {feature.branch}
+              </span>
+            )}
+          </p>
+        </div>
+        {!deleteConfirm ? (
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={() => setDeleteConfirm(true)}
+            title="Delete feature"
+            style={{ color: "var(--danger)", flexShrink: 0 }}
+          >
+            Delete
+          </button>
+        ) : (
+          <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+            <button className="btn btn-danger btn-sm" onClick={handleDelete}>
+              Confirm Delete
+            </button>
+            <button className="btn btn-secondary btn-sm" onClick={() => setDeleteConfirm(false)}>
+              Cancel
+            </button>
+          </div>
+        )}
       </div>
 
       {error && <div className="error-banner">{error}</div>}
@@ -657,6 +690,8 @@ export function FeatureDetailPage() {
               const tp = taskProgress?.tasks.find((t) => t.task === i + 1);
               const doneCount = tp?.acceptance_criteria.filter((c) => c.done).length ?? 0;
               const totalCount = spec.acceptance_criteria.length;
+              const taskStatus = tp?.status ?? "pending";
+              const allDone = doneCount === totalCount && totalCount > 0;
               return (
               <div key={i} className="jira-row-group">
                 <div
@@ -664,15 +699,11 @@ export function FeatureDetailPage() {
                   onClick={() => setExpandedTask(expandedTask === i ? null : i)}
                 >
                   <div className="jira-col-key">
-                    {tp ? (
-                      <span
-                        className="jira-task-status-icon"
-                        data-status={tp.status}
-                        title={tp.status.replace("_", " ")}
-                      />
-                    ) : (
-                      <span className="jira-task-icon" />
-                    )}
+                    <span
+                      className="jira-task-status-icon"
+                      data-status={taskStatus}
+                      title={taskStatus.replace("_", " ")}
+                    />
                     TASK-{i + 1}
                   </div>
                   <div className="jira-col-summary">{spec.title}</div>
@@ -688,8 +719,8 @@ export function FeatureDetailPage() {
                   </div>
                   <div className="jira-col-ac">
                     {totalCount > 0 && (
-                      <span className={`jira-ac-count${doneCount === totalCount && totalCount > 0 ? " jira-ac-done" : ""}`}>
-                        {tp ? `${doneCount}/${totalCount}` : totalCount}
+                      <span className={`jira-ac-count${allDone ? " jira-ac-done" : ""}`}>
+                        {doneCount}/{totalCount}
                       </span>
                     )}
                   </div>

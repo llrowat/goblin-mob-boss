@@ -42,6 +42,7 @@ pub fn spawn_pty_session(
     cols: u16,
     rows: u16,
     sessions: &PtySessions,
+    env_vars: &[(String, String)],
 ) -> Result<(), String> {
     let pty_system = NativePtySystem::default();
     let pair = pty_system
@@ -58,6 +59,9 @@ pub fn spawn_pty_session(
         command.arg(arg);
     }
     command.cwd(cwd);
+    for (key, val) in env_vars {
+        command.env(key, val);
+    }
 
     let child = pair
         .slave

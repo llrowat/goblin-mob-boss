@@ -567,6 +567,58 @@ describe("FeatureDetailPage", () => {
     expect(checkBoxes[1].classList.contains("jira-check-done")).toBe(false);
   });
 
+  it("deletes feature with confirmation and navigates home", async () => {
+    mockedInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "get_feature") return mockFeature;
+      if (cmd === "get_ideation_prompt") return "system prompt";
+      if (cmd === "poll_ideation_result") return mockIdeationResult;
+      if (cmd === "delete_feature") return undefined;
+      return undefined;
+    });
+
+    render(<FeatureDetailPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Add auth module")).toBeInTheDocument();
+    });
+
+    // Click Delete button
+    await userEvent.click(screen.getByText("Delete"));
+
+    // Should show confirmation
+    expect(screen.getByText("Confirm Delete")).toBeInTheDocument();
+    expect(screen.getByText("Cancel")).toBeInTheDocument();
+
+    // Confirm deletion
+    await userEvent.click(screen.getByText("Confirm Delete"));
+
+    expect(mockedInvoke).toHaveBeenCalledWith("delete_feature", { featureId: "f1" });
+    expect(mockNavigate).toHaveBeenCalledWith("/");
+  });
+
+  it("cancels delete confirmation", async () => {
+    mockedInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "get_feature") return mockFeature;
+      if (cmd === "get_ideation_prompt") return "system prompt";
+      if (cmd === "poll_ideation_result") return mockIdeationResult;
+      return undefined;
+    });
+
+    render(<FeatureDetailPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Add auth module")).toBeInTheDocument();
+    });
+
+    await userEvent.click(screen.getByText("Delete"));
+    expect(screen.getByText("Confirm Delete")).toBeInTheDocument();
+
+    // Cancel goes back to normal Delete button
+    await userEvent.click(screen.getByText("Cancel"));
+    expect(screen.queryByText("Confirm Delete")).not.toBeInTheDocument();
+    expect(screen.getByText("Delete")).toBeInTheDocument();
+  });
+
   it("does not run ideation for ready features", async () => {
     const readyFeature: Feature = {
       ...mockFeature,

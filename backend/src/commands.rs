@@ -693,14 +693,15 @@ pub fn get_launch_command(state: State<AppState>, feature_id: String) -> Result<
     let system_prompt_path = feature_dir.join("system-prompt.md");
     let system_prompt_content = std::fs::read_to_string(&system_prompt_path).unwrap_or_default();
 
-    let (args, env, _prompt) = launch::build_launch(&feature, &system_prompt_content);
-
     // Use worktree path if available (allows concurrent features)
     let work_dir = feature
         .worktree_paths
         .get(&repo.id)
         .map(|s| s.as_str())
         .unwrap_or(&repo.path);
+
+    let (args, env, _prompt) =
+        launch::build_launch_with_repo(&feature, &system_prompt_content, Some(&repo.path));
 
     // Build the full command string
     let env_prefix: String = env
@@ -746,18 +747,14 @@ pub fn start_launch_pty(
     let system_prompt_path = feature_dir.join("system-prompt.md");
     let system_prompt_content = std::fs::read_to_string(&system_prompt_path).unwrap_or_default();
 
-    let (args, env, _prompt) = launch::build_launch(&feature, &system_prompt_content);
-
     let work_dir = feature
         .worktree_paths
         .get(&repo.id)
         .map(|s| s.as_str())
         .unwrap_or(&repo.path);
 
-    // Set env vars before spawning
-    for (key, val) in &env {
-        std::env::set_var(key, val);
-    }
+    let (args, env, _prompt) =
+        launch::build_launch_with_repo(&feature, &system_prompt_content, Some(&repo.path));
 
     let session_id = format!("launch-{}", feature_id);
 
@@ -774,6 +771,7 @@ pub fn start_launch_pty(
         cols,
         rows,
         &pty_sessions,
+        &env,
     )?;
 
     // Build the full command string for display
@@ -1444,13 +1442,8 @@ pub fn poll_task_progress(
     drop(features);
 
     let repo = get_primary_repo(&state, &feature)?;
-    let work_dir = feature
-        .worktree_paths
-        .get(&repo.id)
-        .map(|s| s.as_str())
-        .unwrap_or(&repo.path);
 
-    let progress_path = Path::new(work_dir)
+    let progress_path = Path::new(&repo.path)
         .join(".gmb")
         .join("features")
         .join(&feature.id)
