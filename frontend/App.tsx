@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { BrowserRouter, Routes, Route, NavLink } from "react-router-dom";
 import { HomePage } from "./pages/HomePage";
 import { FeatureDetailPage } from "./pages/FeatureDetailPage";
@@ -8,6 +9,7 @@ import { SystemMapPage } from "./pages/SystemMapPage";
 import { TerminalSessionProvider } from "./hooks/useTerminalSession";
 import { BackgroundPlanningProvider, useBackgroundPlanning } from "./hooks/useBackgroundPlanning";
 import { PersistentTerminal } from "./components/PersistentTerminal";
+import { useTauri } from "./hooks/useTauri";
 
 function App() {
   return (
@@ -21,8 +23,31 @@ function App() {
   );
 }
 
+function CountBadge({ count }: { count: number | null }) {
+  if (count === null) return null;
+  const isZero = count === 0;
+  return (
+    <span
+      className={`sidebar-count-badge${isZero ? " sidebar-count-warn" : ""}`}
+      title={isZero ? "None configured" : `${count} configured`}
+    >
+      {isZero ? "\u26A0" : count}
+    </span>
+  );
+}
+
 function AppLayout() {
   const { planningCount, executingCount } = useBackgroundPlanning();
+  const tauri = useTauri();
+  const [agentCount, setAgentCount] = useState<number | null>(null);
+  const [repoCount, setRepoCount] = useState<number | null>(null);
+  const [mapCount, setMapCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    tauri.listGlobalAgents().then((a) => setAgentCount(a.length));
+    tauri.listRepositories().then((r) => setRepoCount(r.length));
+    tauri.listSystemMaps().then((m) => setMapCount(m.length));
+  }, []);
 
   return (
     <div className="app-layout">
@@ -44,6 +69,9 @@ function AppLayout() {
             }
           >
             Agents
+            <span className="sidebar-badges">
+              <CountBadge count={agentCount} />
+            </span>
           </NavLink>
           <NavLink
             to="/repos"
@@ -52,6 +80,9 @@ function AppLayout() {
             }
           >
             Repositories
+            <span className="sidebar-badges">
+              <CountBadge count={repoCount} />
+            </span>
           </NavLink>
           <NavLink
             to="/map"
@@ -60,6 +91,9 @@ function AppLayout() {
             }
           >
             System Map
+            <span className="sidebar-badges">
+              <CountBadge count={mapCount} />
+            </span>
           </NavLink>
           <div className="sidebar-section-label">Work</div>
           <NavLink
