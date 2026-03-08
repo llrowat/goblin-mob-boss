@@ -13,6 +13,9 @@ pub struct Repository {
     pub description: String,
     pub validators: Vec<String>,
     pub pr_command: Option<String>,
+    /// IDs of other repositories that implement similar patterns and can serve as hints.
+    #[serde(default)]
+    pub similar_repo_ids: Vec<String>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -24,6 +27,7 @@ impl Repository {
         description: String,
         validators: Vec<String>,
         pr_command: Option<String>,
+        similar_repo_ids: Vec<String>,
     ) -> Self {
         Self {
             id: uuid::Uuid::new_v4().to_string(),
@@ -33,6 +37,7 @@ impl Repository {
             description,
             validators,
             pr_command,
+            similar_repo_ids,
             created_at: Utc::now(),
         }
     }
@@ -1405,6 +1410,7 @@ You are enabled by default."#;
             "A React + Rust desktop app".to_string(),
             vec!["cargo test".to_string()],
             None,
+            vec![],
         );
         assert_eq!(repo.name, "my-app");
         assert_eq!(repo.description, "A React + Rust desktop app");
@@ -1435,11 +1441,58 @@ You are enabled by default."#;
             "My cool project".to_string(),
             vec![],
             Some("gh pr create".to_string()),
+            vec![],
         );
         let json = serde_json::to_string(&repo).unwrap();
         let parsed: Repository = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.description, "My cool project");
         assert_eq!(parsed.pr_command, Some("gh pr create".to_string()));
+    }
+
+    #[test]
+    fn repository_similar_repo_ids_defaults_on_deserialize() {
+        let json = r#"{
+            "id": "repo-1",
+            "name": "legacy",
+            "path": "/tmp/legacy",
+            "base_branch": "main",
+            "validators": [],
+            "pr_command": null,
+            "created_at": "2025-01-01T00:00:00Z"
+        }"#;
+        let repo: Repository = serde_json::from_str(json).unwrap();
+        assert!(repo.similar_repo_ids.is_empty());
+    }
+
+    #[test]
+    fn repository_similar_repo_ids_roundtrips() {
+        let repo = Repository::new(
+            "app".to_string(),
+            "/tmp/app".to_string(),
+            "main".to_string(),
+            String::new(),
+            vec![],
+            None,
+            vec!["repo-a".to_string(), "repo-b".to_string()],
+        );
+        assert_eq!(repo.similar_repo_ids.len(), 2);
+        let json = serde_json::to_string(&repo).unwrap();
+        let parsed: Repository = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.similar_repo_ids, vec!["repo-a", "repo-b"]);
+    }
+
+    #[test]
+    fn repository_new_with_empty_similar_repo_ids() {
+        let repo = Repository::new(
+            "app".to_string(),
+            "/tmp/app".to_string(),
+            "main".to_string(),
+            String::new(),
+            vec![],
+            None,
+            vec![],
+        );
+        assert!(repo.similar_repo_ids.is_empty());
     }
 
     // ── RepoPushStatus Tests ──

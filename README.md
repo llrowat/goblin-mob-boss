@@ -62,7 +62,7 @@ A desktop app for agent-based AI development workflows. Configure agents, plan f
 - **Adaptive polling** — Ideation and execution polling use adaptive intervals with maximum retry counts to prevent infinite requests
 
 ### Infrastructure
-- **Repository management** — Register local git repos, configure base branch, validators, and PR commands
+- **Repository management** — Register local git repos, configure base branch, validators, PR commands, and similar repositories. Similar repos serve as pattern hints during ideation, giving agents reference implementations to follow.
 - **Dark theme UI** — Full dark theme with sidebar navigation
 
 ## Project Structure

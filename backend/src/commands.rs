@@ -36,6 +36,7 @@ pub fn add_repository(
     description: Option<String>,
     validators: Vec<String>,
     pr_command: Option<String>,
+    similar_repo_ids: Option<Vec<String>>,
 ) -> Result<Repository, String> {
     if !Path::new(&path).exists() {
         return Err("Path does not exist".to_string());
@@ -43,7 +44,15 @@ pub fn add_repository(
     if !git::is_git_repo(&path) {
         return Err("Path is not a git repository".to_string());
     }
-    let repo = Repository::new(name, path, base_branch, description.unwrap_or_default(), validators, pr_command);
+    let repo = Repository::new(
+        name,
+        path,
+        base_branch,
+        description.unwrap_or_default(),
+        validators,
+        pr_command,
+        similar_repo_ids.unwrap_or_default(),
+    );
     let mut repos = state.repositories.lock().unwrap();
     repos.insert(repo.id.clone(), repo.clone());
     drop(repos);
@@ -60,6 +69,7 @@ pub fn update_repository(
     description: Option<String>,
     validators: Vec<String>,
     pr_command: Option<String>,
+    similar_repo_ids: Option<Vec<String>>,
 ) -> Result<Repository, String> {
     let mut repos = state.repositories.lock().unwrap();
     let repo = repos.get_mut(&id).ok_or("Repository not found")?;
@@ -68,6 +78,7 @@ pub fn update_repository(
     repo.description = description.unwrap_or_default();
     repo.validators = validators;
     repo.pr_command = pr_command;
+    repo.similar_repo_ids = similar_repo_ids.unwrap_or_default();
     let updated = repo.clone();
     drop(repos);
     state.save_repos();
@@ -247,6 +258,7 @@ pub fn start_feature(
                 .ok_or(format!("Repository not found: {}", id))
         })
         .collect::<Result<Vec<_>, _>>()?;
+    let all_repos_snapshot: Vec<Repository> = repos_lock.values().cloned().collect();
     drop(repos_lock);
 
     // Create feature branch in all repos, with rollback on failure
@@ -303,8 +315,8 @@ pub fn start_feature(
     std::fs::create_dir_all(&tasks_dir)
         .map_err(|e| format!("Failed to create feature dir: {}", e))?;
 
-    // Generate repo context from all repos
-    let repo_map = generate_multi_repo_context(&resolved_repos);
+    // Generate repo context from all repos (include similar repos for pattern hints)
+    let repo_map = generate_multi_repo_context_with_similar(&resolved_repos, &all_repos_snapshot);
 
     // Build agents list from all repos' .claude/agents/ files
     let mut all_agents: Vec<AgentFile> = Vec::new();
@@ -1227,6 +1239,8 @@ fn ensure_ideation_prompts(
 ) -> Result<(std::path::PathBuf, std::path::PathBuf), String> {
     let repo = get_primary_repo(state, feature)?;
     let all_repos = get_all_repos(state, feature)?;
+    let all_repos_snapshot: Vec<Repository> =
+        state.repositories.lock().unwrap().values().cloned().collect();
 
     let feature_dir = Path::new(&repo.path)
         .join(".gmb")
@@ -1240,7 +1254,7 @@ fn ensure_ideation_prompts(
         std::fs::create_dir_all(&tasks_dir)
             .map_err(|e| format!("Failed to create feature dir: {}", e))?;
 
-        let repo_map = generate_multi_repo_context(&all_repos);
+        let repo_map = generate_multi_repo_context_with_similar(&all_repos, &all_repos_snapshot);
         let (agent_list, quality_agent_list) = build_agent_lists(&all_repos);
 
         if !system_prompt_path.exists() {
@@ -2150,17 +2164,56 @@ fn get_all_repos(state: &State<AppState>, feature: &Feature) -> Result<Vec<Repos
 }
 
 fn generate_multi_repo_context(repos: &[Repository]) -> String {
-    if repos.len() == 1 {
-        return generate_context_pack_string(&repos[0].path);
+    generate_multi_repo_context_with_similar(repos, &[])
+}
+
+fn generate_multi_repo_context_with_similar(
+    repos: &[Repository],
+    all_repos: &[Repository],
+) -> String {
+    let mut context = if repos.len() == 1 {
+        generate_context_pack_string(&repos[0].path)
+    } else {
+        let mut c =
+            String::from("# Repositories\n\nThis feature spans multiple repositories:\n\n");
+        for repo in repos {
+            c.push_str(&format!("## {} (`{}`)\n\n", repo.name, repo.path));
+            c.push_str(&generate_context_pack_string(&repo.path));
+            c.push_str("\n\n");
+        }
+        c
+    };
+
+    // Collect similar repos referenced by any feature repo
+    let feature_repo_ids: std::collections::HashSet<&str> =
+        repos.iter().map(|r| r.id.as_str()).collect();
+    let mut similar_seen = std::collections::HashSet::new();
+    let mut similar_repos: Vec<&Repository> = Vec::new();
+
+    for repo in repos {
+        for sim_id in &repo.similar_repo_ids {
+            if !feature_repo_ids.contains(sim_id.as_str()) && similar_seen.insert(sim_id.as_str())
+            {
+                if let Some(sim_repo) = all_repos.iter().find(|r| r.id == *sim_id) {
+                    similar_repos.push(sim_repo);
+                }
+            }
+        }
     }
 
-    let mut context =
-        String::from("# Repositories\n\nThis feature spans multiple repositories:\n\n");
-    for repo in repos {
-        context.push_str(&format!("## {} (`{}`)\n\n", repo.name, repo.path));
-        context.push_str(&generate_context_pack_string(&repo.path));
-        context.push_str("\n\n");
+    if !similar_repos.is_empty() {
+        context.push_str("\n\n## Similar Repositories (Pattern Hints)\n\n");
+        context.push_str("The following repositories implement similar patterns and should be used as reference for conventions, structure, and approach:\n\n");
+        for sim in &similar_repos {
+            context.push_str(&format!("### {} (`{}`)\n", sim.name, sim.path));
+            if !sim.description.is_empty() {
+                context.push_str(&format!("{}\n", sim.description));
+            }
+            context.push_str(&generate_context_pack_string(&sim.path));
+            context.push_str("\n\n");
+        }
     }
+
     context
 }
 
@@ -2378,5 +2431,92 @@ mod tests {
         let path = dir.path().join("progress.json");
         std::fs::write(&path, "not valid json").unwrap();
         assert!(read_task_progress(&path).is_none());
+    }
+
+    #[test]
+    fn generate_multi_repo_context_with_similar_includes_hint_repos() {
+        let dir = TempDir::new().unwrap();
+        let repo_path = dir.path().to_string_lossy().to_string();
+
+        let feature_repo = Repository::new(
+            "my-service".to_string(),
+            repo_path.clone(),
+            "main".to_string(),
+            String::new(),
+            vec![],
+            None,
+            vec!["sim-1".to_string()],
+        );
+
+        let mut similar_repo = Repository::new(
+            "other-service".to_string(),
+            repo_path.clone(),
+            "main".to_string(),
+            "A similar Go service".to_string(),
+            vec![],
+            None,
+            vec![],
+        );
+        similar_repo.id = "sim-1".to_string();
+
+        let unrelated_repo = Repository::new(
+            "unrelated".to_string(),
+            repo_path,
+            "main".to_string(),
+            String::new(),
+            vec![],
+            None,
+            vec![],
+        );
+
+        let all_repos = vec![feature_repo.clone(), similar_repo, unrelated_repo];
+        let context =
+            generate_multi_repo_context_with_similar(&[feature_repo], &all_repos);
+
+        assert!(context.contains("Similar Repositories (Pattern Hints)"));
+        assert!(context.contains("other-service"));
+        assert!(context.contains("A similar Go service"));
+        assert!(!context.contains("unrelated"));
+    }
+
+    #[test]
+    fn generate_multi_repo_context_with_similar_no_similar() {
+        let dir = TempDir::new().unwrap();
+        let repo_path = dir.path().to_string_lossy().to_string();
+
+        let repo = Repository::new(
+            "my-service".to_string(),
+            repo_path,
+            "main".to_string(),
+            String::new(),
+            vec![],
+            None,
+            vec![],
+        );
+
+        let context = generate_multi_repo_context_with_similar(&[repo.clone()], &[repo]);
+        assert!(!context.contains("Similar Repositories"));
+    }
+
+    #[test]
+    fn generate_multi_repo_context_with_similar_skips_feature_repos() {
+        let dir = TempDir::new().unwrap();
+        let repo_path = dir.path().to_string_lossy().to_string();
+
+        let mut repo = Repository::new(
+            "my-service".to_string(),
+            repo_path,
+            "main".to_string(),
+            String::new(),
+            vec![],
+            None,
+            vec!["self-ref".to_string()],
+        );
+        repo.id = "self-ref".to_string();
+
+        // When a repo lists itself as similar, it should not appear in hints
+        let context =
+            generate_multi_repo_context_with_similar(&[repo.clone()], &[repo]);
+        assert!(!context.contains("Similar Repositories"));
     }
 }

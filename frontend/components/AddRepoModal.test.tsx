@@ -12,6 +12,11 @@ describe("AddRepoModal", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // Mock list_repositories which is called on mount to populate similar repos list
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "list_repositories") return Promise.resolve([]);
+      return Promise.resolve(undefined);
+    });
   });
 
   it("renders the modal title", () => {
@@ -46,10 +51,15 @@ describe("AddRepoModal", () => {
   });
 
   it("shows form fields after successful detection", async () => {
-    vi.mocked(invoke).mockResolvedValueOnce({
-      name: "my-project",
-      base_branch: "main",
-      has_claude_md: true,
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "list_repositories") return Promise.resolve([]);
+      if (cmd === "detect_repo_info")
+        return Promise.resolve({
+          name: "my-project",
+          base_branch: "main",
+          has_claude_md: true,
+        });
+      return Promise.resolve(undefined);
     });
 
     render(<AddRepoModal onClose={onClose} onAdded={onAdded} />);
@@ -67,7 +77,11 @@ describe("AddRepoModal", () => {
   });
 
   it("shows error when detection fails", async () => {
-    vi.mocked(invoke).mockRejectedValueOnce("Not a git repo");
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "list_repositories") return Promise.resolve([]);
+      if (cmd === "detect_repo_info") return Promise.reject("Not a git repo");
+      return Promise.resolve(undefined);
+    });
 
     render(<AddRepoModal onClose={onClose} onAdded={onAdded} />);
 
@@ -82,10 +96,15 @@ describe("AddRepoModal", () => {
   });
 
   it("shows CLAUDE.md found when repo has one", async () => {
-    vi.mocked(invoke).mockResolvedValueOnce({
-      name: "my-project",
-      base_branch: "main",
-      has_claude_md: true,
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "list_repositories") return Promise.resolve([]);
+      if (cmd === "detect_repo_info")
+        return Promise.resolve({
+          name: "my-project",
+          base_branch: "main",
+          has_claude_md: true,
+        });
+      return Promise.resolve(undefined);
     });
 
     render(<AddRepoModal onClose={onClose} onAdded={onAdded} />);
@@ -101,10 +120,15 @@ describe("AddRepoModal", () => {
   });
 
   it("shows No CLAUDE.md with Generate button when repo lacks one", async () => {
-    vi.mocked(invoke).mockResolvedValueOnce({
-      name: "my-project",
-      base_branch: "main",
-      has_claude_md: false,
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "list_repositories") return Promise.resolve([]);
+      if (cmd === "detect_repo_info")
+        return Promise.resolve({
+          name: "my-project",
+          base_branch: "main",
+          has_claude_md: false,
+        });
+      return Promise.resolve(undefined);
     });
 
     render(<AddRepoModal onClose={onClose} onAdded={onAdded} />);
@@ -120,12 +144,61 @@ describe("AddRepoModal", () => {
     });
   });
 
+  it("shows similar repos checkboxes after detection when repos exist", async () => {
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "list_repositories")
+        return Promise.resolve([
+          {
+            id: "repo-1",
+            name: "api-service",
+            path: "/repos/api",
+            base_branch: "main",
+            description: "API service",
+            validators: [],
+            pr_command: null,
+            similar_repo_ids: [],
+            created_at: "2025-01-01T00:00:00Z",
+          },
+        ]);
+      if (cmd === "detect_repo_info")
+        return Promise.resolve({
+          name: "new-service",
+          base_branch: "main",
+          has_claude_md: true,
+        });
+      return Promise.resolve(undefined);
+    });
+
+    render(<AddRepoModal onClose={onClose} onAdded={onAdded} />);
+
+    fireEvent.change(screen.getByPlaceholderText("/home/user/my-project"), {
+      target: { value: "/some/path" },
+    });
+    fireEvent.click(screen.getByText("Detect"));
+
+    await waitFor(() => {
+      expect(screen.getByText("api-service")).toBeInTheDocument();
+      expect(
+        screen.getByText("Repos with similar patterns — agents will use them as hints"),
+      ).toBeInTheDocument();
+    });
+  });
+
   it("shows generating state when Generate is clicked", async () => {
-    // First call: detect_repo_info
-    vi.mocked(invoke).mockResolvedValueOnce({
-      name: "my-project",
-      base_branch: "main",
-      has_claude_md: false,
+    let generateCalled = false;
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "list_repositories") return Promise.resolve([]);
+      if (cmd === "detect_repo_info")
+        return Promise.resolve({
+          name: "my-project",
+          base_branch: "main",
+          has_claude_md: false,
+        });
+      if (cmd === "generate_claude_md") {
+        generateCalled = true;
+        return Promise.resolve(undefined);
+      }
+      return Promise.resolve(undefined);
     });
 
     render(<AddRepoModal onClose={onClose} onAdded={onAdded} />);
@@ -139,12 +212,10 @@ describe("AddRepoModal", () => {
       expect(screen.getByText("Generate")).toBeInTheDocument();
     });
 
-    // Second call: generate_claude_md (returns void)
-    vi.mocked(invoke).mockResolvedValueOnce(undefined);
-
     fireEvent.click(screen.getByText("Generate"));
 
     await waitFor(() => {
+      expect(generateCalled).toBe(true);
       expect(screen.getByText("Generating CLAUDE.md...")).toBeInTheDocument();
       expect(screen.getByText("Goblins exploring the lair")).toBeInTheDocument();
     });

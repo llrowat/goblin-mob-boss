@@ -58,6 +58,29 @@ describe("useTauri", () => {
       description: null,
       validators: ["npm test"],
       prCommand: null,
+      similarRepoIds: null,
+    });
+  });
+
+  it("addRepository passes similarRepoIds when provided", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce({});
+    const { result } = renderHook(() => useTauri());
+    await result.current.addRepository({
+      name: "test",
+      path: "/test",
+      baseBranch: "main",
+      validators: [],
+      prCommand: null,
+      similarRepoIds: ["repo-1", "repo-2"],
+    });
+    expect(invoke).toHaveBeenCalledWith("add_repository", {
+      name: "test",
+      path: "/test",
+      baseBranch: "main",
+      description: null,
+      validators: [],
+      prCommand: null,
+      similarRepoIds: ["repo-1", "repo-2"],
     });
   });
 

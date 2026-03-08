@@ -6,6 +6,8 @@ export interface Repository {
   description: string;
   validators: string[];
   pr_command: string | null;
+  /** IDs of other repositories that implement similar patterns and can serve as hints. */
+  similar_repo_ids: string[];
   created_at: string;
 }
 
