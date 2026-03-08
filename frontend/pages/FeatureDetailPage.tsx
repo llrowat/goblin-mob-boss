@@ -66,16 +66,17 @@ export function FeatureDetailPage() {
     if (!featureId) return;
     tauri.getFeature(featureId).then((f) => {
       setFeature(f);
+      // Restore execution mode override from saved feature config
+      if (f.execution_mode) {
+        setModeOverride(f.execution_mode);
+      }
       // If already executing, restore the terminal session via context
       if (f.status === "executing" && f.pty_session_id) {
         startSession(f.id, f.pty_session_id);
-        if (f.task_specs.length > 0) {
-          setIdeationResult({ tasks: f.task_specs, execution_mode: null, questions: null, answered_questions: null });
-          setStatus("done");
-        }
       }
-      // If ready/failed, show the saved plan read-only
-      if ((f.status === "ready" || f.status === "failed") && f.task_specs.length > 0) {
+      // If task_specs exist (set by configureLaunch), always use them as the plan source.
+      // This covers executing, ready, failed, and cancelled-back-to-ideation features.
+      if (f.task_specs.length > 0) {
         setIdeationResult({ tasks: f.task_specs, execution_mode: null, questions: null, answered_questions: null });
         setStatus("done");
       }
@@ -96,13 +97,18 @@ export function FeatureDetailPage() {
     return () => clearInterval(interval);
   }, [featureId, feature?.status]);
 
-  // Poll task progress during execution
+  // Load task progress — once for completed features, poll during execution
   useEffect(() => {
-    if (!featureId || feature?.status !== "executing") return;
-    // Immediately fetch once
+    if (!featureId) return;
+    const isExecuting = feature?.status === "executing";
+    const isComplete = feature?.status === "ready" || feature?.status === "failed";
+    if (!isExecuting && !isComplete) return;
+    // Fetch once immediately
     tauri.pollTaskProgress(featureId).then((p) => {
       if (p) setTaskProgress(p);
     }).catch(() => {});
+    // Only keep polling while executing
+    if (!isExecuting) return;
     const interval = setInterval(() => {
       tauri.pollTaskProgress(featureId).then((p) => {
         if (p) setTaskProgress(p);
@@ -133,38 +139,38 @@ export function FeatureDetailPage() {
     // Skip if already executing (terminal session restored from feature load)
     if (terminalSession?.featureId === featureId) return;
 
-    // Check if background planning already has a completed plan or questions
-    const bgPlan = consumePlan(featureId);
-    if (bgPlan) {
-      if (bgPlan.tasks.length > 0) {
-        setIdeationResult(bgPlan);
-        if (bgPlan.answered_questions) {
-          setAnsweredHistory(bgPlan.answered_questions);
-        }
+    // If the feature already has saved task_specs (from configureLaunch), always use those.
+    // This prevents plan.json (which may be stale or modified by execution) from overwriting
+    // the user's configured plan.
+    tauri.getFeature(featureId).then((f) => {
+      if (f.task_specs.length > 0) {
+        setIdeationResult({ tasks: f.task_specs, execution_mode: null, questions: null, answered_questions: null });
         setStatus("done");
         return;
       }
-      if (bgPlan.questions && bgPlan.questions.length > 0) {
-        setQuestions(bgPlan.questions);
-        if (bgPlan.answered_questions) {
-          setAnsweredHistory(bgPlan.answered_questions);
-        }
-        setStatus("questions");
-        return;
-      }
-    }
 
-    // For ready/failed features, plan is loaded from task_specs in the feature load effect
-    // Still poll in case plan.json has data, but don't start ideation if poll returns empty
-    tauri.getFeature(featureId).then((f) => {
-      if (f.status === "ready" || f.status === "failed" || f.status === "executing") {
-        // Plan already saved on feature; poll is just a fallback
-        if (f.task_specs.length > 0) {
-          setIdeationResult({ tasks: f.task_specs, execution_mode: null, questions: null, answered_questions: null });
+      // For ideation/configuring, check background planning first
+      const bgPlan = consumePlan(featureId);
+      if (bgPlan) {
+        if (bgPlan.tasks.length > 0) {
+          setIdeationResult(bgPlan);
+          if (bgPlan.answered_questions) {
+            setAnsweredHistory(bgPlan.answered_questions);
+          }
           setStatus("done");
+          return;
         }
-        return;
+        if (bgPlan.questions && bgPlan.questions.length > 0) {
+          setQuestions(bgPlan.questions);
+          if (bgPlan.answered_questions) {
+            setAnsweredHistory(bgPlan.answered_questions);
+          }
+          setStatus("questions");
+          return;
+        }
       }
+
+      // Poll plan.json for ideation results
       return tauri.pollIdeationResult(featureId).then((result) => {
         if (result.tasks.length > 0) {
           setIdeationResult(result);
@@ -179,7 +185,6 @@ export function FeatureDetailPage() {
           }
           setStatus("questions");
         } else if (isPlanning(featureId)) {
-          // Background planning already started ideation — just poll
           setStatus("running");
         } else {
           startIdeation();
@@ -312,6 +317,9 @@ export function FeatureDetailPage() {
       );
       const sessionId = await tauri.startLaunchPty(featureId, 120, 30);
       startSession(featureId, sessionId);
+      // Refresh feature state so polling effects detect "executing" status
+      const updated = await tauri.getFeature(featureId);
+      setFeature(updated);
     } catch (e) {
       setError(String(e));
     } finally {

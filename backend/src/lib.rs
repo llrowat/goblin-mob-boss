@@ -67,6 +67,8 @@ pub fn run() {
             commands::mark_feature_executing,
             commands::mark_feature_ready,
             commands::cancel_execution,
+            // Task Progress
+            commands::poll_task_progress,
             // Validation
             commands::run_feature_validators,
             // Diff

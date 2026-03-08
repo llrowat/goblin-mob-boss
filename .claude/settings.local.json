@@ -3,7 +3,8 @@
     "allow": [
       "Bash(npx vitest:*)",
       "Bash(npm test:*)",
-      "Bash(cargo test:*)"
+      "Bash(cargo test:*)",
+      "Bash(python -m json.tool)"
     ]
   }
 }

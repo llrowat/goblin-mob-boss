@@ -1428,6 +1428,15 @@ pub fn poll_execution_status(
     observer::poll_execution_snapshot(&repo.path, &repo.base_branch, &feature.branch)
 }
 
+/// Read and parse a progress.json file at the given path.
+fn read_task_progress(progress_path: &Path) -> Option<TaskProgress> {
+    if !progress_path.exists() {
+        return None;
+    }
+    let data = std::fs::read_to_string(progress_path).ok()?;
+    serde_json::from_str::<TaskProgress>(&data).ok()
+}
+
 /// Poll task progress from the progress.json file written by Claude during execution.
 #[tauri::command]
 pub fn poll_task_progress(
@@ -1450,23 +1459,7 @@ pub fn poll_task_progress(
         .join("tasks")
         .join("progress.json");
 
-    if !progress_path.exists() {
-        return Ok(None);
-    }
-
-    match std::fs::read_to_string(&progress_path) {
-        Ok(data) => match serde_json::from_str::<TaskProgress>(&data) {
-            Ok(progress) => Ok(Some(progress)),
-            Err(e) => {
-                log::warn!("Malformed progress.json for feature {}: {}", feature_id, e);
-                Ok(None)
-            }
-        },
-        Err(e) => {
-            log::warn!("Failed to read progress.json for feature {}: {}", feature_id, e);
-            Ok(None)
-        }
-    }
+    Ok(read_task_progress(&progress_path))
 }
 
 // ── Analytics Commands ──
@@ -2092,5 +2085,46 @@ mod tests {
         let result = generate_claude_md(dir.path().to_string_lossy().to_string());
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("not a git repository"));
+    }
+
+    #[test]
+    fn read_task_progress_returns_none_for_missing_file() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("progress.json");
+        assert!(read_task_progress(&path).is_none());
+    }
+
+    #[test]
+    fn read_task_progress_parses_valid_json() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("progress.json");
+        std::fs::write(&path, r#"{
+            "tasks": [
+                {
+                    "task": 1,
+                    "title": "Add feature",
+                    "status": "in_progress",
+                    "acceptance_criteria": [
+                        {"criterion": "Tests pass", "done": true},
+                        {"criterion": "Docs updated", "done": false}
+                    ]
+                }
+            ]
+        }"#).unwrap();
+        let result = read_task_progress(&path).unwrap();
+        assert_eq!(result.tasks.len(), 1);
+        assert_eq!(result.tasks[0].task, 1);
+        assert_eq!(result.tasks[0].status, TaskStatus::InProgress);
+        assert_eq!(result.tasks[0].acceptance_criteria.len(), 2);
+        assert!(result.tasks[0].acceptance_criteria[0].done);
+        assert!(!result.tasks[0].acceptance_criteria[1].done);
+    }
+
+    #[test]
+    fn read_task_progress_returns_none_on_invalid_json() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("progress.json");
+        std::fs::write(&path, "not valid json").unwrap();
+        assert!(read_task_progress(&path).is_none());
     }
 }
