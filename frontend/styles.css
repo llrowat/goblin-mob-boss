@@ -233,6 +233,10 @@ body {
   color: var(--muted);
 }
 
+.sidebar-spacer {
+  flex: 1;
+}
+
 .main-content {
   flex: 1;
   overflow-y: auto;
