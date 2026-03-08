@@ -171,19 +171,19 @@ Goblin Mob Boss is a well-architected Tauri v2 + React desktop application with 
 
 ## 7. CI/CD & DevOps
 
+> **Note:** CI is intentionally disabled (`.github/workflows/tests.yml.disabled`) — this is a deliberate project choice, not a gap.
+
 ### Issues
-- **CI is disabled** — `.github/workflows/tests.yml.disabled` needs to be renamed to `.yml`
 - No ESLint configuration file exists despite ESLint being a devDependency
 - No Prettier or code formatter configured
 - No pre-commit hooks for linting/testing
 - No test coverage reporting
 
 **Recommendations:**
-1. Enable CI by renaming the workflow file
-2. Add `eslint.config.js` with TypeScript rules
-3. Add Prettier for consistent formatting
-4. Add Husky + lint-staged for pre-commit checks
-5. Add coverage reporting (e.g., Codecov integration)
+1. Add `eslint.config.js` with TypeScript rules
+2. Add Prettier for consistent formatting
+3. Add Husky + lint-staged for pre-commit checks
+4. Add coverage reporting
 
 ---
 
@@ -214,10 +214,9 @@ Goblin Mob Boss is a well-architected Tauri v2 + React desktop application with 
 ## 9. Prioritized Improvement Roadmap
 
 ### P0 — Critical (address first)
-1. Enable CI/CD pipeline
-2. Add tests for `commands.rs` (backend) and `ReposPage` (frontend)
-3. Fix silent error swallowing — add user-visible error feedback
-4. Add confirmation dialogs for destructive operations
+1. Add tests for `commands.rs` (backend) and `ReposPage` (frontend)
+2. Fix silent error swallowing — add user-visible error feedback
+3. Add confirmation dialogs for destructive operations
 
 ### P1 — High (significant quality impact)
 5. Decompose `FeatureDetailPage.tsx` into sub-components
