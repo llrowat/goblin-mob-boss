@@ -14,6 +14,7 @@ export function ReposPage() {
   const [editValidators, setEditValidators] = useState("");
   const [editPrCommand, setEditPrCommand] = useState("");
   const [editSimilarRepoIds, setEditSimilarRepoIds] = useState<string[]>([]);
+  const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
 
   const loadRepos = () => {
     tauri.listRepositories().then(setRepos);
@@ -51,6 +52,7 @@ export function ReposPage() {
 
   const handleRemove = async (id: string) => {
     await tauri.removeRepository(id);
+    setConfirmRemoveId(null);
     loadRepos();
   };
 
@@ -209,12 +211,29 @@ export function ReposPage() {
                     >
                       Edit
                     </button>
-                    <button
-                      className="btn btn-danger btn-sm"
-                      onClick={() => handleRemove(repo.id)}
-                    >
-                      Remove
-                    </button>
+                    {confirmRemoveId === repo.id ? (
+                      <>
+                        <button
+                          className="btn btn-danger btn-sm"
+                          onClick={() => handleRemove(repo.id)}
+                        >
+                          Confirm
+                        </button>
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => setConfirmRemoveId(null)}
+                        >
+                          Cancel
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        className="btn btn-danger btn-sm"
+                        onClick={() => setConfirmRemoveId(repo.id)}
+                      >
+                        Remove
+                      </button>
+                    )}
                   </div>
                 </div>
                 <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>

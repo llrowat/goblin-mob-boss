@@ -55,18 +55,20 @@ describe("PersistentTerminal", () => {
     expect(container.innerHTML).toBe("");
   });
 
-  it("shows execution section with cancel button on detail page", () => {
+  it("shows execution section with cancel button on detail page", async () => {
     render(<PersistentTerminal />);
     expect(screen.getByText("Execution")).toBeInTheDocument();
     expect(screen.getByText("Cancel Execution")).toBeInTheDocument();
     expect(screen.getByTestId("mock-terminal")).toBeInTheDocument();
+    await waitFor(() => {});
   });
 
-  it("is hidden on other pages", () => {
+  it("is hidden on other pages", async () => {
     mockPathname = "/";
     render(<PersistentTerminal />);
     const container = screen.getByText("Execution").closest(".persistent-terminal-inline");
     expect(container).toHaveStyle({ display: "none" });
+    await waitFor(() => {});
   });
 
   it("calls cancel_execution and clears session on cancel", async () => {

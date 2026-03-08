@@ -21,7 +21,7 @@ describe("useBackgroundPlanning", () => {
     vi.useRealTimers();
   });
 
-  it("starts with zero counts", () => {
+  it("starts with zero counts", async () => {
     let captured: ReturnType<typeof useBackgroundPlanning> | null = null;
 
     render(
@@ -32,6 +32,10 @@ describe("useBackgroundPlanning", () => {
 
     expect(captured!.planningCount).toBe(0);
     expect(captured!.executingCount).toBe(0);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(100);
+    });
   });
 
   it("increments planningCount when addPlanning is called", async () => {
@@ -43,15 +47,19 @@ describe("useBackgroundPlanning", () => {
       </BackgroundPlanningProvider>,
     );
 
-    act(() => {
+    await act(async () => {
       captured!.addPlanning("f1");
     });
 
     expect(captured!.planningCount).toBe(1);
     expect(captured!.isPlanning("f1")).toBe(true);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(100);
+    });
   });
 
-  it("tracks multiple planning features", () => {
+  it("tracks multiple planning features", async () => {
     let captured: ReturnType<typeof useBackgroundPlanning> | null = null;
 
     render(
@@ -60,7 +68,7 @@ describe("useBackgroundPlanning", () => {
       </BackgroundPlanningProvider>,
     );
 
-    act(() => {
+    await act(async () => {
       captured!.addPlanning("f1");
       captured!.addPlanning("f2");
     });
@@ -69,9 +77,13 @@ describe("useBackgroundPlanning", () => {
     expect(captured!.isPlanning("f1")).toBe(true);
     expect(captured!.isPlanning("f2")).toBe(true);
     expect(captured!.isPlanning("f3")).toBe(false);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(100);
+    });
   });
 
-  it("does not double-count the same feature", () => {
+  it("does not double-count the same feature", async () => {
     let captured: ReturnType<typeof useBackgroundPlanning> | null = null;
 
     render(
@@ -80,12 +92,16 @@ describe("useBackgroundPlanning", () => {
       </BackgroundPlanningProvider>,
     );
 
-    act(() => {
+    await act(async () => {
       captured!.addPlanning("f1");
       captured!.addPlanning("f1");
     });
 
     expect(captured!.planningCount).toBe(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(100);
+    });
   });
 
   it("updates executingCount from polled features", async () => {
@@ -138,7 +154,7 @@ describe("useBackgroundPlanning", () => {
       </BackgroundPlanningProvider>,
     );
 
-    act(() => {
+    await act(async () => {
       captured!.addPlanning("f1");
     });
 
@@ -175,7 +191,7 @@ describe("useBackgroundPlanning", () => {
       </BackgroundPlanningProvider>,
     );
 
-    act(() => {
+    await act(async () => {
       captured!.addPlanning("f1");
     });
 
@@ -185,13 +201,16 @@ describe("useBackgroundPlanning", () => {
     });
 
     // Plan should be available for consumption
-    const plan = captured!.consumePlan("f1");
+    let plan: ReturnType<typeof captured.consumePlan> = null;
+    act(() => {
+      plan = captured!.consumePlan("f1");
+    });
     expect(plan).not.toBeNull();
     expect(plan!.tasks).toHaveLength(1);
     expect(plan!.tasks[0].title).toBe("Task 1");
   });
 
-  it("consumePlan returns null for unknown feature", () => {
+  it("consumePlan returns null for unknown feature", async () => {
     let captured: ReturnType<typeof useBackgroundPlanning> | null = null;
 
     render(
@@ -201,6 +220,10 @@ describe("useBackgroundPlanning", () => {
     );
 
     expect(captured!.consumePlan("nonexistent")).toBeNull();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(100);
+    });
   });
 
   it("removes planning feature if it is no longer in ideation status", async () => {
@@ -223,7 +246,7 @@ describe("useBackgroundPlanning", () => {
       </BackgroundPlanningProvider>,
     );
 
-    act(() => {
+    await act(async () => {
       captured!.addPlanning("f1");
     });
 

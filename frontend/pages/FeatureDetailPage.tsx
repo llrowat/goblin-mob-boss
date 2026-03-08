@@ -4,6 +4,8 @@ import { useTauri } from "../hooks/useTauri";
 import { useTerminalSession } from "../hooks/useTerminalSession";
 import { useBackgroundPlanning } from "../hooks/useBackgroundPlanning";
 import { useCommandDisplay, CommandDisplayButton, CommandDisplayContent } from "../components/CommandDisplay";
+import { TaskTable, ExecutionModeSelector, EditTaskModal } from "./feature-detail/PlanningComponents";
+import { ValidationPanel } from "./feature-detail/ValidationPanel";
 import type {
   Feature,
   Repository,
@@ -72,7 +74,7 @@ export function FeatureDetailPage() {
 
   // Load repos for name display
   useEffect(() => {
-    tauri.listRepositories().then((r) => setRepos(r || [])).catch(() => {});
+    tauri.listRepositories().then((r) => setRepos(r || [])).catch((e) => setError(String(e)));
   }, []);
 
   // Load feature data
@@ -110,7 +112,7 @@ export function FeatureDetailPage() {
         setStatus("done");
       }
     }).catch(console.error);
-    tauri.getIdeationPrompt(featureId).then(setSystemPrompt).catch(() => {});
+    tauri.getIdeationPrompt(featureId).then(setSystemPrompt).catch(() => {/* prompt may not exist yet */});
   }, [featureId]);
 
   // Auto-load execution analysis and diff when feature reaches ready/pushed state
@@ -120,10 +122,10 @@ export function FeatureDetailPage() {
       || feature?.status === "pushed";
     if (!showResults) return;
     if (!analysis) {
-      tauri.analyzeFeatureExecution(featureId).then(setAnalysis).catch(() => {});
+      tauri.analyzeFeatureExecution(featureId).then(setAnalysis).catch((e) => setError(String(e)));
     }
     if (!diff) {
-      tauri.getFeatureDiff(featureId).then(setDiff).catch(() => {});
+      tauri.getFeatureDiff(featureId).then(setDiff).catch((e) => setError(String(e)));
     }
   }, [featureId, feature?.status]);
 
@@ -131,7 +133,7 @@ export function FeatureDetailPage() {
   useEffect(() => {
     if (!featureId || terminalSession) return;
     // Session just cleared — refresh feature to pick up ready/failed status
-    tauri.getFeature(featureId).then(setFeature).catch(() => {});
+    tauri.getFeature(featureId).then(setFeature).catch((e) => setError(String(e)));
   }, [featureId, terminalSession]);
 
   // Poll feature status while executing to detect when it transitions to ready
@@ -143,7 +145,7 @@ export function FeatureDetailPage() {
           setFeature(f);
           clearSession();
         }
-      }).catch(() => {});
+      }).catch(() => {/* polling — transient failures expected */});
     }, 3000);
     return () => clearInterval(interval);
   }, [featureId, feature?.status]);
@@ -182,21 +184,21 @@ export function FeatureDetailPage() {
         // Kill the PTY, mark feature ready, and clear session directly.
         // Don't rely on pty-exit event chain — it can be unreliable on Windows.
         if (sid) {
-          tauri.killPty(sid).catch(() => {});
+          tauri.killPty(sid).catch(() => {/* best-effort cleanup */});
         }
         tauri.markFeatureReady(featureId).then((f) => {
           setFeature(f);
           clearSession();
-        }).catch(() => {});
+        }).catch(() => {/* best-effort auto-complete */});
       }
     };
 
     // Fetch once immediately
-    tauri.pollTaskProgress(featureId).then(handleProgress).catch(() => {});
+    tauri.pollTaskProgress(featureId).then(handleProgress).catch(() => {/* progress may not exist yet */});
     // Only keep polling while executing
     if (!isExecuting) return;
     const interval = setInterval(() => {
-      tauri.pollTaskProgress(featureId).then(handleProgress).catch(() => {});
+      tauri.pollTaskProgress(featureId).then(handleProgress).catch(() => {/* polling — transient failures expected */});
     }, 5000);
     return () => clearInterval(interval);
   }, [featureId, feature?.status, ideationResult?.tasks?.length]);
@@ -210,7 +212,7 @@ export function FeatureDetailPage() {
     clearSession();
     try {
       // Fetch the command being run for transparency
-      tauri.getIdeationTerminalCommand(featureId).then(setIdeationCommand).catch(() => {});
+      tauri.getIdeationTerminalCommand(featureId).then(setIdeationCommand).catch(() => {/* command display is best-effort */});
       addPlanning(featureId);
       await tauri.runIdeation(featureId);
     } catch (err) {
@@ -226,7 +228,7 @@ export function FeatureDetailPage() {
     if (terminalSession?.featureId === featureId) return;
 
     // Always fetch the ideation command for transparency
-    tauri.getIdeationTerminalCommand(featureId).then(setIdeationCommand).catch(() => {});
+    tauri.getIdeationTerminalCommand(featureId).then(setIdeationCommand).catch(() => {/* command display is best-effort */});
 
     // If the feature already has saved task_specs (from configureLaunch), always use those.
     // This prevents plan.json (which may be stale or modified by execution) from overwriting
@@ -312,7 +314,7 @@ export function FeatureDetailPage() {
           }
           setStatus("questions");
         }
-      }).catch(() => {});
+      }).catch(() => {/* polling — plan may not exist yet */});
     };
 
     const interval = setInterval(() => {
@@ -606,7 +608,7 @@ export function FeatureDetailPage() {
           <div style={{ display: "flex", gap: 16, fontSize: 12, color: "var(--muted)", fontFamily: "var(--font-mono)", marginTop: 4 }}>
             {featureRepoNames && (
               <span title="Repository" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
                   <path d="M2 2h8v8H2z" stroke="currentColor" strokeWidth="1" />
                   <path d="M2 5h8" stroke="currentColor" strokeWidth="1" />
                 </svg>
@@ -615,7 +617,7 @@ export function FeatureDetailPage() {
             )}
             {feature.branch && (
               <span title="Branch" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
                   <circle cx="3" cy="3" r="1.5" stroke="currentColor" strokeWidth="1" />
                   <circle cx="9" cy="9" r="1.5" stroke="currentColor" strokeWidth="1" />
                   <path d="M3 4.5V7a2 2 0 0 0 2 2h2.5" stroke="currentColor" strokeWidth="1" />
@@ -819,168 +821,22 @@ export function FeatureDetailPage() {
       {status === "done" && ideationResult && ideationResult.tasks.length > 0 && (
         <>
 
-          {/* Execution mode selector */}
-          {(() => {
-            const activeMode = modeOverride ?? recommendation?.recommended ?? "subagents";
-            return (
-              <div className="exec-mode-selector">
-                <button
-                  className={`exec-mode-option${activeMode === "teams" ? " exec-mode-active" : ""}`}
-                  onClick={() => !isReadOnly && setModeOverride("teams")}
-                  style={isReadOnly ? { cursor: "default", opacity: activeMode === "teams" ? 1 : 0.35 } : undefined}
-                >
-                  <div className="exec-mode-icon exec-mode-teams">
-                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-                      <rect x="1" y="1" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.5" />
-                      <rect x="12" y="1" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.5" />
-                      <rect x="1" y="12" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.5" />
-                      <rect x="12" y="12" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.5" />
-                    </svg>
-                  </div>
-                  <div className="exec-mode-option-text">
-                    <div className="exec-mode-title">Agent Teams</div>
-                    <div className="exec-mode-desc">Multiple agents run in parallel and self-coordinate</div>
-                  </div>
-                  {recommendation?.recommended === "teams" && (
-                    <span className="exec-mode-rec-badge">Recommended</span>
-                  )}
-                </button>
-                <button
-                  className={`exec-mode-option${activeMode === "subagents" ? " exec-mode-active" : ""}`}
-                  onClick={() => !isReadOnly && setModeOverride("subagents")}
-                  style={isReadOnly ? { cursor: "default", opacity: activeMode === "subagents" ? 1 : 0.35 } : undefined}
-                >
-                  <div className="exec-mode-icon exec-mode-sub">
-                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-                      <circle cx="10" cy="4" r="3" stroke="currentColor" strokeWidth="1.5" />
-                      <line x1="10" y1="7" x2="10" y2="12" stroke="currentColor" strokeWidth="1.5" />
-                      <line x1="10" y1="12" x2="4" y2="17" stroke="currentColor" strokeWidth="1.5" />
-                      <line x1="10" y1="12" x2="16" y2="17" stroke="currentColor" strokeWidth="1.5" />
-                      <circle cx="4" cy="17" r="2" fill="currentColor" opacity="0.4" />
-                      <circle cx="16" cy="17" r="2" fill="currentColor" opacity="0.4" />
-                    </svg>
-                  </div>
-                  <div className="exec-mode-option-text">
-                    <div className="exec-mode-title">Subagents</div>
-                    <div className="exec-mode-desc">A single lead agent delegates to subagents</div>
-                  </div>
-                  {recommendation?.recommended === "subagents" && (
-                    <span className="exec-mode-rec-badge">Recommended</span>
-                  )}
-                </button>
-              </div>
-            );
-          })()}
-          {recommendation && (
-            <div className="exec-mode-rationale">
-              {recommendation.rationale}
-              <span className="exec-mode-confidence">
-                {Math.round(recommendation.confidence * 100)}% confidence
-              </span>
-            </div>
-          )}
-          {tmuxAvailable === false &&
-            (modeOverride ?? recommendation?.recommended) === "teams" && (
-            <div className="tmux-warning" style={{
-              marginTop: 8,
-              padding: "8px 12px",
-              background: "var(--warning-bg, #3d2e00)",
-              border: "1px solid var(--warning-border, #665000)",
-              borderRadius: 6,
-              color: "var(--warning-text, #ffd866)",
-              fontSize: 13,
-            }}>
-              tmux is not installed. Agent Teams mode requires tmux.
-              Install it with: <code>brew install tmux</code> (macOS),{" "}
-              <code>sudo apt install tmux</code> (Ubuntu/Debian), or{" "}
-              <code>sudo pacman -S tmux</code> (Arch).
-            </div>
-          )}
+          <ExecutionModeSelector
+            recommendation={recommendation}
+            modeOverride={modeOverride}
+            isReadOnly={isReadOnly}
+            tmuxAvailable={tmuxAvailable}
+            onModeChange={setModeOverride}
+          />
 
-          {/* Task list — JIRA-style table */}
-          <div className="jira-table">
-            <div className="jira-header">
-              <div className="jira-col-key">Key</div>
-              <div className="jira-col-summary">Summary</div>
-              <div className="jira-col-assignee">Assignee</div>
-              <div className="jira-col-deps">Blocked by</div>
-              <div className="jira-col-ac">AC</div>
-              {!isReadOnly && <div className="jira-col-edit" />}
-            </div>
-            {ideationResult.tasks.map((spec, i) => {
-              const tp = taskProgress?.tasks.find((t) => t.task === i + 1);
-              const doneCount = tp?.acceptance_criteria.filter((c) => c.done).length ?? 0;
-              const totalCount = spec.acceptance_criteria.length;
-              const taskStatus = tp?.status ?? "pending";
-              const allDone = doneCount === totalCount && totalCount > 0;
-              return (
-              <div key={i} className="jira-row-group">
-                <div
-                  className={`jira-row${expandedTask === i ? " jira-row-expanded" : ""}`}
-                  onClick={() => setExpandedTask(expandedTask === i ? null : i)}
-                >
-                  <div className="jira-col-key">
-                    <span
-                      className="jira-task-status-icon"
-                      data-status={taskStatus}
-                      title={taskStatus.replace("_", " ")}
-                    />
-                    TASK-{i + 1}
-                  </div>
-                  <div className="jira-col-summary">{spec.title}</div>
-                  <div className="jira-col-assignee">
-                    {spec.agent && (
-                      <span className="jira-assignee-badge">{spec.agent}</span>
-                    )}
-                  </div>
-                  <div className="jira-col-deps">
-                    {spec.dependencies.length > 0
-                      ? spec.dependencies.map((d) => `TASK-${d}`).join(", ")
-                      : "\u2014"}
-                  </div>
-                  <div className="jira-col-ac">
-                    {totalCount > 0 && (
-                      <span className={`jira-ac-count${allDone ? " jira-ac-done" : ""}`}>
-                        {doneCount}/{totalCount}
-                      </span>
-                    )}
-                  </div>
-                  {!isReadOnly && (
-                    <div className="jira-col-edit">
-                      <button
-                        className="jira-edit-btn"
-                        onClick={(e) => { e.stopPropagation(); openEditTask(i); }}
-                        title="Edit task"
-                      >
-                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                          <path d="M10.5 1.5L12.5 3.5L4.5 11.5L1.5 12.5L2.5 9.5L10.5 1.5Z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
-                        </svg>
-                      </button>
-                    </div>
-                  )}
-                </div>
-                {expandedTask === i && spec.acceptance_criteria.length > 0 && (
-                  <div className="jira-detail">
-                    <div className="jira-detail-label">Acceptance Criteria</div>
-                    <ul className="jira-checklist">
-                      {spec.acceptance_criteria.map((c, j) => {
-                        const criterionDone = tp?.acceptance_criteria.find((cp) => cp.criterion === c)?.done ?? false;
-                        return (
-                        <li key={j}>
-                          <span className={`jira-check-box${criterionDone ? " jira-check-done" : ""}`} />
-                          <span style={criterionDone ? { textDecoration: "line-through", color: "var(--muted)" } : undefined}>
-                            {c}
-                          </span>
-                        </li>
-                        );
-                      })}
-                    </ul>
-                  </div>
-                )}
-              </div>
-              );
-            })}
-          </div>
+          <TaskTable
+            tasks={ideationResult.tasks}
+            taskProgress={taskProgress}
+            expandedTask={expandedTask}
+            setExpandedTask={setExpandedTask}
+            isReadOnly={isReadOnly}
+            onEditTask={openEditTask}
+          />
 
           {/* Actions */}
           {!hasActiveTerminal && !isReadOnly ? (
@@ -1043,6 +899,8 @@ export function FeatureDetailPage() {
             <div className="panel-title">
               <span
                 className="status-dot"
+                role="img"
+                aria-label="Execution complete"
                 style={{ backgroundColor: "var(--muted)", marginRight: 8 }}
               />
               Execution Complete
@@ -1075,6 +933,8 @@ export function FeatureDetailPage() {
             <div className="panel-title">
               <span
                 className="status-dot"
+                role="img"
+                aria-label="Feature complete"
                 style={{ backgroundColor: "var(--success)", marginRight: 8 }}
               />
               Complete
@@ -1088,355 +948,46 @@ export function FeatureDetailPage() {
 
       {/* Validation & review panel — shown for ready and pushed states */}
       {(isReady || isPushed) && !hasActiveTerminal && (
-        <div className="panel" style={{ marginTop: 16 }}>
-          <div className="panel-header">
-            <div className="panel-title">
-              {isPushed ? "Pushed" : "Validation & PR"}
-            </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              {!isComplete && !isPushed && (
-                <button
-                  className="btn btn-secondary btn-sm"
-                  onClick={handleRunValidators}
-                  disabled={verifying}
-                >
-                  {verifying ? "Running..." : "Run Validators"}
-                </button>
-              )}
-              {isReady && !isMultiRepo && (
-                <button
-                  className="btn btn-primary btn-sm"
-                  onClick={handlePush}
-                  disabled={pushing || pushed}
-                >
-                  {pushing ? "Pushing..." : pushed ? "Pushed" : "Commit & Push"}
-                </button>
-              )}
-              {(isPushed || (isReady && isMultiRepo && allReposPushed)) && (
-                <>
-                  <button
-                    className="btn btn-secondary btn-sm"
-                    onClick={() => setShowMakeChanges(!showMakeChanges)}
-                  >
-                    Make Changes
-                  </button>
-                  <button
-                    className="btn btn-primary btn-sm"
-                    onClick={handleComplete}
-                    disabled={completing}
-                  >
-                    {completing ? "Completing..." : "Mark Complete"}
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-
-          {/* Make Changes feedback form */}
-          {showMakeChanges && (
-            <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--border)" }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
-                What needs to change?
-              </div>
-              <textarea
-                className="form-textarea"
-                value={changesFeedback}
-                onChange={(e) => setChangesFeedback(e.target.value)}
-                placeholder="Describe the changes needed..."
-                style={{ minHeight: 80 }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && e.metaKey) handleMakeChanges();
-                }}
-              />
-              <div style={{ display: "flex", gap: 8, marginTop: 8, justifyContent: "flex-end" }}>
-                <button
-                  className="btn btn-secondary btn-sm"
-                  onClick={() => { setShowMakeChanges(false); setChangesFeedback(""); }}
-                >
-                  Cancel
-                </button>
-                <button
-                  className="btn btn-primary btn-sm"
-                  onClick={handleMakeChanges}
-                  disabled={!changesFeedback.trim() || submittingChanges}
-                >
-                  {submittingChanges ? "Submitting..." : "Submit & Re-plan"}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Per-repo push status — shown for multi-repo features in ready state */}
-          {isMultiRepo && (isReady || isPushed) && (
-            <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--border)" }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
-                Per-Repo Push Status
-              </div>
-              {featureRepoIds.map((repoId) => {
-                const repoName = repos.find((r) => r.id === repoId)?.name ?? repoId;
-                const status = feature.repo_push_status?.[repoId] ?? "pending";
-                const isPushingThis = pushingRepoId === repoId;
-                return (
-                  <div
-                    key={repoId}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                      padding: "6px 0",
-                      borderBottom: "1px solid var(--border)",
-                      fontSize: 12,
-                    }}
-                  >
-                    <span
-                      style={{
-                        fontWeight: 600,
-                        fontSize: 10,
-                        textTransform: "uppercase",
-                        minWidth: 55,
-                        color:
-                          status === "pushed"
-                            ? "var(--success)"
-                            : status === "failed"
-                              ? "var(--danger)"
-                              : "var(--muted)",
-                      }}
-                    >
-                      {status}
-                    </span>
-                    <span style={{ flex: 1, color: "var(--text-secondary)" }}>{repoName}</span>
-                    {status !== "pushed" && (
-                      <button
-                        className="btn btn-primary btn-sm"
-                        onClick={() => handlePushRepo(repoId)}
-                        disabled={isPushingThis}
-                        style={{ fontSize: 11, padding: "2px 10px" }}
-                      >
-                        {isPushingThis ? "Pushing..." : "Commit & Push"}
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {/* Validator results — inline */}
-          {verifyResult && (
-            <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--border)" }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
-                Validators
-                <span style={{
-                  color: verifyResult.all_passed ? "var(--success)" : "var(--danger)",
-                  fontWeight: 400,
-                  marginLeft: 8,
-                }}>
-                  {verifyResult.all_passed ? "All passed" : "Some failed"}
-                </span>
-              </div>
-              {verifyResult.results.map((r, i) => (
-                <div key={i} style={{ padding: "4px 0", borderBottom: "1px solid var(--border)" }}>
-                  <div style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12 }}>
-                    <span style={{ color: r.success ? "var(--success)" : "var(--danger)", fontWeight: 600, fontSize: 10, textTransform: "uppercase" }}>
-                      {r.success ? "PASS" : "FAIL"}
-                    </span>
-                    <code style={{ fontSize: 11 }}>{r.command}</code>
-                  </div>
-                  {!r.success && r.stderr && (
-                    <div className="code-block" style={{ marginTop: 4, fontSize: 11 }}>
-                      {r.stderr}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Diff summary — inline */}
-          {diff && (
-            <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--border)" }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
-                Diff
-                <span style={{ fontWeight: 400, marginLeft: 8, fontFamily: "var(--font-mono)" }}>
-                  {diff.total_files} file{diff.total_files !== 1 ? "s" : ""}{" "}
-                  <span style={{ color: "var(--success)" }}>+{diff.total_insertions}</span>{" "}
-                  <span style={{ color: "var(--danger)" }}>-{diff.total_deletions}</span>
-                </span>
-              </div>
-              <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, lineHeight: 1.6 }}>
-                {diff.files.map((f) => (
-                  <div key={f.path} style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                    <span style={{ color: "var(--text-secondary)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {f.path}
-                    </span>
-                    <span style={{ color: "var(--success)", minWidth: 32, textAlign: "right" }}>+{f.insertions}</span>
-                    <span style={{ color: "var(--danger)", minWidth: 32, textAlign: "right" }}>-{f.deletions}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Execution analysis — inline, auto-loaded */}
-          {analysis && (
-            <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--border)" }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
-                Execution Analysis
-              </div>
-              <div
-                style={{
-                  padding: "8px 12px",
-                  borderRadius: 6,
-                  marginBottom: 8,
-                  backgroundColor: analysis.mode_assessment.was_appropriate
-                    ? "rgba(107, 158, 107, 0.1)"
-                    : "rgba(196, 90, 106, 0.1)",
-                  border: `1px solid ${analysis.mode_assessment.was_appropriate ? "rgba(107, 158, 107, 0.3)" : "rgba(196, 90, 106, 0.3)"}`,
-                }}
-              >
-                <div style={{
-                  fontSize: 12,
-                  fontWeight: 600,
-                  marginBottom: 2,
-                  color: analysis.mode_assessment.was_appropriate ? "var(--success)" : "var(--danger)",
-                }}>
-                  {analysis.mode_assessment.was_appropriate ? "Good mode choice" : "Mode could be improved"}
-                </div>
-                <div style={{ fontSize: 11, color: "var(--text-secondary)", lineHeight: 1.5 }}>
-                  {analysis.mode_assessment.reason}
-                </div>
-                {analysis.mode_assessment.suggestion && (
-                  <div style={{ fontSize: 11, color: "var(--muted)", fontStyle: "italic", marginTop: 2 }}>
-                    Tip: {analysis.mode_assessment.suggestion}
-                  </div>
-                )}
-              </div>
-              {analysis.task_file_coverage.map((tc, i) => (
-                <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", padding: "3px 0", borderBottom: "1px solid var(--border)", fontSize: 11 }}>
-                  <span style={{
-                    color: tc.coverage_status === "covered" ? "var(--success)" : tc.coverage_status === "partial" ? "#c9a84c" : "var(--muted)",
-                    fontWeight: 600, minWidth: 55, fontSize: 10, textTransform: "uppercase",
-                  }}>
-                    {tc.coverage_status === "no_changes_detected" ? "No files" : tc.coverage_status}
-                  </span>
-                  <span style={{ color: "var(--text-secondary)", flex: 1 }}>{tc.task_title}</span>
-                  {tc.likely_files.length > 0 && (
-                    <span style={{ color: "var(--muted)", fontFamily: "var(--font-mono)", fontSize: 10 }}>
-                      {tc.likely_files.length} file{tc.likely_files.length !== 1 ? "s" : ""}
-                    </span>
-                  )}
-                </div>
-              ))}
-              {analysis.unplanned_files.length > 0 && (
-                <div style={{ marginTop: 6 }}>
-                  <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 2 }}>Unplanned changes:</div>
-                  <div style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: "#c9a84c" }}>
-                    {analysis.unplanned_files.map((f) => <div key={f}>{f}</div>)}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-        </div>
+        <ValidationPanel
+          featureId={featureId!}
+          isPushed={isPushed}
+          isReady={isReady}
+          isComplete={isComplete}
+          isMultiRepo={isMultiRepo}
+          allReposPushed={allReposPushed}
+          featureRepoIds={featureRepoIds}
+          repos={repos}
+          repoPushStatus={feature.repo_push_status}
+          verifyResult={verifyResult}
+          verifying={verifying}
+          onRunValidators={handleRunValidators}
+          pushing={pushing}
+          pushed={pushed}
+          pushingRepoId={pushingRepoId}
+          onPush={handlePush}
+          onPushRepo={handlePushRepo}
+          showMakeChanges={showMakeChanges}
+          changesFeedback={changesFeedback}
+          submittingChanges={submittingChanges}
+          onToggleMakeChanges={() => setShowMakeChanges(!showMakeChanges)}
+          onChangesFeedbackChange={setChangesFeedback}
+          onSubmitMakeChanges={handleMakeChanges}
+          completing={completing}
+          onComplete={handleComplete}
+          diff={diff}
+          analysis={analysis}
+        />
       )}
 
       {/* Edit Task Dialog */}
       {editingTask !== null && editDraft && (
-        <div className="modal-overlay" onClick={cancelEditTask}>
-          <div className="modal edit-task-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="panel-header">
-              <div className="panel-title">Edit TASK-{editingTask + 1}</div>
-            </div>
-            <div className="edit-task-body">
-              <div className="form-group">
-                <label className="form-label">Title</label>
-                <input
-                  className="form-input"
-                  value={editDraft.title}
-                  onChange={(e) => setEditDraft({ ...editDraft, title: e.target.value })}
-                />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Description</label>
-                <textarea
-                  className="form-textarea"
-                  value={editDraft.description}
-                  onChange={(e) => setEditDraft({ ...editDraft, description: e.target.value })}
-                  rows={5}
-                />
-              </div>
-              <div style={{ display: "flex", gap: 12 }}>
-                <div className="form-group" style={{ flex: 1 }}>
-                  <label className="form-label">Agent</label>
-                  <input
-                    className="form-input"
-                    value={editDraft.agent}
-                    onChange={(e) => setEditDraft({ ...editDraft, agent: e.target.value })}
-                  />
-                </div>
-                <div className="form-group" style={{ flex: 1 }}>
-                  <label className="form-label">Dependencies (task numbers)</label>
-                  <input
-                    className="form-input"
-                    value={editDraft.dependencies.join(", ")}
-                    placeholder="e.g. 1, 2"
-                    onChange={(e) => setEditDraft({
-                      ...editDraft,
-                      dependencies: e.target.value.split(",").map((s) => s.trim()).filter(Boolean),
-                    })}
-                  />
-                </div>
-              </div>
-              <div className="form-group">
-                <label className="form-label">Acceptance Criteria</label>
-                <div className="ac-edit-list">
-                  {editDraft.acceptance_criteria.map((criterion, j) => (
-                    <div key={j} className="ac-edit-row">
-                      <input
-                        className="form-input ac-edit-input"
-                        value={criterion}
-                        onChange={(e) => {
-                          const updated = [...editDraft.acceptance_criteria];
-                          updated[j] = e.target.value;
-                          setEditDraft({ ...editDraft, acceptance_criteria: updated });
-                        }}
-                      />
-                      <button
-                        className="ac-edit-remove"
-                        onClick={() => {
-                          const updated = editDraft.acceptance_criteria.filter((_, k) => k !== j);
-                          setEditDraft({ ...editDraft, acceptance_criteria: updated });
-                        }}
-                        title="Remove"
-                      >
-                        &times;
-                      </button>
-                    </div>
-                  ))}
-                  <button
-                    className="btn btn-secondary btn-sm"
-                    onClick={() => setEditDraft({
-                      ...editDraft,
-                      acceptance_criteria: [...editDraft.acceptance_criteria, ""],
-                    })}
-                    style={{ alignSelf: "flex-start" }}
-                  >
-                    + Add criterion
-                  </button>
-                </div>
-              </div>
-            </div>
-            <div className="edit-task-footer">
-              <button className="btn btn-secondary" onClick={cancelEditTask}>
-                Cancel
-              </button>
-              <button className="btn btn-primary" onClick={saveEditTask}>
-                Save
-              </button>
-            </div>
-          </div>
-        </div>
+        <EditTaskModal
+          taskIndex={editingTask}
+          draft={editDraft}
+          onDraftChange={setEditDraft}
+          onSave={saveEditTask}
+          onCancel={cancelEditTask}
+        />
       )}
     </div>
   );

@@ -82,6 +82,8 @@ describe("AgentsPage", () => {
     expect(
       screen.getByText(/Manage your global agents/),
     ).toBeInTheDocument();
+
+    await waitFor(() => {});
   });
 
   it("displays global agents", async () => {

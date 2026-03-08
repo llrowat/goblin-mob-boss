@@ -10,6 +10,7 @@ import { TerminalSessionProvider } from "./hooks/useTerminalSession";
 import { BackgroundPlanningProvider, useBackgroundPlanning } from "./hooks/useBackgroundPlanning";
 import { PersistentTerminal } from "./components/PersistentTerminal";
 import { useTauri } from "./hooks/useTauri";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 
 function App() {
   return (
@@ -51,7 +52,7 @@ function AppLayout() {
 
   return (
     <div className="app-layout">
-      <nav className="sidebar">
+      <nav className="sidebar" aria-label="Main navigation">
         <div className="sidebar-header">
           <div className="sidebar-brand">
             <span className="brand-icon" aria-hidden="true">
@@ -106,14 +107,14 @@ function AppLayout() {
             Features
             <span className="sidebar-badges">
               {planningCount > 0 && (
-                <span className="sidebar-planning-badge" title={`${planningCount} planning`}>
-                  <span className="spinner spinner-planning" style={{ width: 10, height: 10, borderWidth: 1.5 }} />
+                <span className="sidebar-planning-badge" title={`${planningCount} planning`} aria-label={`${planningCount} features planning`}>
+                  <span className="spinner spinner-planning" style={{ width: 10, height: 10, borderWidth: 1.5 }} aria-hidden="true" />
                   {planningCount}
                 </span>
               )}
               {executingCount > 0 && (
-                <span className="sidebar-executing-badge" title={`${executingCount} executing`}>
-                  <span className="spinner" style={{ width: 10, height: 10, borderWidth: 1.5 }} />
+                <span className="sidebar-executing-badge" title={`${executingCount} executing`} aria-label={`${executingCount} features executing`}>
+                  <span className="spinner" style={{ width: 10, height: 10, borderWidth: 1.5 }} aria-hidden="true" />
                   {executingCount}
                 </span>
               )}
@@ -132,17 +133,19 @@ function AppLayout() {
       </nav>
 
       <main className="main-content">
-        <Routes>
-          <Route path="/" element={<HomePage />} />
-          <Route
-            path="/feature/:featureId/detail"
-            element={<FeatureDetailPage />}
-          />
-          <Route path="/map" element={<SystemMapPage />} />
-          <Route path="/agents" element={<AgentsPage />} />
-          <Route path="/repos" element={<ReposPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-        </Routes>
+        <ErrorBoundary>
+          <Routes>
+            <Route path="/" element={<HomePage />} />
+            <Route
+              path="/feature/:featureId/detail"
+              element={<FeatureDetailPage />}
+            />
+            <Route path="/map" element={<SystemMapPage />} />
+            <Route path="/agents" element={<AgentsPage />} />
+            <Route path="/repos" element={<ReposPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+          </Routes>
+        </ErrorBoundary>
         <PersistentTerminal />
       </main>
     </div>

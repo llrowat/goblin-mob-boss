@@ -2569,4 +2569,137 @@ mod tests {
             generate_multi_repo_context_with_similar(&[repo.clone()], &[repo]);
         assert!(!context.contains("Similar Repositories"));
     }
+
+    // ── parse_service_type tests ──
+
+    #[test]
+    fn parse_service_type_all_variants() {
+        assert!(matches!(parse_service_type("backend"), ServiceType::Backend));
+        assert!(matches!(parse_service_type("frontend"), ServiceType::Frontend));
+        assert!(matches!(parse_service_type("worker"), ServiceType::Worker));
+        assert!(matches!(parse_service_type("gateway"), ServiceType::Gateway));
+        assert!(matches!(parse_service_type("database"), ServiceType::Database));
+        assert!(matches!(parse_service_type("queue"), ServiceType::Queue));
+        assert!(matches!(parse_service_type("cache"), ServiceType::Cache));
+        assert!(matches!(parse_service_type("external"), ServiceType::External));
+    }
+
+    #[test]
+    fn parse_service_type_case_insensitive() {
+        assert!(matches!(parse_service_type("Backend"), ServiceType::Backend));
+        assert!(matches!(parse_service_type("FRONTEND"), ServiceType::Frontend));
+    }
+
+    #[test]
+    fn parse_service_type_defaults_to_backend() {
+        assert!(matches!(parse_service_type("unknown"), ServiceType::Backend));
+        assert!(matches!(parse_service_type(""), ServiceType::Backend));
+    }
+
+    // ── parse_connection_type tests ──
+
+    #[test]
+    fn parse_connection_type_all_variants() {
+        assert!(matches!(parse_connection_type("rest"), ConnectionType::Rest));
+        assert!(matches!(parse_connection_type("grpc"), ConnectionType::Grpc));
+        assert!(matches!(parse_connection_type("graphql"), ConnectionType::Graphql));
+        assert!(matches!(parse_connection_type("websocket"), ConnectionType::Websocket));
+        assert!(matches!(parse_connection_type("event"), ConnectionType::Event));
+        assert!(matches!(parse_connection_type("shared_db"), ConnectionType::SharedDb));
+        assert!(matches!(parse_connection_type("file_system"), ConnectionType::FileSystem));
+        assert!(matches!(parse_connection_type("ipc"), ConnectionType::Ipc));
+    }
+
+    #[test]
+    fn parse_connection_type_defaults_to_rest() {
+        assert!(matches!(parse_connection_type("unknown"), ConnectionType::Rest));
+        assert!(matches!(parse_connection_type(""), ConnectionType::Rest));
+    }
+
+    // ── service_type_color tests ──
+
+    #[test]
+    fn service_type_color_returns_hex_codes() {
+        assert_eq!(service_type_color(&ServiceType::Backend), "#5a8a5c");
+        assert_eq!(service_type_color(&ServiceType::Frontend), "#5b8abd");
+        assert_eq!(service_type_color(&ServiceType::Worker), "#9b6abf");
+        assert_eq!(service_type_color(&ServiceType::Database), "#d4aa5a");
+    }
+
+    // ── check_tmux_installed tests ──
+
+    #[test]
+    fn check_tmux_installed_returns_bool() {
+        // Just verify it doesn't panic — result depends on system
+        let _ = check_tmux_installed();
+    }
+
+    // ── generate_multi_repo_context tests ──
+
+    #[test]
+    fn generate_multi_repo_context_includes_repo_info() {
+        let dir = TempDir::new().unwrap();
+        let repo = Repository::new(
+            "test-repo".to_string(),
+            dir.path().to_string_lossy().to_string(),
+            "main".to_string(),
+            "A test repo".to_string(),
+            vec![],
+            None,
+            vec![],
+        );
+
+        let context = generate_multi_repo_context(&[repo]);
+        assert!(context.contains("test-repo"));
+        assert!(context.contains("main"));
+    }
+
+    #[test]
+    fn generate_multi_repo_context_multiple_repos() {
+        let dir1 = TempDir::new().unwrap();
+        let dir2 = TempDir::new().unwrap();
+
+        let repo1 = Repository::new(
+            "frontend".to_string(),
+            dir1.path().to_string_lossy().to_string(),
+            "main".to_string(),
+            String::new(),
+            vec![],
+            None,
+            vec![],
+        );
+        let repo2 = Repository::new(
+            "backend".to_string(),
+            dir2.path().to_string_lossy().to_string(),
+            "develop".to_string(),
+            String::new(),
+            vec![],
+            None,
+            vec![],
+        );
+
+        let context = generate_multi_repo_context(&[repo1, repo2]);
+        assert!(context.contains("frontend"));
+        assert!(context.contains("backend"));
+    }
+
+    // ── get_claude_md_command tests ──
+
+    #[test]
+    fn get_claude_md_command_returns_command_string() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().to_string_lossy().to_string();
+        // git init so it's a valid repo
+        std::process::Command::new("git")
+            .args(["init", "-b", "main"])
+            .current_dir(dir.path())
+            .output()
+            .expect("git init failed");
+
+        let result = get_claude_md_command(path);
+        assert!(result.is_ok());
+        let cmd = result.unwrap();
+        assert!(cmd.contains("claude"));
+        assert!(cmd.contains("CLAUDE.md"));
+    }
 }

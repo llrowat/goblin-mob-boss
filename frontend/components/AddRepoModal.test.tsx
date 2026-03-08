@@ -19,35 +19,40 @@ describe("AddRepoModal", () => {
     });
   });
 
-  it("renders the modal title", () => {
+  it("renders the modal title", async () => {
     render(<AddRepoModal onClose={onClose} onAdded={onAdded} />);
     expect(screen.getByText("Add Repository")).toBeInTheDocument();
+    await waitFor(() => {});
   });
 
-  it("renders path input and Browse/Detect buttons", () => {
+  it("renders path input and Browse/Detect buttons", async () => {
     render(<AddRepoModal onClose={onClose} onAdded={onAdded} />);
     expect(screen.getByPlaceholderText("/home/user/my-project")).toBeInTheDocument();
     expect(screen.getByText("Browse")).toBeInTheDocument();
     expect(screen.getByText("Detect")).toBeInTheDocument();
+    await waitFor(() => {});
   });
 
-  it("calls onClose when Cancel is clicked", () => {
+  it("calls onClose when Cancel is clicked", async () => {
     render(<AddRepoModal onClose={onClose} onAdded={onAdded} />);
     fireEvent.click(screen.getByText("Cancel"));
     expect(onClose).toHaveBeenCalled();
+    await waitFor(() => {});
   });
 
-  it("calls onClose when overlay is clicked", () => {
+  it("calls onClose when overlay is clicked", async () => {
     const { container } = render(<AddRepoModal onClose={onClose} onAdded={onAdded} />);
     fireEvent.click(container.querySelector(".modal-overlay")!);
     expect(onClose).toHaveBeenCalled();
+    await waitFor(() => {});
   });
 
-  it("does not show name/branch fields before detection", () => {
+  it("does not show name/branch fields before detection", async () => {
     render(<AddRepoModal onClose={onClose} onAdded={onAdded} />);
     // Before detection, the Name and Base Branch inputs should not be shown
     expect(screen.queryByLabelText("Name")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Base Branch")).not.toBeInTheDocument();
+    await waitFor(() => {});
   });
 
   it("shows form fields after successful detection", async () => {
