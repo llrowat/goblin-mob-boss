@@ -67,6 +67,9 @@ pub fn run() {
             commands::mark_feature_executing,
             commands::mark_feature_ready,
             commands::cancel_execution,
+            commands::complete_feature,
+            // Task Progress
+            commands::poll_task_progress,
             // Validation
             commands::run_feature_validators,
             // Diff
@@ -83,6 +86,7 @@ pub fn run() {
             commands::write_pty,
             commands::resize_pty,
             commands::kill_pty,
+            commands::pty_session_exists,
             // Preferences
             commands::get_preferences,
             commands::set_preferences,
@@ -92,7 +96,6 @@ pub fn run() {
             commands::list_feature_recipes,
             // Execution Observability
             commands::poll_execution_status,
-            commands::poll_task_progress,
             // Analytics
             commands::analyze_feature_execution,
             // Guidance

@@ -120,6 +120,61 @@ body {
   color: var(--accent);
 }
 
+/* Feature cards on HomePage */
+.feature-card {
+  margin-bottom: 8px;
+  cursor: pointer;
+  position: relative;
+}
+
+.feature-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.feature-card-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.feature-card-desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+  margin-bottom: 8px;
+}
+
+.feature-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.feature-card-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--muted);
+  background: rgba(106, 103, 95, 0.1);
+  padding: 2px 8px;
+  border-radius: 4px;
+  max-width: 340px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.feature-card-tag-wt {
+  color: var(--accent);
+  background: rgba(90, 138, 92, 0.1);
+}
+
 .feature-delete-btn {
   position: absolute;
   top: 8px;
@@ -1424,7 +1479,7 @@ body {
 
 /* Terminal */
 .terminal-container {
-  height: 400px;
+  height: 600px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   overflow: hidden;

@@ -148,6 +148,9 @@ export function useTauri() {
     markFeatureReady: (featureId: string) =>
       invoke<Feature>("mark_feature_ready", { featureId }),
 
+    completeFeature: (featureId: string) =>
+      invoke<Feature>("complete_feature", { featureId }),
+
     cancelExecution: (featureId: string) =>
       invoke<Feature>("cancel_execution", { featureId }),
 
@@ -194,6 +197,9 @@ export function useTauri() {
 
     killPty: (sessionId: string) =>
       invoke<void>("kill_pty", { sessionId }),
+
+    ptySessionExists: (sessionId: string) =>
+      invoke<boolean>("pty_session_exists", { sessionId }),
 
     // Built-in Agents & Recipes
     listBuiltInAgents: () =>

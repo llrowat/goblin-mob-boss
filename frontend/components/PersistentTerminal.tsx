@@ -1,8 +1,10 @@
 import { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useLocation, useNavigate } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { useTerminalSession } from "../hooks/useTerminalSession";
 import { Terminal } from "./Terminal";
+import type { Feature } from "../types";
 
 export function PersistentTerminal() {
   const { session, clearSession } = useTerminalSession();
@@ -10,10 +12,33 @@ export function PersistentTerminal() {
   const navigate = useNavigate();
   const containerRef = useRef<HTMLDivElement>(null);
   const [cancelling, setCancelling] = useState(false);
+  const [showCommand, setShowCommand] = useState(false);
+  const [launchedCommand, setLaunchedCommand] = useState<string | null>(null);
+  const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
 
   const isOnFeaturePage = session
     ? location.pathname === `/feature/${session.featureId}/detail`
     : false;
+
+  // Look for the portal target element on the feature detail page
+  useEffect(() => {
+    if (isOnFeaturePage) {
+      const timer = setTimeout(() => {
+        setPortalTarget(document.getElementById("terminal-portal-target"));
+      }, 0);
+      return () => clearTimeout(timer);
+    } else {
+      setPortalTarget(null);
+    }
+  }, [isOnFeaturePage, location.pathname]);
+
+  // Fetch launched_command when session starts
+  useEffect(() => {
+    if (!session) return;
+    invoke<Feature>("get_feature", { featureId: session.featureId })
+      .then((f) => setLaunchedCommand(f.launched_command ?? null))
+      .catch(() => {});
+  }, [session?.featureId]);
 
   // Scroll into view when terminal first appears on the detail page
   useEffect(() => {
@@ -21,6 +46,11 @@ export function PersistentTerminal() {
       containerRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
     }
   }, [session?.sessionId, isOnFeaturePage]);
+
+  // Reset state when session changes
+  useEffect(() => {
+    setShowCommand(false);
+  }, [session?.sessionId]);
 
   if (!session) return null;
 
@@ -30,7 +60,6 @@ export function PersistentTerminal() {
     } catch {
       // Feature may already be in ready state
     }
-    navigate(`/feature/${session.featureId}/detail`);
     clearSession();
   };
 
@@ -43,13 +72,10 @@ export function PersistentTerminal() {
     }
     clearSession();
     setCancelling(false);
-    // Reload the page to reset component state back to planning
     navigate(0);
   };
 
-  // Terminal is always rendered to preserve scrollback, but only
-  // visible on the executing feature's detail page.
-  return (
+  const content = (
     <div
       ref={containerRef}
       className="persistent-terminal-inline"
@@ -58,20 +84,49 @@ export function PersistentTerminal() {
       <div className="panel" style={{ marginTop: 16 }}>
         <div className="panel-header">
           <div className="panel-title">
-            <span className="status-dot" style={{ backgroundColor: "var(--success)", marginRight: 8 }} />
+            <span
+              className="status-dot"
+              style={{
+                backgroundColor: "var(--success)",
+                marginRight: 8,
+              }}
+            />
             Execution
           </div>
-          <button
-            className="btn btn-secondary btn-sm"
-            onClick={handleCancel}
-            disabled={cancelling}
-            style={{ color: "var(--danger)" }}
-          >
-            {cancelling ? "Cancelling..." : "Cancel Execution"}
-          </button>
+          <div style={{ display: "flex", gap: 8 }}>
+            {launchedCommand && (
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={() => setShowCommand(!showCommand)}
+              >
+                {showCommand ? "Hide Command" : "View Command"}
+              </button>
+            )}
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={handleCancel}
+              disabled={cancelling}
+              style={{ color: "var(--danger)" }}
+            >
+              {cancelling ? "Cancelling..." : "Cancel Execution"}
+            </button>
+          </div>
         </div>
+        {showCommand && launchedCommand && (
+          <div className="code-block" style={{ marginBottom: 8, wordBreak: "break-all" }}>
+            {launchedCommand}
+          </div>
+        )}
         <Terminal sessionId={session.sessionId} onExit={handleExit} />
       </div>
     </div>
   );
+
+  // When on the feature detail page and the portal target exists,
+  // render into the portal target so the terminal appears above Validation & PR
+  if (portalTarget) {
+    return createPortal(content, portalTarget);
+  }
+
+  return content;
 }

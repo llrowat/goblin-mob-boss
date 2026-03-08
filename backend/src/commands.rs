@@ -693,14 +693,15 @@ pub fn get_launch_command(state: State<AppState>, feature_id: String) -> Result<
     let system_prompt_path = feature_dir.join("system-prompt.md");
     let system_prompt_content = std::fs::read_to_string(&system_prompt_path).unwrap_or_default();
 
-    let (args, env, _prompt) = launch::build_launch(&feature, &system_prompt_content);
-
     // Use worktree path if available (allows concurrent features)
     let work_dir = feature
         .worktree_paths
         .get(&repo.id)
         .map(|s| s.as_str())
         .unwrap_or(&repo.path);
+
+    let (args, env, _prompt) =
+        launch::build_launch_with_repo(&feature, &system_prompt_content, Some(&repo.path));
 
     // Build the full command string
     let env_prefix: String = env
@@ -746,18 +747,18 @@ pub fn start_launch_pty(
     let system_prompt_path = feature_dir.join("system-prompt.md");
     let system_prompt_content = std::fs::read_to_string(&system_prompt_path).unwrap_or_default();
 
-    let (args, env, _prompt) = launch::build_launch(&feature, &system_prompt_content);
-
     let work_dir = feature
         .worktree_paths
         .get(&repo.id)
         .map(|s| s.as_str())
         .unwrap_or(&repo.path);
 
-    // Set env vars before spawning
-    for (key, val) in &env {
-        std::env::set_var(key, val);
-    }
+    let (args, env, _prompt) =
+        launch::build_launch_with_repo(&feature, &system_prompt_content, Some(&repo.path));
+
+    // Clear any previous progress file so the UI starts fresh
+    let progress_path = feature_dir.join("tasks").join("progress.json");
+    let _ = std::fs::remove_file(&progress_path);
 
     let session_id = format!("launch-{}", feature_id);
 
@@ -774,6 +775,7 @@ pub fn start_launch_pty(
         cols,
         rows,
         &pty_sessions,
+        &env,
     )?;
 
     // Build the full command string for display
@@ -828,6 +830,37 @@ pub fn mark_feature_ready(state: State<AppState>, feature_id: String) -> Result<
     let updated = feature.clone();
     drop(features);
     state.save_features();
+    Ok(updated)
+}
+
+/// Mark a feature as complete: delete worktrees and set final status.
+#[tauri::command]
+pub fn complete_feature(state: State<AppState>, feature_id: String) -> Result<Feature, String> {
+    let mut features = state.features.lock().unwrap();
+    let feature = features.get_mut(&feature_id).ok_or("Feature not found")?;
+    feature.status = FeatureStatus::Complete;
+    feature.updated_at = Utc::now();
+
+    // Collect worktree info before clearing
+    let worktrees: Vec<(String, String)> = feature
+        .worktree_paths
+        .iter()
+        .map(|(repo_id, wt_path)| (repo_id.clone(), wt_path.clone()))
+        .collect();
+    feature.worktree_paths.clear();
+
+    let updated = feature.clone();
+    drop(features);
+    state.save_features();
+
+    // Delete worktrees (best-effort)
+    let repos = state.repositories.lock().unwrap();
+    for (repo_id, wt_path) in &worktrees {
+        if let Some(repo) = repos.get(repo_id) {
+            let _ = git::remove_worktree(&repo.path, wt_path);
+        }
+    }
+
     Ok(updated)
 }
 
@@ -934,7 +967,14 @@ pub fn get_feature_diff(state: State<AppState>, feature_id: String) -> Result<Di
 
     let mut all_files = Vec::new();
     for repo in &repos {
-        let file_diffs = git::diff_stat(&repo.path, &repo.base_branch, &feature.branch)
+        // Use worktree path if available — the branch ref is shared but the
+        // worktree might have uncommitted changes we want to include
+        let diff_path = feature
+            .worktree_paths
+            .get(&repo.id)
+            .map(|s| s.as_str())
+            .unwrap_or(&repo.path);
+        let file_diffs = git::diff_stat(diff_path, &repo.base_branch, &feature.branch)
             .map_err(|e| e.to_string())?;
 
         let prefix = if repos.len() > 1 {
@@ -979,11 +1019,32 @@ pub fn push_feature(state: State<AppState>, feature_id: String) -> Result<String
 
     let mut outputs = Vec::new();
     for repo in &repos {
-        let output = git::push_branch(&repo.path, &feature.branch)
+        // Commit any uncommitted changes in the worktree (or main checkout)
+        let work_dir = feature
+            .worktree_paths
+            .get(&repo.id)
+            .map(|s| s.as_str())
+            .unwrap_or(&repo.path);
+        match git::commit_all(work_dir, &format!("chore: finalize {}", feature.name)) {
+            Ok(true) => outputs.push(format!("{}: committed changes", repo.name)),
+            Ok(false) => {} // nothing to commit
+            Err(e) => outputs.push(format!("{}: commit skipped ({})", repo.name, e)),
+        }
+
+        let output = git::push_branch(work_dir, &feature.branch)
             .map(|o| format!("{}: pushed {}\n{}", repo.name, feature.branch, o))
             .map_err(|e| format!("Failed to push in {}: {}", repo.name, e))?;
         outputs.push(output);
     }
+
+    // Mark feature as pushed
+    let mut features = state.features.lock().unwrap();
+    if let Some(f) = features.get_mut(&feature_id) {
+        f.status = FeatureStatus::Pushed;
+        f.updated_at = Utc::now();
+    }
+    drop(features);
+    state.save_features();
 
     Ok(outputs.join("\n"))
 }
@@ -1369,6 +1430,11 @@ pub fn kill_pty(pty_sessions: State<pty::PtySessions>, session_id: String) -> Re
     pty::kill_pty_session(&pty_sessions, &session_id)
 }
 
+#[tauri::command]
+pub fn pty_session_exists(pty_sessions: State<pty::PtySessions>, session_id: String) -> bool {
+    pty::session_exists(&pty_sessions, &session_id)
+}
+
 // ── Preferences Commands ──
 
 #[tauri::command]
@@ -1430,6 +1496,15 @@ pub fn poll_execution_status(
     observer::poll_execution_snapshot(&repo.path, &repo.base_branch, &feature.branch)
 }
 
+/// Read and parse a progress.json file at the given path.
+fn read_task_progress(progress_path: &Path) -> Option<TaskProgress> {
+    if !progress_path.exists() {
+        return None;
+    }
+    let data = std::fs::read_to_string(progress_path).ok()?;
+    serde_json::from_str::<TaskProgress>(&data).ok()
+}
+
 /// Poll task progress from the progress.json file written by Claude during execution.
 #[tauri::command]
 pub fn poll_task_progress(
@@ -1444,36 +1519,15 @@ pub fn poll_task_progress(
     drop(features);
 
     let repo = get_primary_repo(&state, &feature)?;
-    let work_dir = feature
-        .worktree_paths
-        .get(&repo.id)
-        .map(|s| s.as_str())
-        .unwrap_or(&repo.path);
 
-    let progress_path = Path::new(work_dir)
+    let progress_path = Path::new(&repo.path)
         .join(".gmb")
         .join("features")
         .join(&feature.id)
         .join("tasks")
         .join("progress.json");
 
-    if !progress_path.exists() {
-        return Ok(None);
-    }
-
-    match std::fs::read_to_string(&progress_path) {
-        Ok(data) => match serde_json::from_str::<TaskProgress>(&data) {
-            Ok(progress) => Ok(Some(progress)),
-            Err(e) => {
-                log::warn!("Malformed progress.json for feature {}: {}", feature_id, e);
-                Ok(None)
-            }
-        },
-        Err(e) => {
-            log::warn!("Failed to read progress.json for feature {}: {}", feature_id, e);
-            Ok(None)
-        }
-    }
+    Ok(read_task_progress(&progress_path))
 }
 
 // ── Analytics Commands ──
@@ -2099,5 +2153,46 @@ mod tests {
         let result = generate_claude_md(dir.path().to_string_lossy().to_string());
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("not a git repository"));
+    }
+
+    #[test]
+    fn read_task_progress_returns_none_for_missing_file() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("progress.json");
+        assert!(read_task_progress(&path).is_none());
+    }
+
+    #[test]
+    fn read_task_progress_parses_valid_json() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("progress.json");
+        std::fs::write(&path, r#"{
+            "tasks": [
+                {
+                    "task": 1,
+                    "title": "Add feature",
+                    "status": "in_progress",
+                    "acceptance_criteria": [
+                        {"criterion": "Tests pass", "done": true},
+                        {"criterion": "Docs updated", "done": false}
+                    ]
+                }
+            ]
+        }"#).unwrap();
+        let result = read_task_progress(&path).unwrap();
+        assert_eq!(result.tasks.len(), 1);
+        assert_eq!(result.tasks[0].task, 1);
+        assert_eq!(result.tasks[0].status, TaskStatus::InProgress);
+        assert_eq!(result.tasks[0].acceptance_criteria.len(), 2);
+        assert!(result.tasks[0].acceptance_criteria[0].done);
+        assert!(!result.tasks[0].acceptance_criteria[1].done);
+    }
+
+    #[test]
+    fn read_task_progress_returns_none_on_invalid_json() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("progress.json");
+        std::fs::write(&path, "not valid json").unwrap();
+        assert!(read_task_progress(&path).is_none());
     }
 }

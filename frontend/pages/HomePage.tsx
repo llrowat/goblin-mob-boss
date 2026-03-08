@@ -71,16 +71,6 @@ export function HomePage() {
     setError("");
   };
 
-  const handleDeleteFeature = async (e: React.MouseEvent, featureId: string) => {
-    e.stopPropagation();
-    try {
-      await tauri.deleteFeature(featureId);
-      setFeatures((prev) => prev.filter((f) => f.id !== featureId));
-    } catch (err) {
-      setError(String(err));
-    }
-  };
-
   const repoNameById = (id: string) =>
     repos.find((r) => r.id === id)?.name ?? id;
 
@@ -117,6 +107,8 @@ export function HomePage() {
     executing: "Executing",
     ready: "Ready",
     failed: "Failed",
+    pushed: "Pushed",
+    complete: "Complete",
   };
 
   const featureRoute = (f: Feature) => {
@@ -148,78 +140,21 @@ export function HomePage() {
       </div>
 
       {/* Active features */}
-      <div>
-        <div
-          className="sidebar-section-label"
-          style={{
-            padding: "0 0 8px",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-          }}
-        >
-          <span>Active Features</span>
-          <select
-            className="form-select"
-            style={{ width: "auto", fontSize: 12, padding: "2px 8px" }}
-            value={filterRepoId}
-            onChange={(e) => setFilterRepoId(e.target.value)}
-          >
-            <option value="">All Repos</option>
-            {repos.map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        {features.length === 0 ? (
-          <div className="empty-state">
-            <h3>No active features</h3>
-            <p>The crew is idle. Click &quot;New Feature&quot; to start a scheme.</p>
-          </div>
-        ) : (
-          [...features].sort((a, b) => {
-            if (a.status === "executing" && b.status !== "executing") return -1;
-            if (a.status !== "executing" && b.status === "executing") return 1;
-            return 0;
-          }).map((f) => (
+      {(() => {
+        const activeFeatures = features.filter((f) => f.status !== "complete");
+        const completedFeatures = features.filter((f) => f.status === "complete");
+
+        const renderFeatureCard = (f: Feature, isCompleted = false) => {
+          const hasWorktree = f.worktree_paths && Object.keys(f.worktree_paths).length > 0;
+          return (
             <div
               key={f.id}
-              className="panel"
-              style={{ marginBottom: 8, cursor: "pointer", position: "relative" }}
+              className="feature-card panel"
+              style={isCompleted ? { opacity: 0.5 } : undefined}
               onClick={() => navigate(featureRoute(f))}
             >
-              <button
-                className="feature-delete-btn"
-                onClick={(e) => handleDeleteFeature(e, f.id)}
-                title="Delete feature"
-              >
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                  <path d="M2.5 3.5h9M5 3.5V2.5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1M5.5 6v4M8.5 6v4M3.5 3.5l.5 8a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1l.5-8" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </button>
-              <div className="panel-header" style={{ marginBottom: 0 }}>
-                <div>
-                  <div className="panel-title">{f.name}</div>
-                  <div className="form-help">
-                    {f.description}
-                    <span
-                      style={{
-                        marginLeft: 8,
-                        fontSize: 11,
-                        color: "var(--muted)",
-                      }}
-                    >
-                      [{featureRepoNames(f)}]
-                    </span>
-                  </div>
-                  {f.worktree_paths && Object.values(f.worktree_paths).length > 0 && (
-                    <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
-                      {Object.values(f.worktree_paths).join(", ")}
-                    </div>
-                  )}
-                </div>
+              <div className="feature-card-top">
+                <div className="feature-card-title">{f.name}</div>
                 <span
                   className={`status-badge ${f.status === "executing" ? "running" : f.status}`}
                 >
@@ -227,10 +162,92 @@ export function HomePage() {
                   {statusLabel[f.status] ?? f.status}
                 </span>
               </div>
+              <div className="feature-card-desc">{f.description}</div>
+              <div className="feature-card-meta">
+                <span className="feature-card-tag" title="Branch">
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                    <circle cx="3" cy="3" r="1.5" stroke="currentColor" strokeWidth="1" />
+                    <circle cx="9" cy="9" r="1.5" stroke="currentColor" strokeWidth="1" />
+                    <path d="M3 4.5V7a2 2 0 0 0 2 2h2.5" stroke="currentColor" strokeWidth="1" />
+                  </svg>
+                  {f.branch}
+                </span>
+                <span className="feature-card-tag" title="Repository">
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                    <path d="M2 2h8v8H2z" stroke="currentColor" strokeWidth="1" />
+                    <path d="M2 5h8" stroke="currentColor" strokeWidth="1" />
+                  </svg>
+                  {featureRepoNames(f)}
+                </span>
+                {hasWorktree && (
+                  <span className="feature-card-tag feature-card-tag-wt" title="Running in worktree (isolated copy)">
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                      <path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1" />
+                      <circle cx="6" cy="6" r="4.5" stroke="currentColor" strokeWidth="1" />
+                    </svg>
+                    Worktree
+                  </span>
+                )}
+              </div>
             </div>
-          ))
-        )}
-      </div>
+          );
+        };
+
+        return (
+          <>
+            <div>
+              <div
+                className="sidebar-section-label"
+                style={{
+                  padding: "0 0 8px",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                }}
+              >
+                <span>Active Features</span>
+                <select
+                  className="form-select"
+                  style={{ width: "auto", fontSize: 12, padding: "2px 8px" }}
+                  value={filterRepoId}
+                  onChange={(e) => setFilterRepoId(e.target.value)}
+                >
+                  <option value="">All Repos</option>
+                  {repos.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {activeFeatures.length === 0 ? (
+                <div className="empty-state">
+                  <h3>No active features</h3>
+                  <p>The mob is idle. Click &quot;New Feature&quot; to start something new.</p>
+                </div>
+              ) : (
+                [...activeFeatures].sort((a, b) => {
+                  if (a.status === "executing" && b.status !== "executing") return -1;
+                  if (a.status !== "executing" && b.status === "executing") return 1;
+                  return 0;
+                }).map((f) => renderFeatureCard(f))
+              )}
+            </div>
+
+            {completedFeatures.length > 0 && (
+              <div style={{ marginTop: 24 }}>
+                <div
+                  className="sidebar-section-label"
+                  style={{ padding: "0 0 8px" }}
+                >
+                  Completed
+                </div>
+                {completedFeatures.map((f) => renderFeatureCard(f, true))}
+              </div>
+            )}
+          </>
+        );
+      })()}
 
       {/* New Feature Modal */}
       {showNewFeature && (

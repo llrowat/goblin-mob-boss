@@ -207,6 +207,8 @@ pub enum FeatureStatus {
     Executing,
     Ready,
     Failed,
+    Pushed,
+    Complete,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

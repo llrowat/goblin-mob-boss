@@ -42,6 +42,7 @@ pub fn spawn_pty_session(
     cols: u16,
     rows: u16,
     sessions: &PtySessions,
+    env_vars: &[(String, String)],
 ) -> Result<(), String> {
     let pty_system = NativePtySystem::default();
     let pair = pty_system
@@ -58,6 +59,12 @@ pub fn spawn_pty_session(
         command.arg(arg);
     }
     command.cwd(cwd);
+    // Set terminal type so tmux and other TUI programs render correctly in xterm.js
+    command.env("TERM", "xterm-256color");
+    command.env("COLORTERM", "truecolor");
+    for (key, val) in env_vars {
+        command.env(key, val);
+    }
 
     let child = pair
         .slave
@@ -214,6 +221,11 @@ pub fn resize_pty_session(
         })
         .map_err(|e| format!("Resize failed: {}", e))?;
     Ok(())
+}
+
+pub fn session_exists(sessions: &PtySessions, session_id: &str) -> bool {
+    let map = sessions.0.lock().unwrap();
+    map.contains_key(session_id)
 }
 
 pub fn kill_pty_session(sessions: &PtySessions, session_id: &str) -> Result<(), String> {
