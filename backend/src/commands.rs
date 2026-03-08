@@ -673,6 +673,12 @@ pub fn configure_launch(
     Ok(updated)
 }
 
+/// Check whether tmux is installed (required for Agent Teams mode).
+#[tauri::command]
+pub fn check_tmux_installed() -> bool {
+    launch::is_tmux_available()
+}
+
 /// Get the terminal command to launch execution for a feature.
 #[tauri::command]
 pub fn get_launch_command(state: State<AppState>, feature_id: String) -> Result<String, String> {
@@ -736,6 +742,18 @@ pub fn start_launch_pty(
         .ok_or("Feature not found")?
         .clone();
     drop(features);
+
+    // Teams mode requires tmux — fail early with a clear message
+    if feature.execution_mode.as_ref() == Some(&ExecutionMode::Teams)
+        && !launch::is_tmux_available()
+    {
+        return Err(
+            "tmux is not installed. Agent Teams mode requires tmux for --teammate-mode tmux. \
+             Install it with: brew install tmux (macOS), sudo apt install tmux (Ubuntu/Debian), \
+             or sudo pacman -S tmux (Arch)."
+                .to_string(),
+        );
+    }
 
     let repo = get_primary_repo(&state, &feature)?;
 

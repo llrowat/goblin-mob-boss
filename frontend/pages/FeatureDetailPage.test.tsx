@@ -117,6 +117,7 @@ describe("FeatureDetailPage", () => {
       if (cmd === "get_ideation_prompt") return "system prompt";
       if (cmd === "poll_ideation_result") return emptyIdeationResult;
       if (cmd === "run_ideation") return undefined;
+      if (cmd === "check_tmux_installed") return true;
       return undefined;
     });
   });
@@ -676,5 +677,84 @@ describe("FeatureDetailPage", () => {
       "run_ideation",
       expect.anything(),
     );
+  });
+
+  it("shows tmux warning when teams mode is recommended and tmux is not installed", async () => {
+    mockedInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "get_feature") return mockFeature;
+      if (cmd === "get_ideation_prompt") return "system prompt";
+      if (cmd === "poll_ideation_result") return mockIdeationResult;
+      if (cmd === "check_tmux_installed") return false;
+      return undefined;
+    });
+
+    render(<FeatureDetailPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/tmux is not installed/)).toBeInTheDocument();
+    });
+  });
+
+  it("disables launch button when teams mode selected without tmux", async () => {
+    mockedInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "get_feature") return mockFeature;
+      if (cmd === "get_ideation_prompt") return "system prompt";
+      if (cmd === "poll_ideation_result") return mockIdeationResult;
+      if (cmd === "check_tmux_installed") return false;
+      return undefined;
+    });
+
+    render(<FeatureDetailPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/^Launch$/)).toBeInTheDocument();
+    });
+
+    const launchBtn = screen.getByText(/^Launch$/).closest("button")!;
+    expect(launchBtn).toBeDisabled();
+  });
+
+  it("does not show tmux warning when tmux is installed", async () => {
+    mockedInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "get_feature") return mockFeature;
+      if (cmd === "get_ideation_prompt") return "system prompt";
+      if (cmd === "poll_ideation_result") return mockIdeationResult;
+      if (cmd === "check_tmux_installed") return true;
+      return undefined;
+    });
+
+    render(<FeatureDetailPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Agent Teams")).toBeInTheDocument();
+    });
+
+    expect(screen.queryByText(/tmux is not installed/)).not.toBeInTheDocument();
+  });
+
+  it("does not show tmux warning when subagents mode is selected", async () => {
+    const subagentsResult: IdeationResult = {
+      ...mockIdeationResult,
+      execution_mode: {
+        recommended: "subagents",
+        rationale: "Simple sequential tasks",
+        confidence: 0.85,
+      },
+    };
+    mockedInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "get_feature") return mockFeature;
+      if (cmd === "get_ideation_prompt") return "system prompt";
+      if (cmd === "poll_ideation_result") return subagentsResult;
+      if (cmd === "check_tmux_installed") return false;
+      return undefined;
+    });
+
+    render(<FeatureDetailPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Subagents")).toBeInTheDocument();
+    });
+
+    expect(screen.queryByText(/tmux is not installed/)).not.toBeInTheDocument();
   });
 });
