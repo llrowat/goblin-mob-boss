@@ -40,6 +40,8 @@ export type FeatureStatus =
   | "pushed"
   | "complete";
 
+export type RepoPushStatus = "pending" | "pushed" | "failed";
+
 export interface Feature {
   id: string;
   /** @deprecated Use repo_ids instead. Present for backward compat with old features. */
@@ -59,6 +61,8 @@ export interface Feature {
   launched_command: string | null;
   /** Per-repo worktree paths. Maps repo_id -> worktree directory path. */
   worktree_paths: Record<string, string>;
+  /** Per-repo push status. Maps repo_id -> push status. */
+  repo_push_status: Record<string, RepoPushStatus>;
   created_at: string;
   updated_at: string;
 }

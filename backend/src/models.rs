@@ -211,6 +211,18 @@ pub enum FeatureStatus {
     Complete,
 }
 
+/// Per-repo push status for multi-repo features.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum RepoPushStatus {
+    /// Not yet committed or pushed.
+    Pending,
+    /// Committed and pushed to origin.
+    Pushed,
+    /// Push failed — error message attached.
+    Failed,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Feature {
     pub id: String,
@@ -242,6 +254,9 @@ pub struct Feature {
     /// instead of the main working directory, allowing concurrent features.
     #[serde(default)]
     pub worktree_paths: std::collections::HashMap<String, String>,
+    /// Per-repo push status for multi-repo features: maps repo_id -> push status.
+    #[serde(default)]
+    pub repo_push_status: std::collections::HashMap<String, RepoPushStatus>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -264,6 +279,7 @@ impl Feature {
             pty_session_id: None,
             launched_command: None,
             worktree_paths: std::collections::HashMap::new(),
+            repo_push_status: std::collections::HashMap::new(),
             created_at: now,
             updated_at: now,
         }
@@ -1394,5 +1410,71 @@ You develop."#;
         let parsed: Repository = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.description, "My cool project");
         assert_eq!(parsed.pr_command, Some("gh pr create".to_string()));
+    }
+
+    // ── RepoPushStatus Tests ──
+
+    #[test]
+    fn repo_push_status_serializes() {
+        let json = serde_json::to_string(&RepoPushStatus::Pushed).unwrap();
+        assert_eq!(json, "\"pushed\"");
+        let parsed: RepoPushStatus = serde_json::from_str("\"pending\"").unwrap();
+        assert_eq!(parsed, RepoPushStatus::Pending);
+        let failed: RepoPushStatus = serde_json::from_str("\"failed\"").unwrap();
+        assert_eq!(failed, RepoPushStatus::Failed);
+    }
+
+    #[test]
+    fn feature_repo_push_status_defaults_empty() {
+        let json = r#"{
+            "id": "feat-1",
+            "repo_ids": ["r1", "r2"],
+            "name": "Multi",
+            "description": "desc",
+            "branch": "feature/multi-1234",
+            "status": "ready",
+            "created_at": "2025-01-01T00:00:00Z",
+            "updated_at": "2025-01-01T00:00:00Z"
+        }"#;
+        let feature: Feature = serde_json::from_str(json).unwrap();
+        assert!(feature.repo_push_status.is_empty());
+    }
+
+    #[test]
+    fn feature_repo_push_status_roundtrips() {
+        let mut feature = Feature::new(
+            vec!["r1".to_string(), "r2".to_string()],
+            "Multi".to_string(),
+            "desc".to_string(),
+            "feature/multi-1234".to_string(),
+        );
+        feature
+            .repo_push_status
+            .insert("r1".to_string(), RepoPushStatus::Pushed);
+        feature
+            .repo_push_status
+            .insert("r2".to_string(), RepoPushStatus::Pending);
+
+        let json = serde_json::to_string(&feature).unwrap();
+        let parsed: Feature = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            parsed.repo_push_status.get("r1"),
+            Some(&RepoPushStatus::Pushed)
+        );
+        assert_eq!(
+            parsed.repo_push_status.get("r2"),
+            Some(&RepoPushStatus::Pending)
+        );
+    }
+
+    #[test]
+    fn feature_new_has_empty_repo_push_status() {
+        let feature = Feature::new(
+            vec!["r1".to_string(), "r2".to_string()],
+            "Test".to_string(),
+            "desc".to_string(),
+            "feature/test-1234".to_string(),
+        );
+        assert!(feature.repo_push_status.is_empty());
     }
 }

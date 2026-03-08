@@ -166,6 +166,9 @@ export function useTauri() {
     pushFeature: (featureId: string) =>
       invoke<string>("push_feature", { featureId }),
 
+    pushFeatureRepo: (featureId: string, repoId: string) =>
+      invoke<string>("push_feature_repo", { featureId, repoId }),
+
     getPrCommand: (featureId: string) =>
       invoke<string>("get_pr_command", { featureId }),
 
