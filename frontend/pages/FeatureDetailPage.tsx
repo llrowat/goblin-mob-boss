@@ -434,6 +434,10 @@ export function FeatureDetailPage() {
 
   const [pushing, setPushing] = useState(false);
   const [pushed, setPushed] = useState(false);
+  const [pushingRepoId, setPushingRepoId] = useState<string | null>(null);
+
+  const isMultiRepo = feature ? (feature.repo_ids?.length ?? 0) > 1 : false;
+
   const handlePush = async () => {
     if (!featureId) return;
     setPushing(true);
@@ -449,6 +453,27 @@ export function FeatureDetailPage() {
       setPushing(false);
     }
   };
+
+  const handlePushRepo = async (repoId: string) => {
+    if (!featureId) return;
+    setPushingRepoId(repoId);
+    setError("");
+    try {
+      await tauri.pushFeatureRepo(featureId, repoId);
+      const updated = await tauri.getFeature(featureId);
+      setFeature(updated);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setPushingRepoId(null);
+    }
+  };
+
+  const allReposPushed = feature
+    ? (feature.repo_ids ?? []).every(
+        (id) => feature.repo_push_status?.[id] === "pushed",
+      )
+    : false;
 
   const [completing, setCompleting] = useState(false);
   const handleComplete = async () => {
@@ -1076,7 +1101,7 @@ export function FeatureDetailPage() {
                   {verifying ? "Running..." : "Run Validators"}
                 </button>
               )}
-              {isReady && (
+              {isReady && !isMultiRepo && (
                 <button
                   className="btn btn-primary btn-sm"
                   onClick={handlePush}
@@ -1085,7 +1110,7 @@ export function FeatureDetailPage() {
                   {pushing ? "Pushing..." : pushed ? "Pushed" : "Commit & Push"}
                 </button>
               )}
-              {isPushed && (
+              {(isPushed || (isReady && isMultiRepo && allReposPushed)) && (
                 <>
                   <button
                     className="btn btn-secondary btn-sm"
@@ -1136,6 +1161,61 @@ export function FeatureDetailPage() {
                   {submittingChanges ? "Submitting..." : "Submit & Re-plan"}
                 </button>
               </div>
+            </div>
+          )}
+
+          {/* Per-repo push status — shown for multi-repo features in ready state */}
+          {isMultiRepo && (isReady || isPushed) && (
+            <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--border)" }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
+                Per-Repo Push Status
+              </div>
+              {featureRepoIds.map((repoId) => {
+                const repoName = repos.find((r) => r.id === repoId)?.name ?? repoId;
+                const status = feature.repo_push_status?.[repoId] ?? "pending";
+                const isPushingThis = pushingRepoId === repoId;
+                return (
+                  <div
+                    key={repoId}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      padding: "6px 0",
+                      borderBottom: "1px solid var(--border)",
+                      fontSize: 12,
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontWeight: 600,
+                        fontSize: 10,
+                        textTransform: "uppercase",
+                        minWidth: 55,
+                        color:
+                          status === "pushed"
+                            ? "var(--success)"
+                            : status === "failed"
+                              ? "var(--danger)"
+                              : "var(--muted)",
+                      }}
+                    >
+                      {status}
+                    </span>
+                    <span style={{ flex: 1, color: "var(--text-secondary)" }}>{repoName}</span>
+                    {status !== "pushed" && (
+                      <button
+                        className="btn btn-primary btn-sm"
+                        onClick={() => handlePushRepo(repoId)}
+                        disabled={isPushingThis}
+                        style={{ fontSize: 11, padding: "2px 10px" }}
+                      >
+                        {isPushingThis ? "Pushing..." : "Commit & Push"}
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
 
