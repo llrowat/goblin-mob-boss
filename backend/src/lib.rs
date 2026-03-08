@@ -83,6 +83,7 @@ pub fn run() {
             commands::get_pr_command,
             // Ideation (background)
             commands::run_ideation,
+            commands::poll_ideation_error,
             commands::revise_ideation,
             commands::submit_planning_answers,
             // PTY

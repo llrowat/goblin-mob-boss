@@ -822,9 +822,14 @@ pub fn start_launch_pty(
     let (args, env, _prompt) =
         launch::build_launch_with_repo(&feature, &system_prompt_content, Some(&repo.path));
 
-    // Clear any previous progress file so the UI starts fresh
-    let progress_path = feature_dir.join("tasks").join("progress.json");
-    let _ = std::fs::remove_file(&progress_path);
+    // Pre-seed the progress file so Claude has a concrete file to update
+    // and the UI immediately sees the task list. This dramatically improves
+    // the chance Claude will update it vs writing from scratch.
+    let tasks_dir = feature_dir.join("tasks");
+    let _ = std::fs::create_dir_all(&tasks_dir);
+    let progress_path = tasks_dir.join("progress.json");
+    let initial_progress = build_initial_progress_json(&feature.task_specs);
+    let _ = std::fs::write(&progress_path, initial_progress);
 
     let session_id = format!("launch-{}", feature_id);
 
@@ -1445,11 +1450,38 @@ fn spawn_ideation_process(
 
     // Write prompt to stdin, then close it so Claude begins processing
     if let Some(mut stdin) = child.stdin.take() {
+        let prompt_bytes = full_prompt.into_bytes();
         std::thread::spawn(move || {
-            let _ = stdin.write_all(full_prompt.as_bytes());
+            let _ = stdin.write_all(&prompt_bytes);
             // stdin is dropped here, closing the pipe
         });
     }
+
+    // Monitor the child process in a background thread.
+    // If Claude crashes or exits with a non-zero code, write an error file
+    // so the frontend can detect the failure instead of timing out.
+    let error_path = feature_dir.join("ideation-error.txt");
+    // Clean up any previous error file
+    let _ = std::fs::remove_file(&error_path);
+    std::thread::spawn(move || {
+        match child.wait() {
+            Ok(status) => {
+                if !status.success() {
+                    let code = status.code().unwrap_or(-1);
+                    let _ = std::fs::write(
+                        &error_path,
+                        format!("Claude exited with code {}. Check claude-ideation.log for details.", code),
+                    );
+                }
+            }
+            Err(e) => {
+                let _ = std::fs::write(
+                    &error_path,
+                    format!("Failed to wait for Claude process: {}", e),
+                );
+            }
+        }
+    });
 
     Ok(())
 }
@@ -1498,6 +1530,35 @@ pub fn run_ideation(
     }
 
     spawn_ideation_process(&feature_dir, work_dir, &system_prompt_content, &user_prompt_content)
+}
+
+/// Check if the ideation process wrote an error file (indicating it crashed or failed).
+/// Returns the error message if one exists, None otherwise.
+#[tauri::command]
+pub fn poll_ideation_error(
+    state: State<AppState>,
+    feature_id: String,
+) -> Result<Option<String>, String> {
+    let features = state.features.lock().unwrap();
+    let feature = features
+        .get(&feature_id)
+        .ok_or("Feature not found")?
+        .clone();
+    drop(features);
+
+    let repo = get_primary_repo(&state, &feature)?;
+    let error_path = Path::new(&repo.path)
+        .join(".gmb")
+        .join("features")
+        .join(&feature.id)
+        .join("ideation-error.txt");
+
+    if error_path.exists() {
+        let msg = std::fs::read_to_string(&error_path).unwrap_or_default();
+        Ok(Some(msg))
+    } else {
+        Ok(None)
+    }
 }
 
 /// Re-run ideation with user feedback appended to the prompt.
@@ -1740,6 +1801,33 @@ pub fn poll_execution_status(
     observer::poll_execution_snapshot(&repo.path, &repo.base_branch, &feature.branch)
 }
 
+/// Build the initial progress.json content from task specs.
+/// Pre-seeding this file gives Claude a concrete file to update (instead of creating from scratch)
+/// and lets the UI show the task list immediately.
+fn build_initial_progress_json(specs: &[TaskSpec]) -> String {
+    use serde_json::json;
+
+    let tasks: Vec<serde_json::Value> = specs
+        .iter()
+        .enumerate()
+        .map(|(i, spec)| {
+            let criteria: Vec<serde_json::Value> = spec
+                .acceptance_criteria
+                .iter()
+                .map(|c| json!({ "criterion": c, "done": false }))
+                .collect();
+            json!({
+                "task": i + 1,
+                "title": spec.title,
+                "status": "pending",
+                "acceptance_criteria": criteria,
+            })
+        })
+        .collect();
+
+    serde_json::to_string_pretty(&json!({ "tasks": tasks })).unwrap_or_default()
+}
+
 /// Read and parse a progress.json file at the given path.
 fn read_task_progress(progress_path: &Path) -> Option<TaskProgress> {
     if !progress_path.exists() {
@@ -1764,14 +1852,28 @@ pub fn poll_task_progress(
 
     let repo = get_primary_repo(&state, &feature)?;
 
-    let progress_path = Path::new(&repo.path)
+    let feature_dir = Path::new(&repo.path)
         .join(".gmb")
         .join("features")
-        .join(&feature.id)
-        .join("tasks")
-        .join("progress.json");
+        .join(&feature.id);
+    let progress_path = feature_dir.join("tasks").join("progress.json");
 
-    Ok(read_task_progress(&progress_path))
+    let mut progress = read_task_progress(&progress_path);
+
+    // Check for the execution-complete signal file written by Claude
+    if observer::check_completion_signal(&repo.path, &feature.id) {
+        if let Some(ref mut p) = progress {
+            p.completion_detected = true;
+        } else {
+            // Signal exists but no progress file — create minimal response
+            progress = Some(TaskProgress {
+                tasks: vec![],
+                completion_detected: true,
+            });
+        }
+    }
+
+    Ok(progress)
 }
 
 // ── Analytics Commands ──
@@ -2815,5 +2917,88 @@ mod tests {
         let plan_path = dir.path().join("plan.json");
         // Snapshot logic checks existence first
         assert!(!plan_path.exists());
+    }
+
+    #[test]
+    fn build_initial_progress_json_empty_specs() {
+        let result = build_initial_progress_json(&[]);
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed["tasks"].as_array().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn build_initial_progress_json_with_specs() {
+        let specs = vec![
+            TaskSpec {
+                title: "Add auth".to_string(),
+                description: "Implement authentication".to_string(),
+                acceptance_criteria: vec!["Login works".to_string(), "Logout works".to_string()],
+                dependencies: vec![],
+                agent: "dev".to_string(),
+            },
+            TaskSpec {
+                title: "Write tests".to_string(),
+                description: "Test the auth flow".to_string(),
+                acceptance_criteria: vec![],
+                dependencies: vec!["1".to_string()],
+                agent: "test-writer".to_string(),
+            },
+        ];
+        let result = build_initial_progress_json(&specs);
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        let tasks = parsed["tasks"].as_array().unwrap();
+        assert_eq!(tasks.len(), 2);
+        assert_eq!(tasks[0]["task"], 1);
+        assert_eq!(tasks[0]["title"], "Add auth");
+        assert_eq!(tasks[0]["status"], "pending");
+        assert_eq!(tasks[0]["acceptance_criteria"].as_array().unwrap().len(), 2);
+        assert_eq!(tasks[0]["acceptance_criteria"][0]["criterion"], "Login works");
+        assert_eq!(tasks[0]["acceptance_criteria"][0]["done"], false);
+        assert_eq!(tasks[1]["task"], 2);
+        assert_eq!(tasks[1]["acceptance_criteria"].as_array().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn build_initial_progress_json_is_valid_task_progress() {
+        let specs = vec![TaskSpec {
+            title: "Task one".to_string(),
+            description: "Do something".to_string(),
+            acceptance_criteria: vec!["It works".to_string()],
+            dependencies: vec![],
+            agent: "dev".to_string(),
+        }];
+        let result = build_initial_progress_json(&specs);
+        // Should parse as a valid TaskProgress struct
+        let parsed: TaskProgress = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed.tasks.len(), 1);
+        assert_eq!(parsed.tasks[0].title, "Task one");
+        assert_eq!(parsed.tasks[0].status, TaskStatus::Pending);
+        assert!(!parsed.completion_detected);
+    }
+
+    #[test]
+    fn read_task_progress_returns_none_for_missing_file() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("nonexistent.json");
+        assert!(read_task_progress(&path).is_none());
+    }
+
+    #[test]
+    fn read_task_progress_parses_valid_json() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("progress.json");
+        std::fs::write(&path, r#"{"tasks": [{"task": 1, "title": "Test", "status": "done", "acceptance_criteria": []}]}"#).unwrap();
+        let result = read_task_progress(&path).unwrap();
+        assert_eq!(result.tasks.len(), 1);
+        assert_eq!(result.tasks[0].status, TaskStatus::Done);
+        assert!(!result.completion_detected);
+    }
+
+    #[test]
+    fn read_task_progress_returns_none_on_invalid_json() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("progress.json");
+        std::fs::write(&path, "not json at all").unwrap();
+        assert!(read_task_progress(&path).is_none());
     }
 }

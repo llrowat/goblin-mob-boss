@@ -353,6 +353,10 @@ pub struct TaskSpec {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskProgress {
     pub tasks: Vec<TaskProgressEntry>,
+    /// Set by the backend when the execution-complete signal file is detected.
+    /// Claude creates this file when all work is finished.
+    #[serde(default)]
+    pub completion_detected: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

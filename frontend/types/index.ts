@@ -129,6 +129,7 @@ export interface TaskProgressEntry {
 
 export interface TaskProgress {
   tasks: TaskProgressEntry[];
+  completion_detected?: boolean;
 }
 
 export interface ValidatorResult {

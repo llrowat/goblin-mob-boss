@@ -61,6 +61,8 @@ export function FeatureDetailPage() {
 
   // Task progress tracking during execution
   const [taskProgress, setTaskProgress] = useState<TaskProgress | null>(null);
+  // Stale execution detection — warns user when execution appears stuck
+  const [executionStale, setExecutionStale] = useState(false);
 
   // Plan history
   const [planHistory, setPlanHistory] = useState<PlanSnapshot[]>([]);
@@ -174,16 +176,19 @@ export function FeatureDetailPage() {
     const handleProgress = (p: TaskProgress | null) => {
       if (!p) return;
       setTaskProgress(p);
-      // If all tasks are done during execution, end execution automatically.
-      // Cross-reference against expected task count to avoid premature completion
-      // when Claude has only written a subset of tasks to progress.json.
-      if (
-        isExecuting &&
-        !autoEnded &&
-        p.tasks.length > 0 &&
-        (expectedTaskCount === 0 || p.tasks.length >= expectedTaskCount) &&
-        p.tasks.every((t) => t.status === "done")
-      ) {
+
+      if (!isExecuting || autoEnded) return;
+
+      // Auto-end execution when we detect completion. Three triggers:
+      // 1. Claude wrote the execution-complete signal file (most reliable)
+      // 2. All tasks are marked done with expected count met
+      // 3. All tasks are marked done and at least 1 task exists (relaxed — handles
+      //    task count mismatches where Claude reorganized the work)
+      const allDone = p.tasks.length > 0 && p.tasks.every((t) => t.status === "done");
+      const completionSignaled = p.completion_detected === true;
+      const countMatches = expectedTaskCount === 0 || p.tasks.length >= expectedTaskCount;
+
+      if (completionSignaled || (allDone && countMatches)) {
         autoEnded = true;
         const sid = terminalSessionIdRef.current;
         // Kill the PTY, mark feature ready, and clear session directly.
@@ -207,6 +212,31 @@ export function FeatureDetailPage() {
     }, 5000);
     return () => clearInterval(interval);
   }, [featureId, feature?.status, ideationResult?.tasks?.length]);
+
+  // Detect stale execution — warn user when progress hasn't changed for a long time.
+  // Uses a ref to track the last progress snapshot so we detect actual stalls,
+  // not just time since launch.
+  const lastProgressRef = useRef<string>("");
+  const staleTimerRef = useRef<number>(0);
+  useEffect(() => {
+    if (feature?.status !== "executing") {
+      setExecutionStale(false);
+      staleTimerRef.current = 0;
+      return;
+    }
+    const STALE_THRESHOLD = 60; // polls (5s each = 5 minutes of no progress change)
+    const currentSnapshot = JSON.stringify(taskProgress?.tasks?.map((t) => t.status) ?? []);
+    if (currentSnapshot !== lastProgressRef.current) {
+      lastProgressRef.current = currentSnapshot;
+      staleTimerRef.current = 0;
+      setExecutionStale(false);
+    } else {
+      staleTimerRef.current += 1;
+      if (staleTimerRef.current >= STALE_THRESHOLD) {
+        setExecutionStale(true);
+      }
+    }
+  }, [feature?.status, taskProgress]);
 
   // Start ideation on mount
   const startIdeation = useCallback(async () => {
@@ -325,6 +355,15 @@ export function FeatureDetailPage() {
 
     const interval = setInterval(() => {
       poll();
+      // Check for ideation process crash every 5 polls (~15s)
+      if (pollCountRef.current % 5 === 0) {
+        tauri.pollIdeationError(featureId).then((errMsg) => {
+          if (errMsg) {
+            setStatus("error");
+            setError(errMsg);
+          }
+        }).catch(() => {});
+      }
       if (pollCountRef.current > 600) {
         setStatus("error");
         setError("Planning timed out. Try restarting.");
@@ -657,6 +696,44 @@ export function FeatureDetailPage() {
       </div>
 
       {error && <div className="error-banner">{error}</div>}
+
+      {/* Stale execution warning — shown when progress hasn't changed for 5+ minutes */}
+      {executionStale && isExecuting && (
+        <div
+          className="error-banner"
+          style={{ backgroundColor: "var(--warning-bg, #332b00)", borderColor: "var(--warning, #f0c000)" }}
+        >
+          <div style={{ marginBottom: 8 }}>
+            Execution appears stuck — no progress changes detected for several minutes.
+            Claude may have gotten stuck or finished without updating the progress file.
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={() => {
+                staleTimerRef.current = 0;
+                setExecutionStale(false);
+              }}
+            >
+              Dismiss
+            </button>
+            <button
+              className="btn btn-primary btn-sm"
+              onClick={() => {
+                const sid = terminalSessionIdRef.current;
+                if (sid) tauri.killPty(sid).catch(() => {});
+                tauri.markFeatureReady(featureId!).then((f) => {
+                  setFeature(f);
+                  clearSession();
+                  setExecutionStale(false);
+                }).catch(() => {});
+              }}
+            >
+              Mark as Ready
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="panel">
         <div className="panel-header">

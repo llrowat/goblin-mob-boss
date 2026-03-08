@@ -195,6 +195,9 @@ export function useTauri() {
     runIdeation: (featureId: string) =>
       invoke<void>("run_ideation", { featureId }),
 
+    pollIdeationError: (featureId: string) =>
+      invoke<string | null>("poll_ideation_error", { featureId }),
+
     reviseIdeation: (featureId: string, feedback: string) =>
       invoke<void>("revise_ideation", { featureId, feedback }),
 
