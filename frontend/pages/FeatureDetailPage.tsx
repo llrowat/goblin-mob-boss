@@ -4,7 +4,7 @@ import { useTauri } from "../hooks/useTauri";
 import { useTerminalSession } from "../hooks/useTerminalSession";
 import { useBackgroundPlanning } from "../hooks/useBackgroundPlanning";
 import { useCommandDisplay, CommandDisplayButton, CommandDisplayContent } from "../components/CommandDisplay";
-import { TaskTable, ExecutionModeSelector, EditTaskModal } from "./feature-detail/PlanningComponents";
+import { TaskTable, ExecutionModeSelector, EditTaskModal, PlanHistory } from "./feature-detail/PlanningComponents";
 import { ValidationPanel } from "./feature-detail/ValidationPanel";
 import type {
   Feature,
@@ -18,6 +18,7 @@ import type {
   ExecutionAnalysis,
   PlanningQuestion,
   PlanningAnswer,
+  PlanSnapshot,
 } from "../types";
 
 type IdeationStatus = "idle" | "running" | "questions" | "done" | "error";
@@ -60,6 +61,9 @@ export function FeatureDetailPage() {
 
   // Task progress tracking during execution
   const [taskProgress, setTaskProgress] = useState<TaskProgress | null>(null);
+
+  // Plan history
+  const [planHistory, setPlanHistory] = useState<PlanSnapshot[]>([]);
 
   // Ready-state: validation, diff, PR, analytics
   const [diff, setDiff] = useState<DiffSummary | null>(null);
@@ -113,6 +117,7 @@ export function FeatureDetailPage() {
       }
     }).catch(console.error);
     tauri.getIdeationPrompt(featureId).then(setSystemPrompt).catch(() => {/* prompt may not exist yet */});
+    tauri.getPlanHistory(featureId).then(setPlanHistory).catch(() => {/* history may not exist yet */});
   }, [featureId]);
 
   // Auto-load execution analysis and diff when feature reaches ready/pushed state
@@ -215,6 +220,7 @@ export function FeatureDetailPage() {
       tauri.getIdeationTerminalCommand(featureId).then(setIdeationCommand).catch(() => {/* command display is best-effort */});
       addPlanning(featureId);
       await tauri.runIdeation(featureId);
+      tauri.getPlanHistory(featureId).then(setPlanHistory).catch(() => {});
     } catch (err) {
       setStatus("error");
       setError(String(err));
@@ -338,6 +344,7 @@ export function FeatureDetailPage() {
       await tauri.reviseIdeation(featureId, feedback.trim());
       setFeedback("");
       setIdeationResult(null);
+      tauri.getPlanHistory(featureId).then(setPlanHistory).catch(() => {});
     } catch (err) {
       setStatus("error");
       setError(String(err));
@@ -359,6 +366,7 @@ export function FeatureDetailPage() {
       addPlanning(featureId);
       await tauri.submitPlanningAnswers(featureId, answers);
       setQuestionAnswers({});
+      tauri.getPlanHistory(featureId).then(setPlanHistory).catch(() => {});
     } catch (err) {
       setStatus("error");
       setError(String(err));
@@ -817,6 +825,8 @@ export function FeatureDetailPage() {
           ))}
         </div>
       )}
+
+      <PlanHistory snapshots={planHistory} />
 
       {status === "done" && ideationResult && ideationResult.tasks.length > 0 && (
         <>

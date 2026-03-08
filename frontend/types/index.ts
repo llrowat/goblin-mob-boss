@@ -101,6 +101,16 @@ export interface IdeationResult {
   answered_questions: PlanningAnswer[] | null;
 }
 
+// ── Plan History ──
+
+export interface PlanSnapshot {
+  trigger: string;
+  feedback: string | null;
+  tasks: TaskSpec[];
+  execution_mode: ExecutionRecommendation | null;
+  created_at: string;
+}
+
 // ── Task Progress ──
 
 export type TaskStatus = "pending" | "in_progress" | "done";

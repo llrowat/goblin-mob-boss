@@ -56,6 +56,7 @@ pub fn run() {
             commands::start_feature,
             commands::list_features,
             commands::get_feature,
+            commands::get_plan_history,
             commands::delete_feature,
             // Ideation
             commands::get_ideation_prompt,

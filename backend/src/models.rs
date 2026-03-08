@@ -277,6 +277,9 @@ pub struct Feature {
     /// Per-repo push status for multi-repo features: maps repo_id -> push status.
     #[serde(default)]
     pub repo_push_status: std::collections::HashMap<String, RepoPushStatus>,
+    /// History of prior plan snapshots, captured before each revision or restart.
+    #[serde(default)]
+    pub plan_history: Vec<PlanSnapshot>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -300,6 +303,7 @@ impl Feature {
             launched_command: None,
             worktree_paths: std::collections::HashMap::new(),
             repo_push_status: std::collections::HashMap::new(),
+            plan_history: vec![],
             created_at: now,
             updated_at: now,
         }
@@ -421,6 +425,22 @@ pub struct QuestionsFile {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnswersFile {
     pub answers: Vec<PlanningAnswer>,
+}
+
+// ── Plan History ──
+// Snapshots of prior plans, captured before each revision/restart/answer round.
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlanSnapshot {
+    /// What triggered this snapshot (e.g., "initial", "revision", "answer_round", "restart").
+    pub trigger: String,
+    /// Optional user feedback that prompted the revision.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub feedback: Option<String>,
+    pub tasks: Vec<TaskSpec>,
+    #[serde(default)]
+    pub execution_mode: Option<ExecutionRecommendation>,
+    pub created_at: DateTime<Utc>,
 }
 
 // ── Ideation Discovery Result ──
@@ -1559,5 +1579,132 @@ You are enabled by default."#;
             "feature/test-1234".to_string(),
         );
         assert!(feature.repo_push_status.is_empty());
+    }
+
+    #[test]
+    fn feature_new_has_empty_plan_history() {
+        let feature = Feature::new(
+            vec!["r1".to_string()],
+            "Test".to_string(),
+            "desc".to_string(),
+            "feature/test-1234".to_string(),
+        );
+        assert!(feature.plan_history.is_empty());
+    }
+
+    #[test]
+    fn plan_snapshot_serializes_and_deserializes() {
+        let snapshot = PlanSnapshot {
+            trigger: "revision".to_string(),
+            feedback: Some("Split tasks".to_string()),
+            tasks: vec![TaskSpec {
+                title: "Auth".to_string(),
+                description: "Add auth".to_string(),
+                acceptance_criteria: vec!["Login works".to_string()],
+                dependencies: vec![],
+                agent: "backend-dev".to_string(),
+            }],
+            execution_mode: Some(ExecutionRecommendation {
+                recommended: ExecutionMode::Teams,
+                rationale: "Parallel tasks".to_string(),
+                confidence: 0.85,
+            }),
+            created_at: Utc::now(),
+        };
+
+        let json = serde_json::to_string(&snapshot).unwrap();
+        let parsed: PlanSnapshot = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.trigger, "revision");
+        assert_eq!(parsed.feedback, Some("Split tasks".to_string()));
+        assert_eq!(parsed.tasks.len(), 1);
+        assert_eq!(parsed.tasks[0].title, "Auth");
+        assert_eq!(parsed.execution_mode.as_ref().unwrap().recommended, ExecutionMode::Teams);
+    }
+
+    #[test]
+    fn plan_snapshot_without_feedback_omits_field() {
+        let snapshot = PlanSnapshot {
+            trigger: "restart".to_string(),
+            feedback: None,
+            tasks: vec![],
+            execution_mode: None,
+            created_at: Utc::now(),
+        };
+
+        let json = serde_json::to_string(&snapshot).unwrap();
+        assert!(!json.contains("feedback"));
+        let parsed: PlanSnapshot = serde_json::from_str(&json).unwrap();
+        assert!(parsed.feedback.is_none());
+    }
+
+    #[test]
+    fn feature_with_plan_history_roundtrips() {
+        let mut feature = Feature::new(
+            vec!["r1".to_string()],
+            "Test".to_string(),
+            "desc".to_string(),
+            "feature/test-1234".to_string(),
+        );
+        feature.plan_history.push(PlanSnapshot {
+            trigger: "revision".to_string(),
+            feedback: Some("Add tests".to_string()),
+            tasks: vec![TaskSpec {
+                title: "Task 1".to_string(),
+                description: "First task".to_string(),
+                acceptance_criteria: vec![],
+                dependencies: vec![],
+                agent: "dev".to_string(),
+            }],
+            execution_mode: None,
+            created_at: Utc::now(),
+        });
+        feature.plan_history.push(PlanSnapshot {
+            trigger: "answer_round".to_string(),
+            feedback: None,
+            tasks: vec![
+                TaskSpec {
+                    title: "Task 1".to_string(),
+                    description: "First".to_string(),
+                    acceptance_criteria: vec![],
+                    dependencies: vec![],
+                    agent: "dev".to_string(),
+                },
+                TaskSpec {
+                    title: "Task 2".to_string(),
+                    description: "Second".to_string(),
+                    acceptance_criteria: vec![],
+                    dependencies: vec!["1".to_string()],
+                    agent: "dev".to_string(),
+                },
+            ],
+            execution_mode: None,
+            created_at: Utc::now(),
+        });
+
+        let json = serde_json::to_string(&feature).unwrap();
+        let parsed: Feature = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.plan_history.len(), 2);
+        assert_eq!(parsed.plan_history[0].trigger, "revision");
+        assert_eq!(parsed.plan_history[0].feedback.as_deref(), Some("Add tests"));
+        assert_eq!(parsed.plan_history[0].tasks.len(), 1);
+        assert_eq!(parsed.plan_history[1].trigger, "answer_round");
+        assert!(parsed.plan_history[1].feedback.is_none());
+        assert_eq!(parsed.plan_history[1].tasks.len(), 2);
+    }
+
+    #[test]
+    fn feature_backwards_compat_no_plan_history_field() {
+        let json = r#"{
+            "id": "feat-1",
+            "repo_ids": ["r1"],
+            "name": "Old Feature",
+            "description": "Pre-history feature",
+            "branch": "feature/old-1234",
+            "status": "ideation",
+            "created_at": "2025-01-01T00:00:00Z",
+            "updated_at": "2025-01-01T00:00:00Z"
+        }"#;
+        let feature: Feature = serde_json::from_str(json).unwrap();
+        assert!(feature.plan_history.is_empty());
     }
 }

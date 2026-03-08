@@ -23,6 +23,7 @@ describe("useTauri", () => {
     expect(typeof tauri.listFeatures).toBe("function");
     expect(typeof tauri.listAllFeatures).toBe("function");
     expect(typeof tauri.getFeature).toBe("function");
+    expect(typeof tauri.getPlanHistory).toBe("function");
     expect(typeof tauri.pollIdeationResult).toBe("function");
     expect(typeof tauri.configureLaunch).toBe("function");
     expect(typeof tauri.getLaunchCommand).toBe("function");

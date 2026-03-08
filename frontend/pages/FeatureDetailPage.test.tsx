@@ -2,7 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { invoke } from "@tauri-apps/api/core";
 import { FeatureDetailPage } from "./FeatureDetailPage";
-import type { Feature, Repository, IdeationResult, PlanningQuestion, TaskProgress } from "../types";
+import type { Feature, Repository, IdeationResult, PlanningQuestion, TaskProgress, PlanSnapshot } from "../types";
 
 // Mock the useTerminalSession hook
 const mockStartSession = vi.fn();
@@ -124,6 +124,7 @@ describe("FeatureDetailPage", () => {
       if (cmd === "poll_ideation_result") return emptyIdeationResult;
       if (cmd === "run_ideation") return undefined;
       if (cmd === "check_tmux_installed") return true;
+      if (cmd === "get_plan_history") return [];
       return undefined;
     });
   });
@@ -899,6 +900,102 @@ describe("FeatureDetailPage", () => {
 
     // Should NOT show Mark Complete since r2 is not pushed
     expect(screen.queryByText("Mark Complete")).not.toBeInTheDocument();
+  });
+
+  it("loads and displays plan history when snapshots exist", async () => {
+    const mockHistory: PlanSnapshot[] = [
+      {
+        trigger: "revision",
+        feedback: "Split the tasks",
+        tasks: [
+          {
+            title: "Original task",
+            description: "The original plan",
+            acceptance_criteria: [],
+            dependencies: [],
+            agent: "dev",
+          },
+        ],
+        execution_mode: null,
+        created_at: "2026-03-01T10:00:00Z",
+      },
+    ];
+
+    mockedInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "get_feature") return mockFeature;
+      if (cmd === "get_ideation_prompt") return "system prompt";
+      if (cmd === "poll_ideation_result") return mockIdeationResult;
+      if (cmd === "get_plan_history") return mockHistory;
+      return undefined;
+    });
+
+    render(<FeatureDetailPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Plan History \(1 prior version\)/)).toBeInTheDocument();
+    });
+    expect(screen.getByText("v1")).toBeInTheDocument();
+    expect(screen.getByText("Revised")).toBeInTheDocument();
+  });
+
+  it("does not show plan history when no snapshots exist", async () => {
+    mockedInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "get_feature") return mockFeature;
+      if (cmd === "get_ideation_prompt") return "system prompt";
+      if (cmd === "poll_ideation_result") return mockIdeationResult;
+      if (cmd === "get_plan_history") return [];
+      return undefined;
+    });
+
+    render(<FeatureDetailPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Add auth module")).toBeInTheDocument();
+    });
+
+    expect(screen.queryByText(/Plan History/)).not.toBeInTheDocument();
+  });
+
+  it("refreshes plan history after revision", async () => {
+    const historyAfterRevision: PlanSnapshot[] = [
+      {
+        trigger: "revision",
+        feedback: "Split auth into login and registration",
+        tasks: mockIdeationResult.tasks,
+        execution_mode: mockIdeationResult.execution_mode,
+        created_at: "2026-03-01T10:00:00Z",
+      },
+    ];
+
+    let revisionCalled = false;
+    mockedInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "get_feature") return mockFeature;
+      if (cmd === "get_ideation_prompt") return "system prompt";
+      if (cmd === "poll_ideation_result") return mockIdeationResult;
+      if (cmd === "get_plan_history") return revisionCalled ? historyAfterRevision : [];
+      if (cmd === "revise_ideation") { revisionCalled = true; return undefined; }
+      return undefined;
+    });
+
+    render(<FeatureDetailPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Request Changes/)).toBeInTheDocument();
+    });
+
+    // No plan history initially
+    expect(screen.queryByText(/Plan History/)).not.toBeInTheDocument();
+
+    // Trigger a revision
+    await userEvent.click(screen.getByText(/Request Changes/));
+    const textarea = screen.getByPlaceholderText(/Describe what you'd like changed/);
+    await userEvent.type(textarea, "Split auth into login and registration");
+    await userEvent.click(screen.getByText("Revise Plan"));
+
+    // Plan history should appear after revision
+    await waitFor(() => {
+      expect(screen.getByText(/Plan History \(1 prior version\)/)).toBeInTheDocument();
+    });
   });
 
   it("does not show per-repo panel for single-repo ready features", async () => {

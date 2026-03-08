@@ -1,4 +1,5 @@
-import type { TaskSpec, TaskProgress, IdeationResult, ExecutionMode } from "../../types";
+import { useState } from "react";
+import type { TaskSpec, TaskProgress, IdeationResult, ExecutionMode, PlanSnapshot } from "../../types";
 
 interface TaskTableProps {
   tasks: TaskSpec[];
@@ -203,6 +204,126 @@ export function ExecutionModeSelector({
         </div>
       )}
     </>
+  );
+}
+
+// ── Plan History ──
+
+interface PlanHistoryProps {
+  snapshots: PlanSnapshot[];
+}
+
+const triggerLabels: Record<string, string> = {
+  revision: "Revised",
+  restart: "Restarted",
+  answer_round: "After Q&A",
+};
+
+function formatTimestamp(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+export function PlanHistory({ snapshots }: PlanHistoryProps) {
+  const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
+
+  if (!snapshots || snapshots.length === 0) return null;
+
+  return (
+    <div style={{ marginTop: 16 }}>
+      <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 8 }}>
+        Plan History ({snapshots.length} prior {snapshots.length === 1 ? "version" : "versions"})
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {snapshots.map((snap, i) => {
+          const isExpanded = expandedIndex === i;
+          const label = triggerLabels[snap.trigger] || snap.trigger;
+          return (
+            <div
+              key={i}
+              style={{
+                border: "1px solid var(--border)",
+                borderRadius: 6,
+                overflow: "hidden",
+              }}
+            >
+              <button
+                onClick={() => setExpandedIndex(isExpanded ? null : i)}
+                style={{
+                  width: "100%",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "8px 12px",
+                  background: "var(--bg-secondary)",
+                  border: "none",
+                  cursor: "pointer",
+                  fontSize: 12,
+                  color: "var(--text-primary)",
+                  textAlign: "left",
+                }}
+                aria-expanded={isExpanded}
+                aria-label={`Plan version ${i + 1}`}
+              >
+                <span style={{ transform: isExpanded ? "rotate(90deg)" : "rotate(0)", transition: "transform 0.15s", fontSize: 10 }}>
+                  &#9654;
+                </span>
+                <span style={{ fontWeight: 600 }}>v{i + 1}</span>
+                <span style={{
+                  padding: "1px 6px",
+                  borderRadius: 3,
+                  backgroundColor: "var(--bg-tertiary, #333)",
+                  fontSize: 11,
+                }}>
+                  {label}
+                </span>
+                <span style={{ color: "var(--muted)" }}>
+                  {snap.tasks.length} {snap.tasks.length === 1 ? "task" : "tasks"}
+                </span>
+                <span style={{ marginLeft: "auto", color: "var(--muted)", fontSize: 11 }}>
+                  {formatTimestamp(snap.created_at)}
+                </span>
+              </button>
+              {isExpanded && (
+                <div style={{ padding: "8px 12px", borderTop: "1px solid var(--border)" }}>
+                  {snap.feedback && (
+                    <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 8, fontStyle: "italic" }}>
+                      Feedback: &ldquo;{snap.feedback}&rdquo;
+                    </div>
+                  )}
+                  {snap.execution_mode && (
+                    <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 6 }}>
+                      Mode: {snap.execution_mode.recommended} ({Math.round(snap.execution_mode.confidence * 100)}% confidence)
+                    </div>
+                  )}
+                  <div className="jira-table" style={{ fontSize: 12 }}>
+                    <div className="jira-header">
+                      <div className="jira-col-key">Key</div>
+                      <div className="jira-col-summary">Summary</div>
+                      <div className="jira-col-assignee">Assignee</div>
+                    </div>
+                    {snap.tasks.map((task, j) => (
+                      <div key={j} className="jira-row" style={{ cursor: "default" }}>
+                        <div className="jira-col-key">TASK-{j + 1}</div>
+                        <div className="jira-col-summary">{task.title}</div>
+                        <div className="jira-col-assignee">
+                          {task.agent && <span className="jira-assignee-badge">{task.agent}</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
