@@ -183,7 +183,7 @@ describe("ReposPage", () => {
     expect(screen.getByDisplayValue("main")).toBeInTheDocument();
     const textarea = screen.getByPlaceholderText("npm test") as HTMLTextAreaElement;
     expect(textarea.value).toBe("npm test\nnpm run lint");
-    expect(screen.getByDisplayValue("gh pr create")).toBeInTheDocument();
+    // PR Command field has been removed
   });
 
   it("calls update_repository on Save", async () => {
@@ -210,7 +210,7 @@ describe("ReposPage", () => {
         baseBranch: "main",
         description: "React frontend application",
         validators: ["npm test", "npm run lint"],
-        prCommand: "gh pr create",
+        prCommand: null,
         similarRepoIds: ["repo-2"],
       });
     });

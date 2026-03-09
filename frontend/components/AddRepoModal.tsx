@@ -16,7 +16,7 @@ export function AddRepoModal({ onClose, onAdded }: Props) {
   const [baseBranch, setBaseBranch] = useState("main");
   const [validators, setValidators] = useState("");
   const [description, setDescription] = useState("");
-  const [prCommand, setPrCommand] = useState("");
+
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [detected, setDetected] = useState(false);
@@ -112,7 +112,7 @@ export function AddRepoModal({ onClose, onAdded }: Props) {
         baseBranch: baseBranch.trim() || "main",
         description: description.trim() || undefined,
         validators: validatorList,
-        prCommand: prCommand.trim() || null,
+        prCommand: null,
         similarRepoIds: similarRepoIds.length > 0 ? similarRepoIds : undefined,
       });
       onAdded();
@@ -125,7 +125,7 @@ export function AddRepoModal({ onClose, onAdded }: Props) {
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxHeight: "85vh", overflowY: "auto" }}>
         <h3 className="modal-title">Add Repository</h3>
 
         {error && (
@@ -301,17 +301,6 @@ export function AddRepoModal({ onClose, onAdded }: Props) {
                 placeholder={"npm test\nnpm run lint"}
               />
               <div className="form-help">One command per line (optional)</div>
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">PR Command</label>
-              <input
-                className="form-input"
-                value={prCommand}
-                onChange={(e) => setPrCommand(e.target.value)}
-                placeholder="gh pr create"
-              />
-              <div className="form-help">Optional</div>
             </div>
 
             {existingRepos.length > 0 && (

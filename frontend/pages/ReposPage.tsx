@@ -12,7 +12,7 @@ export function ReposPage() {
   const [editDescription, setEditDescription] = useState("");
   const [editBranch, setEditBranch] = useState("");
   const [editValidators, setEditValidators] = useState("");
-  const [editPrCommand, setEditPrCommand] = useState("");
+
   const [editSimilarRepoIds, setEditSimilarRepoIds] = useState<string[]>([]);
   const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
 
@@ -28,7 +28,7 @@ export function ReposPage() {
     setEditDescription(repo.description || "");
     setEditBranch(repo.base_branch);
     setEditValidators(repo.validators.join("\n"));
-    setEditPrCommand(repo.pr_command || "");
+
     setEditSimilarRepoIds(repo.similar_repo_ids || []);
   };
 
@@ -43,7 +43,7 @@ export function ReposPage() {
         .split("\n")
         .map((v) => v.trim())
         .filter(Boolean),
-      prCommand: editPrCommand.trim() || null,
+      prCommand: null,
       similarRepoIds: editSimilarRepoIds.length > 0 ? editSimilarRepoIds : undefined,
     });
     setEditingId(null);
@@ -110,14 +110,6 @@ export function ReposPage() {
                     value={editValidators}
                     onChange={(e) => setEditValidators(e.target.value)}
                     placeholder="npm test"
-                  />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">PR Command</label>
-                  <input
-                    className="form-input"
-                    value={editPrCommand}
-                    onChange={(e) => setEditPrCommand(e.target.value)}
                   />
                 </div>
                 {repos.filter((r) => r.id !== editingId).length > 0 && (
