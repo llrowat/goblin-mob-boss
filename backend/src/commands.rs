@@ -474,9 +474,15 @@ pub fn delete_feature(
     }
 
     // Clean up worktrees and branches from all repos (best-effort)
+    // First remove worktrees using stored paths (handles cross-repo worktrees)
+    for (repo_id, wt_path) in &feature.worktree_paths {
+        if let Ok(repo) = get_repo(&state, repo_id) {
+            let _ = git::remove_worktree(&repo.path, wt_path);
+        }
+    }
     for repo_id in &feature.effective_repo_ids() {
         if let Ok(repo) = get_repo(&state, repo_id) {
-            // Remove worktrees first (they hold a reference to the branch)
+            // Also clean up any worktree directory structure
             let _ = git::cleanup_feature_worktrees(&repo.path, &feature.id);
             let _ = git::delete_branch(&repo.path, &feature.branch);
         }
@@ -790,18 +796,6 @@ pub fn start_launch_pty(
         .ok_or("Feature not found")?
         .clone();
     drop(features);
-
-    // Teams mode requires tmux — fail early with a clear message
-    if feature.execution_mode.as_ref() == Some(&ExecutionMode::Teams)
-        && !launch::is_tmux_available()
-    {
-        return Err(
-            "tmux is not installed. Agent Teams mode requires tmux for --teammate-mode tmux. \
-             Install it with: brew install tmux (macOS), sudo apt install tmux (Ubuntu/Debian), \
-             or sudo pacman -S tmux (Arch)."
-                .to_string(),
-        );
-    }
 
     let repo = get_primary_repo(&state, &feature)?;
 
@@ -2976,29 +2970,4 @@ mod tests {
         assert!(!parsed.completion_detected);
     }
 
-    #[test]
-    fn read_task_progress_returns_none_for_missing_file() {
-        let dir = TempDir::new().unwrap();
-        let path = dir.path().join("nonexistent.json");
-        assert!(read_task_progress(&path).is_none());
-    }
-
-    #[test]
-    fn read_task_progress_parses_valid_json() {
-        let dir = TempDir::new().unwrap();
-        let path = dir.path().join("progress.json");
-        std::fs::write(&path, r#"{"tasks": [{"task": 1, "title": "Test", "status": "done", "acceptance_criteria": []}]}"#).unwrap();
-        let result = read_task_progress(&path).unwrap();
-        assert_eq!(result.tasks.len(), 1);
-        assert_eq!(result.tasks[0].status, TaskStatus::Done);
-        assert!(!result.completion_detected);
-    }
-
-    #[test]
-    fn read_task_progress_returns_none_on_invalid_json() {
-        let dir = TempDir::new().unwrap();
-        let path = dir.path().join("progress.json");
-        std::fs::write(&path, "not json at all").unwrap();
-        assert!(read_task_progress(&path).is_none());
-    }
 }

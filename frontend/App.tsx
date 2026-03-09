@@ -43,11 +43,20 @@ function AppLayout() {
   const [agentCount, setAgentCount] = useState<number | null>(null);
   const [repoCount, setRepoCount] = useState<number | null>(null);
   const [mapCount, setMapCount] = useState<number | null>(null);
+  const [activeFeatureCount, setActiveFeatureCount] = useState<number | null>(null);
 
   useEffect(() => {
     tauri.listGlobalAgents().then((a) => setAgentCount(a.length));
     tauri.listRepositories().then((r) => setRepoCount(r.length));
     tauri.listSystemMaps().then((m) => setMapCount(m.length));
+    const loadFeatureCount = () => {
+      tauri.listAllFeatures().then((f) => {
+        setActiveFeatureCount(f.filter((feat) => feat.status !== "complete").length);
+      }).catch(() => {});
+    };
+    loadFeatureCount();
+    const interval = setInterval(loadFeatureCount, 5000);
+    return () => clearInterval(interval);
   }, []);
 
   return (
@@ -106,6 +115,9 @@ function AppLayout() {
           >
             Features
             <span className="sidebar-badges">
+              {activeFeatureCount !== null && activeFeatureCount > 0 && (
+                <CountBadge count={activeFeatureCount} />
+              )}
               {planningCount > 0 && (
                 <span className="sidebar-planning-badge" title={`${planningCount} planning`} aria-label={`${planningCount} features planning`}>
                   <span className="spinner spinner-planning" style={{ width: 10, height: 10, borderWidth: 1.5 }} aria-hidden="true" />

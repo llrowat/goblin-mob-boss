@@ -627,7 +627,7 @@ export function FeatureDetailPage() {
   const isComplete = feature.status === "complete";
   const isReadOnly = isExecuting || isReady || isPushed || isComplete;
   const activeMode = modeOverride ?? recommendation?.recommended ?? "subagents";
-  const teamsMissingTmux = activeMode === "teams" && tmuxAvailable === false;
+  const teamsMissingTmux = false; // tmux is optional — just a recommendation
 
   const featureRepoIds = feature.repo_ids?.length > 0 ? feature.repo_ids : feature.repo_id ? [feature.repo_id] : [];
   const featureRepoNames = featureRepoIds

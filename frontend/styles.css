@@ -89,6 +89,8 @@ body {
 
 .sidebar-nav {
   flex: 1;
+  display: flex;
+  flex-direction: column;
   padding: 8px;
   overflow-y: auto;
 }
@@ -146,6 +148,11 @@ body {
   color: var(--text-secondary);
   line-height: 1.4;
   margin-bottom: 8px;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  max-width: 75%;
 }
 
 .feature-card-meta {

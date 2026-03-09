@@ -188,19 +188,12 @@ export function ExecutionModeSelector({
       )}
       {tmuxAvailable === false &&
         (modeOverride ?? recommendation?.recommended) === "teams" && (
-        <div className="tmux-warning" role="alert" style={{
+        <div className="tmux-warning" style={{
           marginTop: 8,
-          padding: "8px 12px",
-          background: "var(--warning-bg, #3d2e00)",
-          border: "1px solid var(--warning-border, #665000)",
-          borderRadius: 6,
-          color: "var(--warning-text, #ffd866)",
-          fontSize: 13,
+          fontSize: 12,
+          color: "#c9a84c",
         }}>
-          tmux is not installed. Agent Teams mode requires tmux.
-          Install it with: <code>brew install tmux</code> (macOS),{" "}
-          <code>sudo apt install tmux</code> (Ubuntu/Debian), or{" "}
-          <code>sudo pacman -S tmux</code> (Arch).
+          Tip: Agent Teams works better with tmux installed.
         </div>
       )}
     </>

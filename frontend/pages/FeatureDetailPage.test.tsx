@@ -686,7 +686,7 @@ describe("FeatureDetailPage", () => {
     );
   });
 
-  it("shows tmux warning when teams mode is recommended and tmux is not installed", async () => {
+  it("shows tmux warning when teams mode is recommended and Agent Teams works better with tmux", async () => {
     mockedInvoke.mockImplementation(async (cmd: string) => {
       if (cmd === "get_feature") return mockFeature;
       if (cmd === "get_ideation_prompt") return "system prompt";
@@ -698,11 +698,11 @@ describe("FeatureDetailPage", () => {
     render(<FeatureDetailPage />);
 
     await waitFor(() => {
-      expect(screen.getByText(/tmux is not installed/)).toBeInTheDocument();
+      expect(screen.getByText(/Agent Teams works better with tmux/)).toBeInTheDocument();
     });
   });
 
-  it("disables launch button when teams mode selected without tmux", async () => {
+  it("does not disable launch button when teams mode selected without tmux", async () => {
     mockedInvoke.mockImplementation(async (cmd: string) => {
       if (cmd === "get_feature") return mockFeature;
       if (cmd === "get_ideation_prompt") return "system prompt";
@@ -718,7 +718,7 @@ describe("FeatureDetailPage", () => {
     });
 
     const launchBtn = screen.getByText(/^Launch$/).closest("button")!;
-    expect(launchBtn).toBeDisabled();
+    expect(launchBtn).not.toBeDisabled();
   });
 
   it("does not show tmux warning when tmux is installed", async () => {
@@ -736,7 +736,7 @@ describe("FeatureDetailPage", () => {
       expect(screen.getByText("Agent Teams")).toBeInTheDocument();
     });
 
-    expect(screen.queryByText(/tmux is not installed/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Agent Teams works better with tmux/)).not.toBeInTheDocument();
   });
 
   it("does not show tmux warning when subagents mode is selected", async () => {
@@ -762,7 +762,7 @@ describe("FeatureDetailPage", () => {
       expect(screen.getByText("Subagents")).toBeInTheDocument();
     });
 
-    expect(screen.queryByText(/tmux is not installed/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Agent Teams works better with tmux/)).not.toBeInTheDocument();
   });
 
   it("shows per-repo push status for multi-repo ready features", async () => {
