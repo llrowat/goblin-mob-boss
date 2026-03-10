@@ -184,9 +184,9 @@ pub fn map_discovery_system_prompt(repo_name: &str, repo_context: &str) -> Strin
 
 {repo_context}
 
-You are a system architecture analyst. Your job is to quickly survey this repository
-and identify the high-level services, data stores, and how they connect. Focus on
-system topology — not code-level details."#,
+You are a systems architect mapping infrastructure topology. Identify the deployable
+services, external dependencies, and how they communicate. Think in terms of what
+gets deployed and what talks to what — not how the code is organized internally."#,
         repo_name = repo_name,
         repo_context = repo_context,
     )
@@ -195,29 +195,31 @@ system topology — not code-level details."#,
 /// User prompt for map discovery — tells the agent what to find and where to write results.
 pub fn map_discovery_user_prompt(repo_name: &str, output_path: &str) -> String {
     format!(
-        r#"Survey the repository "{repo_name}" and map its high-level system architecture.
+        r#"Map the deployment architecture for repository "{repo_name}".
 
-## What to Find
+## What to Identify
 
-1. **Services/Components** — What deployable units exist?
-   Look at: directory structure, Dockerfiles, docker-compose.yml, Kubernetes manifests,
-   workspace configs (package.json workspaces, Cargo workspace), top-level README.
+1. **Deployable Services** — What actually gets deployed and runs?
+   Look at: Dockerfiles, docker-compose.yml, Kubernetes manifests, CI/CD deploy targets,
+   Procfile, serverless configs, top-level README architecture sections.
+   Each entry should be something that runs as its own process or container.
 
-2. **Data Stores** — What databases, caches, or queues does the system use?
-   Look at: docker-compose services, environment variable names, config files.
+2. **External Dependencies** — What infrastructure does the system rely on?
+   Databases, caches, queues, third-party APIs, auth providers, CDNs.
+   Look at: docker-compose services, environment variables, config files, README.
 
-3. **System Connections** — How do the pieces connect at a system level?
-   Look at: docker-compose networks/links, environment variables referencing other services,
+3. **Communication Paths** — How do the services talk to each other and to external systems?
+   Look at: docker-compose networks, environment variables referencing other services,
    infrastructure configs, README architecture sections.
 
-4. **Library/Package Outputs** — Does this repo produce a library, SDK, or package
-   consumed by other repositories? Look at: published package names in package.json,
-   Cargo.toml, pyproject.toml, or build output configs. Note these in the service
-   description so cross-repo dependencies are visible.
+## Important
 
-Keep it high-level. You are mapping system topology, not analyzing code — except
-for recognizing when a repo's output (library, package, SDK) is a dependency used
-by other repos in the system.
+- Map **deployment topology**, not code organization. A monorepo with one Dockerfile
+  is one service, not one service per directory.
+- Only include things that run independently. Internal libraries, shared modules,
+  and helper packages are NOT separate services.
+- Keep descriptions focused on *what the service does for users or the system* —
+  not implementation details.
 
 ## Output
 
@@ -228,12 +230,12 @@ Write a single JSON file to `{output_path}`:
   "repo_name": "{repo_name}",
   "services": [
     {{{{
-      "name": "Service name",
+      "name": "Human-readable service name",
       "service_type": "backend|frontend|worker|gateway|database|queue|cache|external",
       "runtime": "node|python|rust|go|java|etc",
       "framework": "express|fastapi|actix|etc or empty",
-      "description": "One-line summary of what this does",
-      "owns_data": ["table or collection names if obvious"]
+      "description": "What this service does (one sentence)",
+      "owns_data": ["database or storage names if applicable"]
     }}}}
   ],
   "connections": [
@@ -253,9 +255,8 @@ Write a single JSON file to `{output_path}`:
 
 - The ONLY file you may write is `{output_path}`.
 - Do NOT modify any source files.
-- Skim config and infrastructure files — do not deep-dive into source code.
-- If the repo is a monorepo, identify each service within it.
-- For key external dependencies (databases, third-party APIs), add them as "external" or appropriate type.
+- Skim READMEs, config files, and infrastructure manifests. Do not read source code.
+- If the repo produces one deployable artifact, output one service — not one per internal module.
 - Write the JSON file and stop."#,
         repo_name = repo_name,
         output_path = output_path,
@@ -316,7 +317,7 @@ mod tests {
         let prompt = map_discovery_system_prompt("my-service", "Rust backend context");
         assert!(prompt.contains("my-service"));
         assert!(prompt.contains("Rust backend context"));
-        assert!(prompt.contains("system architecture analyst"));
+        assert!(prompt.contains("systems architect"));
     }
 
     #[test]

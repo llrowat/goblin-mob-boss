@@ -97,6 +97,27 @@ beforeAll(() => {
   };
 });
 
+/** Render the page and click into a map from the list view. */
+async function renderAndSelectMap(mapData = [mockMap], repoData = mockRepos) {
+  vi.mocked(invoke).mockImplementation((cmd: string) => {
+    if (cmd === "list_system_maps") return Promise.resolve(mapData);
+    if (cmd === "list_repositories") return Promise.resolve(repoData);
+    return Promise.resolve(null);
+  });
+
+  render(
+    <MemoryRouter>
+      <SystemMapPage />
+    </MemoryRouter>,
+  );
+
+  // Wait for the map list and click into the first map
+  await waitFor(() => {
+    expect(screen.getByText(mapData[0].name)).toBeInTheDocument();
+  });
+  fireEvent.click(screen.getByText(mapData[0].name));
+}
+
 describe("SystemMapPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -121,9 +142,9 @@ describe("SystemMapPage", () => {
     });
   });
 
-  it("shows page header and description", async () => {
+  it("shows map list with service counts", async () => {
     vi.mocked(invoke).mockImplementation((cmd: string) => {
-      if (cmd === "list_system_maps") return Promise.resolve([]);
+      if (cmd === "list_system_maps") return Promise.resolve([mockMap]);
       if (cmd === "list_repositories") return Promise.resolve([]);
       return Promise.resolve(null);
     });
@@ -135,22 +156,13 @@ describe("SystemMapPage", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText("System Map")).toBeInTheDocument();
+      expect(screen.getByText("Platform Overview")).toBeInTheDocument();
+      expect(screen.getByText(/2 services/)).toBeInTheDocument();
     });
   });
 
-  it("renders map with services and connections", async () => {
-    vi.mocked(invoke).mockImplementation((cmd: string) => {
-      if (cmd === "list_system_maps") return Promise.resolve([mockMap]);
-      if (cmd === "list_repositories") return Promise.resolve(mockRepos);
-      return Promise.resolve(null);
-    });
-
-    render(
-      <MemoryRouter>
-        <SystemMapPage />
-      </MemoryRouter>,
-    );
+  it("renders map with services after clicking into it", async () => {
+    await renderAndSelectMap();
 
     await waitFor(() => {
       expect(screen.getByText("Auth Service")).toBeInTheDocument();
@@ -159,17 +171,7 @@ describe("SystemMapPage", () => {
   });
 
   it("shows toolbar with service and connection counts", async () => {
-    vi.mocked(invoke).mockImplementation((cmd: string) => {
-      if (cmd === "list_system_maps") return Promise.resolve([mockMap]);
-      if (cmd === "list_repositories") return Promise.resolve(mockRepos);
-      return Promise.resolve(null);
-    });
-
-    render(
-      <MemoryRouter>
-        <SystemMapPage />
-      </MemoryRouter>,
-    );
+    await renderAndSelectMap();
 
     await waitFor(() => {
       expect(screen.getByText(/2 services/)).toBeInTheDocument();
@@ -196,17 +198,7 @@ describe("SystemMapPage", () => {
   });
 
   it("opens add service modal from toolbar", async () => {
-    vi.mocked(invoke).mockImplementation((cmd: string) => {
-      if (cmd === "list_system_maps") return Promise.resolve([mockMap]);
-      if (cmd === "list_repositories") return Promise.resolve(mockRepos);
-      return Promise.resolve(null);
-    });
-
-    render(
-      <MemoryRouter>
-        <SystemMapPage />
-      </MemoryRouter>,
-    );
+    await renderAndSelectMap();
 
     await waitFor(() => {
       expect(screen.getByText("Add Service")).toBeInTheDocument();
@@ -217,22 +209,10 @@ describe("SystemMapPage", () => {
     expect(screen.getByPlaceholderText("e.g. Auth Service")).toBeInTheDocument();
   });
 
-  it("shows legend with service types and connection types", async () => {
-    vi.mocked(invoke).mockImplementation((cmd: string) => {
-      if (cmd === "list_system_maps") return Promise.resolve([mockMap]);
-      if (cmd === "list_repositories") return Promise.resolve(mockRepos);
-      return Promise.resolve(null);
-    });
-
-    render(
-      <MemoryRouter>
-        <SystemMapPage />
-      </MemoryRouter>,
-    );
+  it("shows legend bar with service types and connection types", async () => {
+    await renderAndSelectMap();
 
     await waitFor(() => {
-      expect(screen.getByText("Legend")).toBeInTheDocument();
-      // Use getAllByText since labels appear in both the map and the legend
       expect(screen.getAllByText("Backend").length).toBeGreaterThanOrEqual(1);
       expect(screen.getAllByText("Frontend").length).toBeGreaterThanOrEqual(1);
       expect(screen.getByText("REST")).toBeInTheDocument();
@@ -241,23 +221,12 @@ describe("SystemMapPage", () => {
   });
 
   it("shows service detail panel when a service is clicked", async () => {
-    vi.mocked(invoke).mockImplementation((cmd: string) => {
-      if (cmd === "list_system_maps") return Promise.resolve([mockMap]);
-      if (cmd === "list_repositories") return Promise.resolve(mockRepos);
-      return Promise.resolve(null);
-    });
-
-    render(
-      <MemoryRouter>
-        <SystemMapPage />
-      </MemoryRouter>,
-    );
+    await renderAndSelectMap();
 
     await waitFor(() => {
       expect(screen.getByText("Auth Service")).toBeInTheDocument();
     });
 
-    // Click the service node text
     fireEvent.click(screen.getByText("Auth Service"));
 
     await waitFor(() => {
@@ -268,17 +237,7 @@ describe("SystemMapPage", () => {
   });
 
   it("shows delete confirmation for map", async () => {
-    vi.mocked(invoke).mockImplementation((cmd: string) => {
-      if (cmd === "list_system_maps") return Promise.resolve([mockMap]);
-      if (cmd === "list_repositories") return Promise.resolve(mockRepos);
-      return Promise.resolve(null);
-    });
-
-    render(
-      <MemoryRouter>
-        <SystemMapPage />
-      </MemoryRouter>,
-    );
+    await renderAndSelectMap();
 
     await waitFor(() => {
       expect(screen.getByText("Delete Map")).toBeInTheDocument();
@@ -292,17 +251,7 @@ describe("SystemMapPage", () => {
   });
 
   it("shows explore button in toolbar when repos exist", async () => {
-    vi.mocked(invoke).mockImplementation((cmd: string) => {
-      if (cmd === "list_system_maps") return Promise.resolve([mockMap]);
-      if (cmd === "list_repositories") return Promise.resolve(mockRepos);
-      return Promise.resolve(null);
-    });
-
-    render(
-      <MemoryRouter>
-        <SystemMapPage />
-      </MemoryRouter>,
-    );
+    await renderAndSelectMap();
 
     await waitFor(() => {
       expect(screen.getByText("Explore")).toBeInTheDocument();
@@ -310,17 +259,7 @@ describe("SystemMapPage", () => {
   });
 
   it("opens explore modal with repo checkboxes", async () => {
-    vi.mocked(invoke).mockImplementation((cmd: string) => {
-      if (cmd === "list_system_maps") return Promise.resolve([mockMap]);
-      if (cmd === "list_repositories") return Promise.resolve(mockRepos);
-      return Promise.resolve(null);
-    });
-
-    render(
-      <MemoryRouter>
-        <SystemMapPage />
-      </MemoryRouter>,
-    );
+    await renderAndSelectMap();
 
     await waitFor(() => {
       expect(screen.getByText("Explore")).toBeInTheDocument();
@@ -337,17 +276,7 @@ describe("SystemMapPage", () => {
   });
 
   it("disables send scouts button when no repos selected", async () => {
-    vi.mocked(invoke).mockImplementation((cmd: string) => {
-      if (cmd === "list_system_maps") return Promise.resolve([mockMap]);
-      if (cmd === "list_repositories") return Promise.resolve(mockRepos);
-      return Promise.resolve(null);
-    });
-
-    render(
-      <MemoryRouter>
-        <SystemMapPage />
-      </MemoryRouter>,
-    );
+    await renderAndSelectMap();
 
     await waitFor(() => {
       expect(screen.getByText("Explore")).toBeInTheDocument();
@@ -363,21 +292,10 @@ describe("SystemMapPage", () => {
 
   it("shows explore button in empty territory state when repos exist", async () => {
     const emptyMap = { ...mockMap, services: [], connections: [] };
-    vi.mocked(invoke).mockImplementation((cmd: string) => {
-      if (cmd === "list_system_maps") return Promise.resolve([emptyMap]);
-      if (cmd === "list_repositories") return Promise.resolve(mockRepos);
-      return Promise.resolve(null);
-    });
-
-    render(
-      <MemoryRouter>
-        <SystemMapPage />
-      </MemoryRouter>,
-    );
+    await renderAndSelectMap([emptyMap]);
 
     await waitFor(() => {
       expect(screen.getByText("No services yet")).toBeInTheDocument();
-      // The Explore button in the toolbar + the one in empty state
       const exploreButtons = screen.getAllByText("Explore");
       expect(exploreButtons.length).toBeGreaterThanOrEqual(1);
     });
@@ -385,20 +303,25 @@ describe("SystemMapPage", () => {
 
   it("shows empty territory when map has no services", async () => {
     const emptyMap = { ...mockMap, services: [], connections: [] };
-    vi.mocked(invoke).mockImplementation((cmd: string) => {
-      if (cmd === "list_system_maps") return Promise.resolve([emptyMap]);
-      if (cmd === "list_repositories") return Promise.resolve(mockRepos);
-      return Promise.resolve(null);
-    });
-
-    render(
-      <MemoryRouter>
-        <SystemMapPage />
-      </MemoryRouter>,
-    );
+    await renderAndSelectMap([emptyMap]);
 
     await waitFor(() => {
       expect(screen.getByText("No services yet")).toBeInTheDocument();
+    });
+  });
+
+  it("navigates back to map list with back button", async () => {
+    await renderAndSelectMap();
+
+    await waitFor(() => {
+      expect(screen.getByText("Auth Service")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText("←"));
+
+    await waitFor(() => {
+      expect(screen.getByText(/2 services/)).toBeInTheDocument();
+      expect(screen.queryByText("Auth Service")).not.toBeInTheDocument();
     });
   });
 });

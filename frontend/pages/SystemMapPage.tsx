@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useTauri } from "../hooks/useTauri";
-import { Terminal } from "../components/Terminal";
-import { CommandDisplay } from "../components/CommandDisplay";
+import { useCommandDisplay, CommandDisplayButton, CommandDisplayContent } from "../components/CommandDisplay";
 import type {
   SystemMap,
   MapService,
@@ -114,15 +113,20 @@ export function SystemMapPage() {
   const [showExploreModal, setShowExploreModal] = useState(false);
   const [exploreRepoIds, setExploreRepoIds] = useState<string[]>([]);
   const [exploring, setExploring] = useState(false);
-  const [discoverySessionId, setDiscoverySessionId] = useState<string | null>(null);
   const [discoveryStatus, setDiscoveryStatus] = useState<DiscoveryStatus | null>(null);
   const [discoveryCommand, setDiscoveryCommand] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const discoveryCmdDisplay = useCommandDisplay(discoveryCommand);
 
   // Dragging
   const [dragServiceId, setDragServiceId] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const svgRef = useRef<SVGSVGElement>(null);
+
+  // Zoom & pan
+  const [viewBox, setViewBox] = useState({ x: 0, y: 0, w: 1200, h: 800 });
+  const [isPanning, setIsPanning] = useState(false);
+  const panStart = useRef({ x: 0, y: 0, vx: 0, vy: 0 });
 
   // Service form state
   const [svcName, setSvcName] = useState("");
@@ -149,12 +153,31 @@ export function SystemMapPage() {
     };
   }, []);
 
+  // Attach wheel handler as non-passive so preventDefault works
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const handler = (e: WheelEvent) => {
+      e.preventDefault();
+      const rect = svg.getBoundingClientRect();
+      const mx = (e.clientX - rect.left) / rect.width;
+      const my = (e.clientY - rect.top) / rect.height;
+      const zoomFactor = e.deltaY > 0 ? 1.1 : 0.9;
+      setViewBox((v) => {
+        const newW = Math.max(200, Math.min(4800, v.w * zoomFactor));
+        const newH = Math.max(133, Math.min(3200, v.h * zoomFactor));
+        return { x: v.x + (v.w - newW) * mx, y: v.y + (v.h - newH) * my, w: newW, h: newH };
+      });
+    };
+    svg.addEventListener("wheel", handler, { passive: false });
+    return () => svg.removeEventListener("wheel", handler);
+  });
+
   // ── Load ──
   useEffect(() => {
     Promise.all([tauri.listSystemMaps(), tauri.listRepositories()])
       .then(([mapList, repoList]) => {
         setMaps(mapList);
-        if (mapList.length > 0) setActiveMapId(mapList[0].id);
         setRepos(repoList);
       })
       .catch((e) => setError(String(e)))
@@ -194,7 +217,7 @@ export function SystemMapPage() {
     try {
       await tauri.deleteSystemMap(activeMapId);
       setMaps((prev) => prev.filter((m) => m.id !== activeMapId));
-      setActiveMapId(maps.length > 1 ? maps.find((m) => m.id !== activeMapId)!.id : null);
+      setActiveMapId(null);
       setConfirmDeleteMap(false);
     } catch (e) {
       setError(String(e));
@@ -392,19 +415,48 @@ export function SystemMapPage() {
       persistMap(activeMap);
     }
     setDragServiceId(null);
+    setIsPanning(false);
   }, [dragServiceId, activeMap, persistMap]);
+
+  const handleCanvasMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      // Only start pan if clicking on the canvas background (not a node)
+      if (e.button !== 0) return;
+      setIsPanning(true);
+      panStart.current = { x: e.clientX, y: e.clientY, vx: viewBox.x, vy: viewBox.y };
+    },
+    [viewBox],
+  );
+
+  const handleCanvasMouseMove = useCallback(
+    (e: React.MouseEvent) => {
+      if (dragServiceId) {
+        handleSvgMouseMove(e);
+        return;
+      }
+      if (!isPanning || !svgRef.current) return;
+      const svg = svgRef.current;
+      const rect = svg.getBoundingClientRect();
+      // Scale mouse delta to SVG coordinate space
+      const scaleX = viewBox.w / rect.width;
+      const scaleY = viewBox.h / rect.height;
+      const dx = (e.clientX - panStart.current.x) * scaleX;
+      const dy = (e.clientY - panStart.current.y) * scaleY;
+      setViewBox((v) => ({ ...v, x: panStart.current.vx - dx, y: panStart.current.vy - dy }));
+    },
+    [isPanning, dragServiceId, viewBox.w, viewBox.h, handleSvgMouseMove],
+  );
 
   // ── Discovery (Explore) ──
   const handleExplore = async () => {
     if (!activeMapId || exploreRepoIds.length === 0) return;
     setExploring(true);
     setDiscoveryStatus(null);
-    setDiscoverySessionId(null);
+    setDiscoveryCommand(null);
     try {
-      const sessionId = await tauri.startDiscoveryPty(activeMapId, exploreRepoIds, 120, 30);
-      // Fetch the command for transparency (after PTY starts, so prompt files exist)
+      await tauri.startDiscoveryPty(activeMapId, exploreRepoIds, 120, 30);
+      // Fetch the command for the "Show Command" button (prompt files written above)
       tauri.startMapDiscovery(activeMapId, exploreRepoIds).then(setDiscoveryCommand).catch(() => {});
-      setDiscoverySessionId(sessionId);
       setShowExploreModal(false);
       startDiscoveryPolling();
     } catch (e) {
@@ -431,7 +483,6 @@ export function SystemMapPage() {
         setDiscoveryStatus(status);
         if (status.complete) {
           setExploring(false);
-          setDiscoverySessionId(null);
           // Reload the map to show discovered services
           const updated = await tauri.getSystemMap(activeMapId!);
           setMaps((prev) => prev.map((m) => (m.id === updated.id ? updated : m)));
@@ -490,7 +541,6 @@ export function SystemMapPage() {
           strokeLinecap="round"
           opacity={0.6}
           className="map-trail"
-          filter="url(#sketch)"
         />
         {/* Small dot at midpoint */}
         <circle cx={midX} cy={midY} r={3} fill={style.color} opacity={0.7} />
@@ -926,109 +976,98 @@ export function SystemMapPage() {
           </button>
         </div>
 
-        <div className="map-detail-meta">
-          {SERVICE_LABELS[svc.service_type]}
-          {svc.runtime && ` \u00B7 ${svc.runtime}`}
-          {svc.framework && ` \u00B7 ${svc.framework}`}
-        </div>
-
-        {svc.description && (
-          <p className="map-detail-desc">{svc.description}</p>
-        )}
-
-        {svc.owns_data.length > 0 && (
-          <div className="map-detail-section">
-            <div className="map-detail-section-label">Owned Data</div>
-            <div className="map-detail-tags">
-              {svc.owns_data.map((d) => (
-                <span key={d} className="map-detail-tag">{d}</span>
-              ))}
+        <div className="map-detail-body">
+          <div className="map-detail-info">
+            <div className="map-detail-meta">
+              {SERVICE_LABELS[svc.service_type]}
+              {svc.runtime && ` \u00B7 ${svc.runtime}`}
+              {svc.framework && ` \u00B7 ${svc.framework}`}
             </div>
+            {svc.description && (
+              <p className="map-detail-desc">{svc.description}</p>
+            )}
           </div>
-        )}
 
-        {incoming.length > 0 && (
-          <div className="map-detail-section">
-            <div className="map-detail-section-label">Incoming Routes</div>
-            {incoming.map((c) => {
-              const fromSvc = activeMap.services.find((s) => s.id === c.from_service);
-              return (
-                <div
-                  key={c.id}
-                  className="map-detail-route"
-                  onClick={() => openEditConnection(c)}
-                >
-                  {fromSvc?.name ?? "?"} \u2192 {c.connection_type}
-                  {c.label && ` (${c.label})`}
-                  {!c.sync && " [async]"}
-                </div>
-              );
-            })}
-          </div>
-        )}
+          {svc.owns_data.length > 0 && (
+            <div className="map-detail-section">
+              <div className="map-detail-section-label">Owned Data</div>
+              <div className="map-detail-tags">
+                {svc.owns_data.map((d) => (
+                  <span key={d} className="map-detail-tag">{d}</span>
+                ))}
+              </div>
+            </div>
+          )}
 
-        {outgoing.length > 0 && (
-          <div className="map-detail-section">
-            <div className="map-detail-section-label">Outgoing Routes</div>
-            {outgoing.map((c) => {
-              const toSvc = activeMap.services.find((s) => s.id === c.to_service);
-              return (
-                <div
-                  key={c.id}
-                  className="map-detail-route"
-                  onClick={() => openEditConnection(c)}
-                >
-                  \u2192 {toSvc?.name ?? "?"} ({c.connection_type})
-                  {c.label && ` ${c.label}`}
-                  {!c.sync && " [async]"}
-                </div>
-              );
-            })}
-          </div>
-        )}
+          {incoming.length > 0 && (
+            <div className="map-detail-section">
+              <div className="map-detail-section-label">Incoming Routes</div>
+              {incoming.map((c) => {
+                const fromSvc = activeMap.services.find((s) => s.id === c.from_service);
+                return (
+                  <div
+                    key={c.id}
+                    className="map-detail-route"
+                    onClick={() => openEditConnection(c)}
+                  >
+                    {fromSvc?.name ?? "?"} \u2192 {c.connection_type}
+                    {c.label && ` (${c.label})`}
+                    {!c.sync && " [async]"}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {outgoing.length > 0 && (
+            <div className="map-detail-section">
+              <div className="map-detail-section-label">Outgoing Routes</div>
+              {outgoing.map((c) => {
+                const toSvc = activeMap.services.find((s) => s.id === c.to_service);
+                return (
+                  <div
+                    key={c.id}
+                    className="map-detail-route"
+                    onClick={() => openEditConnection(c)}
+                  >
+                    \u2192 {toSvc?.name ?? "?"} ({c.connection_type})
+                    {c.label && ` ${c.label}`}
+                    {!c.sync && " [async]"}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
     );
   }
 
   // ── Legend ──
-  function renderLegend() {
+  function renderLegendBar() {
     return (
-      <div className="map-legend">
-        <div className="map-legend-title">Legend</div>
-        <div className="map-legend-section">
-          {(Object.keys(SERVICE_LABELS) as ServiceType[]).map((type) => (
-            <div key={type} className="map-legend-item">
-              <svg width={24} height={18} style={{ flexShrink: 0 }}>
-                {SERVICE_SHAPE[type] === "circle" ? (
-                  <circle cx={12} cy={9} r={7} fill="none" stroke={SERVICE_COLORS[type]} strokeWidth={1.5} />
-                ) : (
-                  <rect x={5} y={2} width={14} height={14} rx={3} fill="none" stroke={SERVICE_COLORS[type]} strokeWidth={1.5} />
-                )}
-              </svg>
-              <span>{SERVICE_LABELS[type]}</span>
-            </div>
-          ))}
-        </div>
-        <div className="map-legend-divider" />
-        <div className="map-legend-section">
-          {Object.entries(CONNECTION_STYLES).map(([type, style]) => (
-            <div key={type} className="map-legend-item">
-              <svg width={24} height={10} style={{ flexShrink: 0 }}>
-                <line
-                  x1={0}
-                  y1={5}
-                  x2={24}
-                  y2={5}
-                  stroke={style.color}
-                  strokeWidth={2}
-                  strokeDasharray={style.dash}
-                  strokeLinecap="round"
-                />
-              </svg>
-              <span>{style.label}</span>
-            </div>
-          ))}
-        </div>
+      <div className="map-legend-bar">
+        {(Object.keys(SERVICE_LABELS) as ServiceType[]).map((type) => (
+          <div key={type} className="map-legend-item">
+            <svg width={16} height={16} style={{ flexShrink: 0 }}>
+              {SERVICE_SHAPE[type] === "circle" ? (
+                <circle cx={8} cy={8} r={6} fill="none" stroke={SERVICE_COLORS[type]} strokeWidth={1.5} />
+              ) : (
+                <rect x={2} y={2} width={12} height={12} rx={2} fill="none" stroke={SERVICE_COLORS[type]} strokeWidth={1.5} />
+              )}
+            </svg>
+            <span>{SERVICE_LABELS[type]}</span>
+          </div>
+        ))}
+        <span className="map-legend-sep" />
+        {Object.entries(CONNECTION_STYLES).map(([type, style]) => (
+          <div key={type} className="map-legend-item">
+            <svg width={20} height={8} style={{ flexShrink: 0 }}>
+              <line x1={0} y1={4} x2={20} y2={4} stroke={style.color} strokeWidth={2} strokeDasharray={style.dash} strokeLinecap="round" />
+            </svg>
+            <span>{style.label}</span>
+          </div>
+        ))}
       </div>
     );
   }
@@ -1083,233 +1122,220 @@ export function SystemMapPage() {
     );
   }
 
-  const handleDiscoveryExit = async () => {
-    setExploring(false);
-    setDiscoverySessionId(null);
-    // Reload the map to show any discovered services
-    if (activeMapId) {
-      try {
-        const updated = await tauri.getSystemMap(activeMapId);
-        setMaps((prev) => prev.map((m) => (m.id === updated.id ? updated : m)));
-      } catch {
-        // Map may not exist if it was deleted
-      }
-    }
-  };
 
   function renderDiscoveryProgress() {
     return (
       <div className="discovery-progress">
-        <CommandDisplay command={discoveryCommand} />
-        {discoverySessionId && (
-          <div className="discovery-terminal">
-            <Terminal sessionId={discoverySessionId} onExit={handleDiscoveryExit} />
-          </div>
-        )}
-        {discoveryStatus && (
-          <div className="discovery-status">
-            <div className="discovery-status-header">
-              {!discoveryStatus.complete && <span className="discovery-spinner" />}
-              <span className="discovery-status-title">
-                {discoveryStatus.complete
-                  ? "Discovery complete!"
-                  : `${discoveryStatus.found} of ${discoveryStatus.total} repos scanned...`}
-              </span>
-            </div>
-            <div className="discovery-status-counts">
-              {discoveryStatus.services_discovered} service{discoveryStatus.services_discovered !== 1 ? "s" : ""} discovered
-              {" \u00B7 "}
-              {discoveryStatus.connections_discovered} route{discoveryStatus.connections_discovered !== 1 ? "s" : ""} mapped
-            </div>
-            {discoveryStatus.errors.length > 0 && (
-              <div className="discovery-errors">
-                {discoveryStatus.errors.map((err, i) => (
-                  <div key={i}>{err}</div>
-                ))}
+        <div className="discovery-progress-header">
+          {discoveryStatus ? (
+            <div className="discovery-status">
+              <div className="discovery-status-header">
+                {!discoveryStatus.complete && <span className="discovery-spinner" />}
+                <span className="discovery-status-title">
+                  {discoveryStatus.complete
+                    ? "Discovery complete!"
+                    : `${discoveryStatus.found} of ${discoveryStatus.total} repos scanned...`}
+                </span>
               </div>
-            )}
-          </div>
-        )}
-        {!discoverySessionId && !discoveryStatus && exploring && (
-          <div className="discovery-preparing">
-            <span className="discovery-spinner" />
-            Preparing discovery...
-          </div>
-        )}
+              <div className="discovery-status-counts">
+                {discoveryStatus.services_discovered} service{discoveryStatus.services_discovered !== 1 ? "s" : ""} discovered
+                {" \u00B7 "}
+                {discoveryStatus.connections_discovered} route{discoveryStatus.connections_discovered !== 1 ? "s" : ""} mapped
+              </div>
+              {discoveryStatus.errors.length > 0 && (
+                <div className="discovery-errors">
+                  {discoveryStatus.errors.map((err, i) => (
+                    <div key={i}>{err}</div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="discovery-preparing">
+              <span className="discovery-spinner" />
+              Scouting the turf — this usually takes a minute or two.
+            </div>
+          )}
+          <CommandDisplayButton {...discoveryCmdDisplay} />
+        </div>
+        <CommandDisplayContent {...discoveryCmdDisplay} />
       </div>
     );
   }
 
   // ── Main render ──
-  return (
-    <div className="system-map-page">
-      <div className="page-header map-page-header">
-        <div>
-          <h2>System Map</h2>
-          <p>Visualize how your services connect and interact.</p>
-        </div>
-        <div className="map-header-actions">
-          {maps.length > 1 && (
-            <select
-              className="form-select map-select"
-              value={activeMapId ?? ""}
-              onChange={(e) => setActiveMapId(e.target.value)}
-            >
-              {maps.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name}
-                </option>
-              ))}
-            </select>
-          )}
+  // ── Map list view (no map selected) ──
+  if (!activeMap) {
+    return (
+      <div className="system-map-page">
+        <div className="page-header map-page-header">
+          <div>
+            <h2>System Map</h2>
+            <p>Chart the big picture — how your services and repos fit together.</p>
+          </div>
           <button className="btn btn-primary" onClick={() => setShowNewMapModal(true)}>
             New Map
           </button>
+        </div>
+
+        {error && <div className="error-banner">{error}</div>}
+
+        {maps.length === 0 ? (
+          <div className="empty-state">
+            <h3>No maps yet</h3>
+            <p>Create a system map to start charting your turf.</p>
+            <button className="btn btn-brass" onClick={() => setShowNewMapModal(true)}>
+              New Map
+            </button>
+          </div>
+        ) : (
+          <div className="map-list">
+            {maps.map((m) => (
+              <button
+                key={m.id}
+                className="map-list-item"
+                onClick={() => setActiveMapId(m.id)}
+              >
+                <div className="map-list-item-name">{m.name}</div>
+                <div className="map-list-item-meta">
+                  {m.services.length} service{m.services.length !== 1 ? "s" : ""}
+                  {" \u00B7 "}
+                  {m.connections.length} connection{m.connections.length !== 1 ? "s" : ""}
+                </div>
+                {m.description && (
+                  <div className="map-list-item-desc">{m.description}</div>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {showNewMapModal && renderNewMapModal()}
+      </div>
+    );
+  }
+
+  // ── Active map view ──
+  return (
+    <div className="system-map-page">
+      <div className="page-header map-page-header">
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <button className="btn btn-secondary btn-sm" onClick={() => setActiveMapId(null)}>
+            &larr;
+          </button>
+          <div>
+            <h2>{activeMap.name}</h2>
+            {activeMap.description && <p>{activeMap.description}</p>}
+          </div>
         </div>
       </div>
 
       {error && <div className="error-banner">{error}</div>}
 
-      {activeMap && (
-        <>
-          {/* Toolbar */}
-          <div className="map-toolbar">
-            <div className="map-toolbar-group">
-              <button className="btn btn-brass btn-sm" onClick={openAddService}>
-                Add Service
+      {/* Toolbar */}
+      <div className="map-toolbar">
+        <div className="map-toolbar-group">
+          <button className="btn btn-brass btn-sm" onClick={openAddService}>
+            Add Service
+          </button>
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={openAddConnection}
+            disabled={activeMap.services.length < 2}
+          >
+            Add Connection
+          </button>
+          <button
+            className="btn btn-brass btn-sm"
+            onClick={() => setShowExploreModal(true)}
+            disabled={exploring || repos.length === 0}
+          >
+            {exploring ? "Exploring..." : "Explore"}
+          </button>
+        </div>
+        <span className="map-toolbar-stats">
+          {activeMap.services.length} service{activeMap.services.length !== 1 ? "s" : ""}
+          {" \u00B7 "}
+          {activeMap.connections.length} connection{activeMap.connections.length !== 1 ? "s" : ""}
+        </span>
+        <div className="map-toolbar-group">
+          {confirmDeleteMap ? (
+            <div className="map-delete-confirm">
+              <span className="map-delete-prompt">Delete this map?</span>
+              <button className="btn btn-danger btn-sm" onClick={handleDeleteMap}>
+                Yes
               </button>
-              <button
-                className="btn btn-secondary btn-sm"
-                onClick={openAddConnection}
-                disabled={activeMap.services.length < 2}
-              >
-                Add Connection
-              </button>
-              <button
-                className="btn btn-brass btn-sm"
-                onClick={() => setShowExploreModal(true)}
-                disabled={exploring || repos.length === 0}
-              >
-                {exploring ? "Exploring..." : "Explore"}
+              <button className="btn btn-secondary btn-sm" onClick={() => setConfirmDeleteMap(false)}>
+                No
               </button>
             </div>
-            <span className="map-toolbar-stats">
-              {activeMap.services.length} service{activeMap.services.length !== 1 ? "s" : ""}
-              {" \u00B7 "}
-              {activeMap.connections.length} connection{activeMap.connections.length !== 1 ? "s" : ""}
-            </span>
-            <div className="map-toolbar-group">
-              {confirmDeleteMap ? (
-                <div className="map-delete-confirm">
-                  <span className="map-delete-prompt">Delete this map?</span>
-                  <button className="btn btn-danger btn-sm" onClick={handleDeleteMap}>
-                    Yes
-                  </button>
-                  <button className="btn btn-secondary btn-sm" onClick={() => setConfirmDeleteMap(false)}>
-                    No
-                  </button>
-                </div>
-              ) : (
-                <button className="btn btn-danger btn-sm" onClick={() => setConfirmDeleteMap(true)}>
-                  Delete Map
+          ) : (
+            <button className="btn btn-danger btn-sm" onClick={() => setConfirmDeleteMap(true)}>
+              Delete Map
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Discovery progress */}
+      {exploring && renderDiscoveryProgress()}
+
+      {/* Map Canvas */}
+      <div className="map-canvas-container">
+        <div className="map-canvas-wrapper">
+          {activeMap.services.length === 0 ? (
+            <div className="empty-state map-empty-canvas">
+              <h3>No services yet</h3>
+              <p>Add a service or explore your repos to see what&apos;s out there.</p>
+              <div className="map-empty-actions">
+                <button className="btn btn-brass" onClick={openAddService}>
+                  Add Service
                 </button>
-              )}
-            </div>
-          </div>
-
-          {/* Discovery progress */}
-          {exploring && renderDiscoveryProgress()}
-
-          {/* Map Canvas */}
-          <div className="map-canvas-container">
-            <div className="map-canvas-wrapper">
-              {activeMap.services.length === 0 ? (
-                <div className="empty-state map-empty-canvas">
-                  <h3>No services yet</h3>
-                  <p>Add a service or explore your repos to see what&apos;s out there.</p>
-                  <div className="map-empty-actions">
-                    <button className="btn btn-brass" onClick={openAddService}>
-                      Add Service
-                    </button>
-                    {repos.length > 0 && (
-                      <button
-                        className="btn btn-primary"
-                        onClick={() => setShowExploreModal(true)}
-                        disabled={exploring}
-                      >
-                        Explore
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ) : (
-                <svg
-                  ref={svgRef}
-                  className="map-svg"
-                  viewBox="0 0 1200 800"
-                  preserveAspectRatio="xMidYMid meet"
-                  onMouseMove={handleSvgMouseMove}
-                  onMouseUp={handleSvgMouseUp}
-                  onMouseLeave={handleSvgMouseUp}
-                  onClick={() => setSelectedServiceId(null)}
-                >
-                  <defs>
-                    {/* Subtle sketch filter for hand-drawn feel */}
-                    <filter id="sketch">
-                      <feTurbulence
-                        type="turbulence"
-                        baseFrequency="0.03"
-                        numOctaves={2}
-                        seed={7}
-                        result="warp"
-                      />
-                      <feDisplacementMap
-                        in="SourceGraphic"
-                        in2="warp"
-                        scale={1.5}
-                        xChannelSelector="R"
-                        yChannelSelector="G"
-                      />
-                    </filter>
-                    {/* Dot pattern for grid background */}
-                    <pattern id="dot-grid" x="0" y="0" width="40" height="40" patternUnits="userSpaceOnUse">
-                      <circle cx="20" cy="20" r="1" fill="var(--border)" opacity="0.4" />
-                    </pattern>
-                  </defs>
-
-                  {/* Clean background */}
-                  <rect width="1200" height="800" fill="var(--bg)" />
-
-                  {/* Dot grid */}
-                  <rect width="1200" height="800" fill="url(#dot-grid)" />
-
-                  {/* Map title */}
-                  <text
-                    x={32}
-                    y={36}
-                    className="map-title-text"
-                    fill="var(--muted)"
+                {repos.length > 0 && (
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => setShowExploreModal(true)}
+                    disabled={exploring}
                   >
-                    {activeMap.name}
-                  </text>
-
-                  {/* Connections (drawn first, under nodes) */}
-                  {activeMap.connections.map(renderConnectionPath)}
-
-                  {/* Service nodes */}
-                  {activeMap.services.map(renderServiceNode)}
-                </svg>
-              )}
+                    Explore
+                  </button>
+                )}
+              </div>
             </div>
+          ) : (
+            <svg
+              ref={svgRef}
+              className="map-svg"
+              viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`}
+              preserveAspectRatio="xMidYMid meet"
+              onMouseDown={handleCanvasMouseDown}
+              onMouseMove={handleCanvasMouseMove}
+              onMouseUp={handleSvgMouseUp}
+              onMouseLeave={handleSvgMouseUp}
+              onClick={() => { if (!isPanning) setSelectedServiceId(null); }}
+              style={{ cursor: isPanning ? "grabbing" : dragServiceId ? "grabbing" : "default" }}
+            >
+              <defs>
+                <pattern id="dot-grid" x="0" y="0" width="40" height="40" patternUnits="userSpaceOnUse">
+                  <circle cx="20" cy="20" r="1" fill="var(--border)" opacity="0.4" />
+                </pattern>
+              </defs>
 
-            {/* Side panels */}
-            <div className="map-side-panels">
-              {renderServiceDetail()}
-              {renderLegend()}
-            </div>
-          </div>
-        </>
-      )}
+              <rect x={viewBox.x - 2000} y={viewBox.y - 2000} width={viewBox.w + 4000} height={viewBox.h + 4000} fill="var(--bg)" />
+              <rect x={viewBox.x - 2000} y={viewBox.y - 2000} width={viewBox.w + 4000} height={viewBox.h + 4000} fill="url(#dot-grid)" />
+
+              {activeMap.connections.map(renderConnectionPath)}
+              {activeMap.services.map(renderServiceNode)}
+            </svg>
+          )}
+
+          {/* Detail panel overlaid on map */}
+          {selectedServiceId && renderServiceDetail()}
+        </div>
+
+        {/* Legend bar at bottom of canvas area */}
+        {activeMap.services.length > 0 && renderLegendBar()}
+      </div>
 
       {/* Modals */}
       {showNewMapModal && renderNewMapModal()}

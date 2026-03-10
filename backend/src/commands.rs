@@ -2072,73 +2072,142 @@ pub fn start_map_discovery(
         let escaped_usr = shell_quote(&usr_prompt_path.to_string_lossy());
 
         commands.push(format!(
-            "cd {} && claude --print --append-system-prompt \"$(cat {})\" \"$(cat {})\"",
+            "cd {} && claude --print --permission-mode bypassPermissions --allowedTools 'Read,Glob,Grep,Write' --append-system-prompt \"$(cat {})\" \"$(cat {})\"",
             escaped_path, escaped_sys, escaped_usr
         ));
     }
 
-    // For multiple repos, run in parallel with subshells
+    // For multiple repos, show parallel invocations
     let full_command = if commands.len() == 1 {
-        format!("echo 'Exploring {} for map: {}...' && {}", repos[0].name, map_name, commands[0])
+        format!("# Exploring {} for map: {}\n{}", repos[0].name, map_name, commands[0])
     } else {
-        let parallel: Vec<String> = repos
+        let parts: Vec<String> = repos
             .iter()
             .zip(commands.iter())
             .map(|(repo, cmd)| {
-                format!("(echo 'Exploring {}...' && {}) &", repo.name, cmd)
+                format!("# Exploring {}\n{}", repo.name, cmd)
             })
             .collect();
         format!(
-            "echo 'Sending {} scouts for map: {}...' && {} wait && echo 'All scouts returned.'",
+            "# Sending {} scouts for map: {}\n{}",
             repos.len(),
             map_name,
-            parallel.join(" "),
+            parts.join("\n\n"),
         )
     };
 
     Ok(full_command)
 }
 
-/// Start map discovery in an embedded PTY terminal.
-/// Spawns the discovery command (one or more Claude agents) inside a PTY so
-/// the user sees output in an embedded terminal within the app.
+/// Start map discovery by spawning Claude processes directly (one per repo).
+/// Each process runs `claude --print` with the prompt piped via stdin and
+/// writes discovery JSON files that `poll_map_discovery` checks.
 #[tauri::command]
 pub fn start_discovery_pty(
-    app_handle: tauri::AppHandle,
+    _app_handle: tauri::AppHandle,
     state: State<AppState>,
-    pty_sessions: State<pty::PtySessions>,
+    _pty_sessions: State<pty::PtySessions>,
     map_id: String,
     repo_ids: Vec<String>,
-    cols: u16,
-    rows: u16,
+    _cols: u16,
+    _rows: u16,
 ) -> Result<String, String> {
-    // Build the discovery shell command (reuse start_map_discovery logic)
-    let full_command = start_map_discovery(state.clone(), map_id.clone(), repo_ids)?;
+    if repo_ids.is_empty() {
+        return Err("At least one repository must be selected".to_string());
+    }
+
+    let maps = state.system_maps.lock().unwrap();
+    let _map = maps.get(&map_id).ok_or("System map not found")?;
+    drop(maps);
+
+    let repos_lock = state.repositories.lock().unwrap();
+    let repos: Vec<Repository> = repo_ids
+        .iter()
+        .map(|id| {
+            repos_lock
+                .get(id)
+                .cloned()
+                .ok_or(format!("Repository not found: {}", id))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    drop(repos_lock);
+
+    // Create discovery directory
+    let discovery_dir = Path::new(&state.gmb_path)
+        .join("discoveries")
+        .join(&map_id);
+    std::fs::create_dir_all(&discovery_dir)
+        .map_err(|e| format!("Failed to create discovery dir: {}", e))?;
+
+    // Write prompt files for each repo
+    let mut repo_prompts: Vec<(String, String, String)> = Vec::new(); // (repo_path, system_prompt, user_prompt)
+    for repo in &repos {
+        let repo_context = generate_context_pack_string(&repo.path);
+        let output_file = discovery_dir.join(format!("{}.json", repo.id));
+
+        let system_prompt =
+            prompts::map_discovery_system_prompt(&repo.name, &repo_context);
+        let user_prompt =
+            prompts::map_discovery_user_prompt(&repo.name, &output_file.to_string_lossy());
+
+        // Also write prompt files so start_map_discovery can still generate the command string
+        let sys_prompt_path = discovery_dir.join(format!("{}-system.md", repo.id));
+        let usr_prompt_path = discovery_dir.join(format!("{}-user.md", repo.id));
+        std::fs::write(&sys_prompt_path, &system_prompt)
+            .map_err(|e| format!("Failed to write system prompt: {}", e))?;
+        std::fs::write(&usr_prompt_path, &user_prompt)
+            .map_err(|e| format!("Failed to write user prompt: {}", e))?;
+
+        repo_prompts.push((repo.path.clone(), system_prompt, user_prompt));
+    }
 
     let session_id = format!("discovery-{}", map_id);
 
-    let prefs = state.preferences.lock().unwrap().clone();
-    let shell = if prefs.shell.is_empty() {
-        "/bin/bash".to_string()
-    } else {
-        prefs.shell.clone()
-    };
-
-    let home_dir = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-
-    pty::spawn_pty_session(
-        &app_handle,
-        &session_id,
-        &shell,
-        &["-c".to_string(), full_command],
-        &home_dir,
-        cols,
-        rows,
-        &pty_sessions,
-        &[],
-    )?;
+    // Spawn all repos as background processes that can write their output JSON files
+    for (repo_path, system_prompt, user_prompt) in &repo_prompts {
+        spawn_discovery_process(repo_path, system_prompt, user_prompt)?;
+    }
 
     Ok(session_id)
+}
+
+/// Spawn a Claude discovery process in the background.
+/// Uses --print with --append-system-prompt so Claude can write the discovery JSON file.
+fn spawn_discovery_process(
+    work_dir: &str,
+    system_prompt: &str,
+    user_prompt: &str,
+) -> Result<(), String> {
+    use std::io::Write as IoWrite;
+
+    let mut cmd = std::process::Command::new("claude");
+    cmd.arg("--print")
+        .arg("--permission-mode").arg("bypassPermissions")
+        .arg("--allowedTools").arg("Read,Glob,Grep,Write")
+        .arg("--append-system-prompt").arg(system_prompt)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .current_dir(work_dir);
+
+    let mut child = cmd.spawn()
+        .map_err(|e| format!("Failed to start Claude: {}", e))?;
+
+    // Write user prompt to stdin
+    if let Some(mut stdin) = child.stdin.take() {
+        let prompt_bytes = user_prompt.as_bytes().to_vec();
+        std::thread::spawn(move || {
+            let _ = stdin.write_all(&prompt_bytes);
+            // stdin drops here, closing the pipe
+        });
+    }
+
+    // Monitor in background
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
+
+    Ok(())
 }
 
 /// Poll for discovery results. Checks if per-repo discovery JSON files exist,
@@ -2245,7 +2314,22 @@ pub fn poll_map_discovery(
     if complete && found > 0 {
         let mut maps = state.system_maps.lock().unwrap();
         if let Some(map) = maps.get_mut(&map_id) {
-            // Merge — append discovered services/connections (don't overwrite manual ones)
+            // Remove previously discovered services for these repos to avoid duplicates,
+            // but keep manually added services (those with no repo_id).
+            let scanned_repo_ids: std::collections::HashSet<&String> = repo_ids.iter().collect();
+            map.services.retain(|s| {
+                match &s.repo_id {
+                    Some(rid) => !scanned_repo_ids.contains(rid),
+                    None => true, // keep manually added services
+                }
+            });
+            // Remove connections that reference removed services
+            let remaining_ids: std::collections::HashSet<&String> =
+                map.services.iter().map(|s| &s.id).collect();
+            map.connections.retain(|c| {
+                remaining_ids.contains(&c.from_service) && remaining_ids.contains(&c.to_service)
+            });
+            // Add newly discovered services and connections
             map.services.extend(all_services.clone());
             map.connections.extend(all_connections.clone());
             map.updated_at = Utc::now();
