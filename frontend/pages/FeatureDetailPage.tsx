@@ -6,6 +6,7 @@ import { useBackgroundPlanning } from "../hooks/useBackgroundPlanning";
 import { useCommandDisplay, CommandDisplayButton, CommandDisplayContent } from "../components/CommandDisplay";
 import { TaskTable, ExecutionModeSelector, EditTaskModal, PlanHistory } from "./feature-detail/PlanningComponents";
 import { ValidationPanel } from "./feature-detail/ValidationPanel";
+import { ActivityLog, buildActivityLog } from "../components/ActivityLog";
 import type {
   Feature,
   Repository,
@@ -578,6 +579,9 @@ export function FeatureDetailPage() {
     }
   };
 
+  // Activity log
+  const [showActivityLog, setShowActivityLog] = useState(false);
+
   // Delete
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const handleDelete = async () => {
@@ -1065,6 +1069,33 @@ export function FeatureDetailPage() {
           analysis={analysis}
         />
       )}
+
+      {/* Activity Log */}
+      <div className="panel" style={{ marginTop: 16 }}>
+        <div
+          className="panel-header"
+          style={{ cursor: "pointer", marginBottom: showActivityLog ? 16 : 0 }}
+          onClick={() => setShowActivityLog(!showActivityLog)}
+        >
+          <div className="panel-title" style={{ fontSize: 14 }}>
+            Activity Log
+          </div>
+          <span style={{ fontSize: 12, color: "var(--muted)" }}>
+            {showActivityLog ? "Hide" : "Show"}
+          </span>
+        </div>
+        {showActivityLog && (
+          <ActivityLog
+            entries={buildActivityLog(
+              feature,
+              planHistory,
+              taskProgress,
+              verifyResult,
+              analysis,
+            )}
+          />
+        )}
+      </div>
 
       {/* Edit Task Dialog */}
       {editingTask !== null && editDraft && (

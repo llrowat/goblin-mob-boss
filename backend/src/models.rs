@@ -653,6 +653,15 @@ impl SystemMap {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Preferences {
     pub shell: String,
+    /// Default execution mode for new features ("teams" or "subagents"). Empty = use recommendation.
+    #[serde(default)]
+    pub default_execution_mode: String,
+    /// Default Claude model to use in ideation prompts. Empty = use default.
+    #[serde(default)]
+    pub default_model: String,
+    /// Whether to auto-run validators when a feature reaches the ready state.
+    #[serde(default)]
+    pub auto_validate: bool,
 }
 
 impl Default for Preferences {
@@ -662,7 +671,12 @@ impl Default for Preferences {
         } else {
             "bash".to_string()
         };
-        Self { shell }
+        Self {
+            shell,
+            default_execution_mode: String::new(),
+            default_model: String::new(),
+            auto_validate: false,
+        }
     }
 }
 
@@ -950,6 +964,35 @@ Review code for issues."#;
     fn preferences_default() {
         let prefs = Preferences::default();
         assert!(!prefs.shell.is_empty());
+        assert_eq!(prefs.default_execution_mode, "");
+        assert_eq!(prefs.default_model, "");
+        assert!(!prefs.auto_validate);
+    }
+
+    #[test]
+    fn preferences_deserializes_legacy_format() {
+        // Old preferences without new fields should still load fine
+        let json = r#"{"shell": "zsh"}"#;
+        let prefs: Preferences = serde_json::from_str(json).unwrap();
+        assert_eq!(prefs.shell, "zsh");
+        assert_eq!(prefs.default_execution_mode, "");
+        assert_eq!(prefs.default_model, "");
+        assert!(!prefs.auto_validate);
+    }
+
+    #[test]
+    fn preferences_serializes_new_fields() {
+        let prefs = Preferences {
+            shell: "bash".to_string(),
+            default_execution_mode: "teams".to_string(),
+            default_model: "claude-opus-4-6".to_string(),
+            auto_validate: true,
+        };
+        let json = serde_json::to_string(&prefs).unwrap();
+        let parsed: Preferences = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.default_execution_mode, "teams");
+        assert_eq!(parsed.default_model, "claude-opus-4-6");
+        assert!(parsed.auto_validate);
     }
 
     #[test]

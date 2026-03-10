@@ -167,6 +167,9 @@ export interface RepoInfo {
 
 export interface Preferences {
   shell: string;
+  default_execution_mode: string;
+  default_model: string;
+  auto_validate: boolean;
 }
 
 // ── Recipes ──
