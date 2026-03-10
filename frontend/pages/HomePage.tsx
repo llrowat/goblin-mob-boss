@@ -197,7 +197,7 @@ export function HomePage() {
           <>
             <div>
               <div
-                className="sidebar-section-label"
+                className="section-label"
                 style={{
                   padding: "0 0 8px",
                   display: "flex",
@@ -237,7 +237,7 @@ export function HomePage() {
             {completedFeatures.length > 0 && (
               <div style={{ marginTop: 24 }}>
                 <div
-                  className="sidebar-section-label"
+                  className="section-label"
                   style={{ padding: "0 0 8px" }}
                 >
                   Completed

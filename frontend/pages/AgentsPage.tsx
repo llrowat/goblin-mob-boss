@@ -195,7 +195,7 @@ export function AgentsPage() {
       {unappliedBuiltIns.length > 0 && (
         <>
           <div
-            className="sidebar-section-label"
+            className="section-label"
             style={{ padding: agents.length > 0 ? "20px 0 8px" : "0 0 8px" }}
           >
             Built-in Agents
