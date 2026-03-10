@@ -131,6 +131,7 @@ describe("useTauri", () => {
       defaultExecutionMode: null,
       defaultModel: null,
       autoValidate: null,
+      functionalTestingEnabled: null,
     });
   });
 
@@ -163,5 +164,78 @@ describe("useTauri", () => {
     expect(invoke).toHaveBeenCalledWith("mark_feature_executing", {
       featureId: "feature-1",
     });
+  });
+
+  it("startFunctionalTesting passes featureId, cols, rows", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce("session-id");
+    const { result } = renderHook(() => useTauri());
+    await result.current.startFunctionalTesting("feature-1", 120, 40);
+    expect(invoke).toHaveBeenCalledWith("start_functional_testing", {
+      featureId: "feature-1",
+      cols: 120,
+      rows: 40,
+    });
+  });
+
+  it("skipFunctionalTesting passes featureId", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce({});
+    const { result } = renderHook(() => useTauri());
+    await result.current.skipFunctionalTesting("feature-1");
+    expect(invoke).toHaveBeenCalledWith("skip_functional_testing", {
+      featureId: "feature-1",
+    });
+  });
+
+  it("completeFunctionalTesting passes featureId", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce({});
+    const { result } = renderHook(() => useTauri());
+    await result.current.completeFunctionalTesting("feature-1");
+    expect(invoke).toHaveBeenCalledWith("complete_functional_testing", {
+      featureId: "feature-1",
+    });
+  });
+
+  it("getFunctionalTestResults passes featureId", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce([]);
+    const { result } = renderHook(() => useTauri());
+    await result.current.getFunctionalTestResults("feature-1");
+    expect(invoke).toHaveBeenCalledWith("get_functional_test_results", {
+      featureId: "feature-1",
+    });
+  });
+
+  it("markFeatureTesting passes featureId", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce({});
+    const { result } = renderHook(() => useTauri());
+    await result.current.markFeatureTesting("feature-1");
+    expect(invoke).toHaveBeenCalledWith("mark_feature_testing", {
+      featureId: "feature-1",
+    });
+  });
+
+  it("setPreferences passes functionalTestingEnabled when provided", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce({});
+    const { result } = renderHook(() => useTauri());
+    await result.current.setPreferences({
+      shell: "bash",
+      functionalTestingEnabled: true,
+    });
+    expect(invoke).toHaveBeenCalledWith("set_preferences", {
+      shell: "bash",
+      defaultExecutionMode: null,
+      defaultModel: null,
+      autoValidate: null,
+      functionalTestingEnabled: true,
+    });
+  });
+
+  it("returns functional testing methods", () => {
+    const { result } = renderHook(() => useTauri());
+    const tauri = result.current;
+    expect(typeof tauri.startFunctionalTesting).toBe("function");
+    expect(typeof tauri.skipFunctionalTesting).toBe("function");
+    expect(typeof tauri.completeFunctionalTesting).toBe("function");
+    expect(typeof tauri.getFunctionalTestResults).toBe("function");
+    expect(typeof tauri.markFeatureTesting).toBe("function");
   });
 });

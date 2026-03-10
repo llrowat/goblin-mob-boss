@@ -24,11 +24,22 @@ The user has these agents configured:
 /// Contains the feature description and all planning instructions.
 /// `quality_agents` is a formatted list of agents with role "quality" — when non-empty,
 /// the prompt instructs the planner to always include a verification task using them.
+/// `functional_testing_enabled` adds a section for functional test planning.
 pub fn ideation_user_prompt(
     description: &str,
     tasks_dir: &str,
     available_agents: &str,
     quality_agents: &str,
+) -> String {
+    ideation_user_prompt_with_testing(description, tasks_dir, available_agents, quality_agents, false)
+}
+
+pub fn ideation_user_prompt_with_testing(
+    description: &str,
+    tasks_dir: &str,
+    available_agents: &str,
+    quality_agents: &str,
+    functional_testing_enabled: bool,
 ) -> String {
     let quality_section = if quality_agents.is_empty() {
         String::new()
@@ -51,6 +62,46 @@ This verification step is mandatory and must not be skipped.
 "#,
             quality_agents = quality_agents,
         )
+    };
+
+    let functional_testing_section = if functional_testing_enabled {
+        r#"## Functional Testing Plan
+
+This project has functional testing enabled. After implementation, a QA agent will exercise the running application to verify the feature works.
+
+In your plan.json, include these additional fields:
+
+```json
+{
+  "test_harness": {
+    "start_command": "npm run dev",
+    "ready_signal": "Local: http://localhost:5173",
+    "stop_command": "",
+    "harness_type": "browser"
+  },
+  "functional_test_steps": [
+    {
+      "description": "What to test — e.g. 'Login page loads and shows email/password fields'",
+      "tool": "playwright|curl|cli",
+      "agent": "qa-goblin"
+    }
+  ]
+}
+```
+
+Rules for functional testing:
+- `test_harness` describes how to start/stop the application for testing
+  - `harness_type`: "browser" (web UI), "api" (HTTP endpoints), or "cli" (command-line)
+  - `ready_signal`: stdout substring or URL that indicates the app is ready
+- `functional_test_steps`: 3-8 steps that exercise the NEW feature
+  - Focus on verifying the feature works, not exhaustive testing
+  - Each step should be automatable (no manual browser interaction)
+  - Assign steps to "qa-goblin" agent
+- If the feature is purely internal (no user-facing changes), you may omit these fields
+
+"#.to_string()
+    } else {
+        String::new()
     };
 
     format!(
@@ -137,7 +188,7 @@ After defining tasks, recommend an execution mode:
 **"teams"** — 4+ parallel tasks, different files/directories, multiple agent roles, few dependencies
 **"subagents"** — fewer tasks, sequential work, tightly coupled modules, heavy coordination needed
 
-{quality_section}## Rules
+{quality_section}{functional_testing_section}## Rules
 
 - The ONLY files you may create are `{tasks_dir}/plan.json` or `{tasks_dir}/questions.json`.
 - Do NOT write code, tests, configuration, or any other files.
@@ -147,6 +198,7 @@ After defining tasks, recommend an execution mode:
         tasks_dir = tasks_dir,
         available_agents = available_agents,
         quality_section = quality_section,
+        functional_testing_section = functional_testing_section,
     )
 }
 
@@ -159,7 +211,22 @@ pub fn ideation_user_prompt_with_answers(
     quality_agents: &str,
     answers: &[crate::models::PlanningAnswer],
 ) -> String {
-    let base = ideation_user_prompt(description, tasks_dir, available_agents, quality_agents);
+    ideation_user_prompt_with_answers_and_testing(
+        description, tasks_dir, available_agents, quality_agents, answers, false,
+    )
+}
+
+pub fn ideation_user_prompt_with_answers_and_testing(
+    description: &str,
+    tasks_dir: &str,
+    available_agents: &str,
+    quality_agents: &str,
+    answers: &[crate::models::PlanningAnswer],
+    functional_testing_enabled: bool,
+) -> String {
+    let base = ideation_user_prompt_with_testing(
+        description, tasks_dir, available_agents, quality_agents, functional_testing_enabled,
+    );
 
     let mut answers_section = String::from("\n\n---\n\n## User's Answers to Your Questions\n\n");
     for answer in answers {

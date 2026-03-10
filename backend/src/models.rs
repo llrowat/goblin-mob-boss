@@ -225,6 +225,8 @@ pub enum FeatureStatus {
     Ideation,
     Configuring,
     Executing,
+    /// Functional testing in progress — QA agent is exercising the running app.
+    Testing,
     Ready,
     Failed,
     Pushed,
@@ -280,8 +282,30 @@ pub struct Feature {
     /// History of prior plan snapshots, captured before each revision or restart.
     #[serde(default)]
     pub plan_history: Vec<PlanSnapshot>,
+    /// Functional test steps discovered during ideation.
+    #[serde(default)]
+    pub functional_test_steps: Vec<FunctionalTestStep>,
+    /// Test harness config — how to start/stop the app for functional testing.
+    #[serde(default)]
+    pub test_harness: Option<TestHarness>,
+    /// Current functional testing attempt count.
+    #[serde(default)]
+    pub testing_attempt: u32,
+    /// Maximum functional testing attempts before giving up.
+    #[serde(default = "default_max_testing_attempts")]
+    pub max_testing_attempts: u32,
+    /// Whether functional testing was skipped by the user.
+    #[serde(default)]
+    pub testing_skipped: bool,
+    /// Results from functional testing rounds.
+    #[serde(default)]
+    pub functional_test_results: Vec<FunctionalTestResult>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+fn default_max_testing_attempts() -> u32 {
+    3
 }
 
 impl Feature {
@@ -304,6 +328,12 @@ impl Feature {
             worktree_paths: std::collections::HashMap::new(),
             repo_push_status: std::collections::HashMap::new(),
             plan_history: vec![],
+            functional_test_steps: vec![],
+            test_harness: None,
+            testing_attempt: 0,
+            max_testing_attempts: default_max_testing_attempts(),
+            testing_skipped: false,
+            functional_test_results: vec![],
             created_at: now,
             updated_at: now,
         }
@@ -461,6 +491,12 @@ pub struct IdeationResult {
     /// Previously answered questions for display in the UI.
     #[serde(default)]
     pub answered_questions: Option<Vec<PlanningAnswer>>,
+    /// Functional test harness discovered during ideation.
+    #[serde(default)]
+    pub test_harness: Option<TestHarness>,
+    /// Functional test steps discovered during ideation.
+    #[serde(default)]
+    pub functional_test_steps: Option<Vec<FunctionalTestStep>>,
 }
 
 // ── Validator Results ──
@@ -479,6 +515,77 @@ pub struct VerifyResult {
     pub attempt: u32,
     pub all_passed: bool,
     pub results: Vec<ValidatorResult>,
+    pub timestamp: DateTime<Utc>,
+}
+
+// ── Functional Testing ──
+
+/// How to start/stop the application for functional testing.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TestHarness {
+    /// Shell command to start the app (e.g. "npm run dev", "cargo run").
+    pub start_command: String,
+    /// How to detect the app is ready. Either a stdout substring or a URL to poll.
+    #[serde(default)]
+    pub ready_signal: String,
+    /// Shell command to stop the app, if needed (otherwise the process is killed).
+    #[serde(default)]
+    pub stop_command: String,
+    /// Type of testing the QA agent should perform.
+    #[serde(default)]
+    pub harness_type: HarnessType,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum HarnessType {
+    Browser,
+    Api,
+    Cli,
+}
+
+impl Default for HarnessType {
+    fn default() -> Self {
+        HarnessType::Browser
+    }
+}
+
+/// A single functional test step to be executed by the QA agent.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FunctionalTestStep {
+    /// Human-readable description of what to test.
+    pub description: String,
+    /// Tool to use: "playwright", "curl", "cli", etc.
+    #[serde(default)]
+    pub tool: String,
+    /// Which agent should execute this step (filename without .md).
+    #[serde(default)]
+    pub agent: String,
+}
+
+/// A proof artifact captured during functional testing — screenshots, API responses, etc.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TestProof {
+    /// What was being tested.
+    pub step_description: String,
+    /// Type of proof: "screenshot", "api_response", "console_output", "error".
+    pub proof_type: String,
+    /// File path (relative to .gmb/features/{id}/proofs/) or inline content.
+    pub content: String,
+    /// Whether this step passed.
+    pub passed: bool,
+    /// Optional error or failure description.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    pub timestamp: DateTime<Utc>,
+}
+
+/// Summary of a functional testing round.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FunctionalTestResult {
+    pub attempt: u32,
+    pub all_passed: bool,
+    pub proofs: Vec<TestProof>,
     pub timestamp: DateTime<Utc>,
 }
 
@@ -662,6 +769,9 @@ pub struct Preferences {
     /// Whether to auto-run validators when a feature reaches the ready state.
     #[serde(default)]
     pub auto_validate: bool,
+    /// Whether functional testing (QA loop) is enabled for new features.
+    #[serde(default)]
+    pub functional_testing_enabled: bool,
 }
 
 impl Default for Preferences {
@@ -676,6 +786,7 @@ impl Default for Preferences {
             default_execution_mode: String::new(),
             default_model: String::new(),
             auto_validate: false,
+            functional_testing_enabled: false,
         }
     }
 }

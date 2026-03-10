@@ -1,4 +1,5 @@
 use crate::analytics;
+use crate::functional_testing;
 use crate::git;
 use crate::guidance;
 use crate::heuristics;
@@ -387,11 +388,13 @@ pub fn start_feature(
     std::fs::write(ideation_dir.join("system-prompt.md"), &system_prompt)
         .map_err(|e| format!("Failed to write system prompt: {}", e))?;
 
-    let user_prompt = prompts::ideation_user_prompt(
+    let ft_enabled = state.preferences.lock().unwrap().functional_testing_enabled;
+    let user_prompt = prompts::ideation_user_prompt_with_testing(
         &feature.description,
         &tasks_dir.to_string_lossy(),
         &agent_list,
         &quality_agent_list,
+        ft_enabled,
     );
     std::fs::write(ideation_dir.join("user-prompt.md"), &user_prompt)
         .map_err(|e| format!("Failed to write user prompt: {}", e))?;
@@ -712,6 +715,8 @@ pub fn configure_launch(
     execution_rationale: String,
     selected_agents: Vec<String>,
     task_specs: Vec<TaskSpec>,
+    #[allow(unused_variables)] test_harness: Option<TestHarness>,
+    #[allow(unused_variables)] functional_test_steps: Option<Vec<FunctionalTestStep>>,
 ) -> Result<Feature, String> {
     let mut features = state.features.lock().unwrap();
     let feature = features.get_mut(&feature_id).ok_or("Feature not found")?;
@@ -719,6 +724,12 @@ pub fn configure_launch(
     feature.execution_rationale = Some(execution_rationale);
     feature.selected_agents = selected_agents;
     feature.task_specs = task_specs;
+    if let Some(h) = test_harness {
+        feature.test_harness = Some(h);
+    }
+    if let Some(steps) = functional_test_steps {
+        feature.functional_test_steps = steps;
+    }
     // Status stays as-is; markFeatureExecuting transitions to Executing
     feature.updated_at = Utc::now();
     let updated = feature.clone();
@@ -1034,6 +1045,220 @@ pub fn run_feature_validators(
     })
 }
 
+// ── Functional Testing Commands ──
+
+/// Start functional testing for a feature — transitions to Testing status,
+/// increments the attempt counter, and spawns a QA agent PTY session.
+#[tauri::command]
+pub fn start_functional_testing(
+    app_handle: tauri::AppHandle,
+    state: State<AppState>,
+    pty_sessions: State<pty::PtySessions>,
+    feature_id: String,
+    cols: u16,
+    rows: u16,
+) -> Result<String, String> {
+    let mut features = state.features.lock().unwrap();
+    let feature = features.get_mut(&feature_id).ok_or("Feature not found")?;
+
+    let harness = feature
+        .test_harness
+        .clone()
+        .ok_or("No test harness configured for this feature")?;
+
+    feature.testing_attempt += 1;
+    let attempt = feature.testing_attempt;
+
+    if attempt > feature.max_testing_attempts {
+        feature.status = FeatureStatus::Failed;
+        feature.updated_at = Utc::now();
+        let updated = feature.clone();
+        drop(features);
+        state.save_features();
+        return Err(format!(
+            "Max testing attempts ({}) exceeded",
+            updated.max_testing_attempts
+        ));
+    }
+
+    feature.status = FeatureStatus::Testing;
+    feature.updated_at = Utc::now();
+    let feature_snapshot = feature.clone();
+    drop(features);
+    state.save_features();
+
+    let repo = get_primary_repo(&state, &feature_snapshot)?;
+    let work_dir = feature_snapshot
+        .worktree_paths
+        .get(&repo.id)
+        .map(|s| s.as_str())
+        .unwrap_or(&repo.path);
+
+    // Ensure proofs directory
+    let proofs_path =
+        functional_testing::ensure_proofs_dir(work_dir, &feature_id, attempt)?;
+    let proofs_path_str = proofs_path.to_string_lossy().to_string();
+
+    // Build prior feedback for re-test rounds
+    let prior_proof_feedback = if attempt > 1 {
+        // Get failures from the previous round
+        feature_snapshot
+            .functional_test_results
+            .last()
+            .map(|r| {
+                r.proofs
+                    .iter()
+                    .filter(|p| !p.passed)
+                    .map(|p| {
+                        format!(
+                            "- {}: {}",
+                            p.step_description,
+                            p.error.as_deref().unwrap_or(&p.content)
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            })
+            .filter(|s| !s.is_empty())
+    } else {
+        None
+    };
+
+    let prompt = functional_testing::build_testing_prompt(
+        &feature_snapshot.name,
+        &feature_snapshot.description,
+        &feature_snapshot.functional_test_steps,
+        &harness,
+        &proofs_path_str,
+        None, // TODO: could pass validator failures
+        prior_proof_feedback.as_deref(),
+    );
+
+    // Build command
+    let prefs = state.preferences.lock().unwrap().clone();
+    let shell = if prefs.shell.is_empty() {
+        "bash".to_string()
+    } else {
+        prefs.shell.clone()
+    };
+
+    let cmd_str = format!(
+        "claude --append-system-prompt 'You are qa-goblin, a functional testing specialist.' '{}'",
+        prompt.replace('\'', "'\\''")
+    );
+
+    let full_cmd = format!("cd {} && {}", work_dir, cmd_str);
+
+    let session_id = pty::spawn_pty_session(
+        &app_handle,
+        &pty_sessions,
+        &shell,
+        &full_cmd,
+        cols,
+        rows,
+        vec![],
+    )?;
+
+    // Store session ID on the feature
+    let mut features = state.features.lock().unwrap();
+    if let Some(f) = features.get_mut(&feature_id) {
+        f.pty_session_id = Some(session_id.clone());
+    }
+    drop(features);
+    state.save_features();
+
+    Ok(session_id)
+}
+
+/// Skip functional testing and move directly to Ready.
+#[tauri::command]
+pub fn skip_functional_testing(
+    state: State<AppState>,
+    feature_id: String,
+) -> Result<Feature, String> {
+    let mut features = state.features.lock().unwrap();
+    let feature = features.get_mut(&feature_id).ok_or("Feature not found")?;
+    feature.testing_skipped = true;
+    feature.status = FeatureStatus::Ready;
+    feature.updated_at = Utc::now();
+    let updated = feature.clone();
+    drop(features);
+    state.save_features();
+    Ok(updated)
+}
+
+/// Mark functional testing as complete — collect proofs and decide next state.
+/// If tests passed → Ready. If failed and attempts remain → back to Executing (fix loop).
+/// If failed and max attempts reached → Failed.
+#[tauri::command]
+pub fn complete_functional_testing(
+    state: State<AppState>,
+    feature_id: String,
+) -> Result<Feature, String> {
+    let features = state.features.lock().unwrap();
+    let feature = features.get(&feature_id).ok_or("Feature not found")?.clone();
+    drop(features);
+
+    let repo = get_primary_repo(&state, &feature)?;
+    let work_dir = feature
+        .worktree_paths
+        .get(&repo.id)
+        .map(|s| s.as_str())
+        .unwrap_or(&repo.path);
+
+    let attempt = feature.testing_attempt;
+    let result = functional_testing::collect_proofs(work_dir, &feature_id, attempt)?;
+
+    let mut features = state.features.lock().unwrap();
+    let feature = features.get_mut(&feature_id).ok_or("Feature not found")?;
+
+    let all_passed = result.all_passed;
+    feature.functional_test_results.push(result);
+
+    if all_passed {
+        feature.status = FeatureStatus::Ready;
+    } else if feature.testing_attempt >= feature.max_testing_attempts {
+        feature.status = FeatureStatus::Failed;
+    } else {
+        // Loop back to executing — implementer needs to fix issues
+        feature.status = FeatureStatus::Executing;
+    }
+
+    feature.pty_session_id = None;
+    feature.updated_at = Utc::now();
+    let updated = feature.clone();
+    drop(features);
+    state.save_features();
+    Ok(updated)
+}
+
+/// Get functional test results for a feature.
+#[tauri::command]
+pub fn get_functional_test_results(
+    state: State<AppState>,
+    feature_id: String,
+) -> Result<Vec<FunctionalTestResult>, String> {
+    let features = state.features.lock().unwrap();
+    let feature = features.get(&feature_id).ok_or("Feature not found")?;
+    Ok(feature.functional_test_results.clone())
+}
+
+/// Mark a feature as entering the testing phase (without spawning a PTY — for auto-transitions).
+#[tauri::command]
+pub fn mark_feature_testing(
+    state: State<AppState>,
+    feature_id: String,
+) -> Result<Feature, String> {
+    let mut features = state.features.lock().unwrap();
+    let feature = features.get_mut(&feature_id).ok_or("Feature not found")?;
+    feature.status = FeatureStatus::Testing;
+    feature.updated_at = Utc::now();
+    let updated = feature.clone();
+    drop(features);
+    state.save_features();
+    Ok(updated)
+}
+
 // ── Diff Commands ──
 
 #[tauri::command]
@@ -1296,11 +1521,13 @@ fn ensure_ideation_prompts(
                 .map_err(|e| format!("Failed to write system prompt: {}", e))?;
         }
         if !user_prompt_path.exists() {
-            let user_prompt = prompts::ideation_user_prompt(
+            let ft_enabled = state.preferences.lock().unwrap().functional_testing_enabled;
+            let user_prompt = prompts::ideation_user_prompt_with_testing(
                 &feature.description,
                 &tasks_dir.to_string_lossy(),
                 &agent_list,
                 &quality_agent_list,
+                ft_enabled,
             );
             std::fs::write(&user_prompt_path, &user_prompt)
                 .map_err(|e| format!("Failed to write user prompt: {}", e))?;
@@ -1686,12 +1913,14 @@ pub fn submit_planning_answers(
     drop(repos);
     let (agent_list, quality_agent_list) = build_agent_lists(&all_repos);
 
-    let user_prompt = prompts::ideation_user_prompt_with_answers(
+    let ft_enabled = state.preferences.lock().unwrap().functional_testing_enabled;
+    let user_prompt = prompts::ideation_user_prompt_with_answers_and_testing(
         &feature.description,
         &tasks_dir.to_string_lossy(),
         &agent_list,
         &quality_agent_list,
         &all_answers,
+        ft_enabled,
     );
 
     let work_dir = feature
@@ -1748,6 +1977,7 @@ pub fn set_preferences(
     default_execution_mode: Option<String>,
     default_model: Option<String>,
     auto_validate: Option<bool>,
+    functional_testing_enabled: Option<bool>,
 ) -> Preferences {
     let mut prefs = state.preferences.lock().unwrap();
     prefs.shell = shell;
@@ -1759,6 +1989,9 @@ pub fn set_preferences(
     }
     if let Some(av) = auto_validate {
         prefs.auto_validate = av;
+    }
+    if let Some(ft) = functional_testing_enabled {
+        prefs.functional_testing_enabled = ft;
     }
     let updated = prefs.clone();
     drop(prefs);

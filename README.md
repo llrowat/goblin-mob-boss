@@ -24,7 +24,8 @@ A desktop app for agent-based AI development workflows. Configure agents, plan f
 - **Interactive planning** — Back-and-forth conversation with Claude in plan mode; task specs written to `plan.json` with automatic polling. Planner can ask clarifying questions via `questions.json` when decisions would materially change the plan — users answer in the UI and planning resumes with full context
 - **Plan history** — Every plan revision, restart, or Q&A round automatically snapshots the previous plan. View prior versions inline with trigger labels, feedback, and task summaries to see how a plan evolved
 - **Launch command generation** — GMB builds the appropriate Claude Code command with environment variables, agent configs, and system prompts for the chosen execution mode
-- **Feature lifecycle** — Features progress through statuses: Ideation → Configuring → Executing → Ready (or Failed)
+- **Feature lifecycle** — Features progress through statuses: Ideation → Configuring → Executing → Testing → Ready (or Failed)
+- **Functional testing loop** — After implementation, an optional QA phase where a dedicated agent (QA Goblin) exercises the running app via browser automation (Playwright), API testing, or CLI to verify the feature works. Test proofs (screenshots, API responses, console output) are captured and displayed in the UI. If tests fail and attempts remain, the feature loops back to implementation for fixes. Configurable via Settings and skippable per-feature.
 
 ### Execution Observability
 - **Live progress tracking** — During execution, GMB polls git activity on the feature branch showing: commit count, files changed, insertions/deletions, recent commit messages, and active file list
@@ -65,7 +66,7 @@ A desktop app for agent-based AI development workflows. Configure agents, plan f
 ### UX
 - **Toast notifications** — Non-intrusive, auto-dismissing toast messages for confirmations and errors. Toasts appear in the bottom-right corner and can be clicked to dismiss.
 - **Activity log** — Collapsible timeline on each feature detail page showing the full lifecycle: creation, plan revisions, Q&A rounds, execution launch, task progress, validation results, push status, and completion. Built from existing feature data — no extra backend storage needed.
-- **Configurable preferences** — Settings page includes shell selection, default execution mode (Teams/Subagents/auto), preferred Claude model, and auto-validate toggle.
+- **Configurable preferences** — Settings page includes shell selection, default execution mode (Teams/Subagents/auto), preferred Claude model, auto-validate toggle, and functional testing toggle.
 
 ### Infrastructure
 - **Repository management** — Register local git repos, configure base branch, validators, PR commands, and similar repositories. Similar repos serve as pattern hints during ideation, giving agents reference implementations to follow.
@@ -90,7 +91,8 @@ goblin-mob-boss/
 │   │   ├── observer.rs         # Execution observability (git activity polling)
 │   │   ├── analytics.rs        # Post-execution analysis (plan vs reality)
 │   │   ├── guidance.rs         # Mid-execution guidance notes
-│   │   └── heuristics.rs       # Task graph analysis and mode recommendation
+│   │   ├── heuristics.rs       # Task graph analysis and mode recommendation
+│   │   └── functional_testing.rs # Functional testing loop (proof collection, QA prompts)
 │   └── tauri.conf.json
 ├── frontend/           # React (TypeScript) frontend
 │   ├── components/     # AddRepoModal, StatusBadge, Terminal, ToastContainer, ActivityLog

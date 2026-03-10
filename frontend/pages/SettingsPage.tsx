@@ -30,6 +30,7 @@ export function SettingsPage() {
   const [defaultExecutionMode, setDefaultExecutionMode] = useState("");
   const [defaultModel, setDefaultModel] = useState("");
   const [autoValidate, setAutoValidate] = useState(false);
+  const [functionalTestingEnabled, setFunctionalTestingEnabled] = useState(false);
 
   useEffect(() => {
     tauri.getPreferences().then((prefs) => {
@@ -37,6 +38,7 @@ export function SettingsPage() {
       setDefaultExecutionMode(prefs.default_execution_mode || "");
       setDefaultModel(prefs.default_model || "");
       setAutoValidate(prefs.auto_validate || false);
+      setFunctionalTestingEnabled(prefs.functional_testing_enabled || false);
     });
   }, []);
 
@@ -46,6 +48,7 @@ export function SettingsPage() {
       defaultExecutionMode,
       defaultModel,
       autoValidate,
+      functionalTestingEnabled,
     });
     addToast("Settings saved", "success");
   };
@@ -145,6 +148,30 @@ export function SettingsPage() {
           </label>
           <div className="form-help" style={{ marginLeft: 26 }}>
             Automatically kick off validators as soon as a feature reaches the ready state.
+          </div>
+        </div>
+
+        <div className="form-group">
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              cursor: "pointer",
+              fontSize: 14,
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={functionalTestingEnabled}
+              onChange={(e) => setFunctionalTestingEnabled(e.target.checked)}
+              style={{ accentColor: "var(--accent)", width: 16, height: 16 }}
+            />
+            Enable functional testing loop
+          </label>
+          <div className="form-help" style={{ marginLeft: 26 }}>
+            After implementation, a QA goblin exercises the running app to verify the feature works.
+            Best-effort — can be skipped per feature.
           </div>
         </div>
       </div>

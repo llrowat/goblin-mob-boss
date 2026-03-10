@@ -38,12 +38,44 @@ export type FeatureStatus =
   | "ideation"
   | "configuring"
   | "executing"
+  | "testing"
   | "ready"
   | "failed"
   | "pushed"
   | "complete";
 
 export type RepoPushStatus = "pending" | "pushed" | "failed";
+
+export type HarnessType = "browser" | "api" | "cli";
+
+export interface TestHarness {
+  start_command: string;
+  ready_signal: string;
+  stop_command: string;
+  harness_type: HarnessType;
+}
+
+export interface FunctionalTestStep {
+  description: string;
+  tool: string;
+  agent: string;
+}
+
+export interface TestProof {
+  step_description: string;
+  proof_type: string;
+  content: string;
+  passed: boolean;
+  error: string | null;
+  timestamp: string;
+}
+
+export interface FunctionalTestResult {
+  attempt: number;
+  all_passed: boolean;
+  proofs: TestProof[];
+  timestamp: string;
+}
 
 export interface Feature {
   id: string;
@@ -66,6 +98,18 @@ export interface Feature {
   worktree_paths: Record<string, string>;
   /** Per-repo push status. Maps repo_id -> push status. */
   repo_push_status: Record<string, RepoPushStatus>;
+  /** Functional test steps from ideation. */
+  functional_test_steps: FunctionalTestStep[];
+  /** Test harness config for starting the app. */
+  test_harness: TestHarness | null;
+  /** Current testing attempt number. */
+  testing_attempt: number;
+  /** Max testing attempts before giving up. */
+  max_testing_attempts: number;
+  /** Whether functional testing was skipped. */
+  testing_skipped: boolean;
+  /** Results from functional testing rounds. */
+  functional_test_results: FunctionalTestResult[];
   created_at: string;
   updated_at: string;
 }
@@ -99,6 +143,8 @@ export interface IdeationResult {
   execution_mode: ExecutionRecommendation | null;
   questions: PlanningQuestion[] | null;
   answered_questions: PlanningAnswer[] | null;
+  test_harness: TestHarness | null;
+  functional_test_steps: FunctionalTestStep[] | null;
 }
 
 // ── Plan History ──
@@ -170,6 +216,7 @@ export interface Preferences {
   default_execution_mode: string;
   default_model: string;
   auto_validate: boolean;
+  functional_testing_enabled: boolean;
 }
 
 // ── Recipes ──

@@ -474,6 +474,11 @@ body {
   color: var(--muted);
 }
 
+.status-badge.testing {
+  background: rgba(230, 168, 86, 0.15);
+  color: #e6a856;
+}
+
 .status-badge.verifying {
   background: rgba(184, 148, 74, 0.15);
   color: var(--accent-brass);

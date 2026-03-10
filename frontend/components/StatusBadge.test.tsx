@@ -18,10 +18,17 @@ describe("StatusBadge", () => {
     expect(container.querySelector(".status-dot")).toBeInTheDocument();
   });
 
+  it("applies the correct CSS class for testing status", () => {
+    const { container } = render(<StatusBadge status="testing" />);
+    const badge = container.querySelector(".status-badge");
+    expect(badge).toHaveClass("testing");
+  });
+
   it.each([
     "ideation",
     "configuring",
     "executing",
+    "testing",
     "ready",
     "failed",
   ] as const)(

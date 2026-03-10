@@ -1,5 +1,6 @@
 mod analytics;
 mod commands;
+mod functional_testing;
 mod git;
 mod guidance;
 mod heuristics;
@@ -75,6 +76,12 @@ pub fn run() {
             commands::poll_task_progress,
             // Validation
             commands::run_feature_validators,
+            // Functional Testing
+            commands::start_functional_testing,
+            commands::skip_functional_testing,
+            commands::complete_functional_testing,
+            commands::get_functional_test_results,
+            commands::mark_feature_testing,
             // Diff
             commands::get_feature_diff,
             // Feature PR

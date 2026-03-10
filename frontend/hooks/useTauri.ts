@@ -10,6 +10,9 @@ import type {
   PlanSnapshot,
   TaskProgress,
   VerifyResult,
+  FunctionalTestResult,
+  TestHarness,
+  FunctionalTestStep,
   DiffSummary,
   Preferences,
   FeatureRecipe,
@@ -143,6 +146,8 @@ export function useTauri() {
       executionRationale: string,
       selectedAgents: string[],
       taskSpecs: TaskSpec[],
+      testHarness?: TestHarness | null,
+      functionalTestSteps?: FunctionalTestStep[] | null,
     ) =>
       invoke<Feature>("configure_launch", {
         featureId,
@@ -150,6 +155,8 @@ export function useTauri() {
         executionRationale,
         selectedAgents,
         taskSpecs,
+        testHarness: testHarness ?? null,
+        functionalTestSteps: functionalTestSteps ?? null,
       }),
 
     getLaunchCommand: (featureId: string) =>
@@ -170,6 +177,22 @@ export function useTauri() {
     // Validation
     runFeatureValidators: (featureId: string) =>
       invoke<VerifyResult>("run_feature_validators", { featureId }),
+
+    // Functional Testing
+    startFunctionalTesting: (featureId: string, cols: number, rows: number) =>
+      invoke<string>("start_functional_testing", { featureId, cols, rows }),
+
+    skipFunctionalTesting: (featureId: string) =>
+      invoke<Feature>("skip_functional_testing", { featureId }),
+
+    completeFunctionalTesting: (featureId: string) =>
+      invoke<Feature>("complete_functional_testing", { featureId }),
+
+    getFunctionalTestResults: (featureId: string) =>
+      invoke<FunctionalTestResult[]>("get_functional_test_results", { featureId }),
+
+    markFeatureTesting: (featureId: string) =>
+      invoke<Feature>("mark_feature_testing", { featureId }),
 
     // Diff
     getFeatureDiff: (featureId: string) =>
@@ -193,12 +216,14 @@ export function useTauri() {
       defaultExecutionMode?: string;
       defaultModel?: string;
       autoValidate?: boolean;
+      functionalTestingEnabled?: boolean;
     }) =>
       invoke<Preferences>("set_preferences", {
         shell: prefs.shell,
         defaultExecutionMode: prefs.defaultExecutionMode ?? null,
         defaultModel: prefs.defaultModel ?? null,
         autoValidate: prefs.autoValidate ?? null,
+        functionalTestingEnabled: prefs.functionalTestingEnabled ?? null,
       }),
 
     // Ideation (background)

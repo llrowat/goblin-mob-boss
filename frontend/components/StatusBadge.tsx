@@ -5,7 +5,7 @@ interface Props {
 }
 
 export function StatusBadge({ status }: Props) {
-  const displayStatus = status === "executing" ? "running" : status;
+  const displayStatus = status === "executing" ? "running" : status === "testing" ? "testing" : status;
   return (
     <span className={`status-badge ${displayStatus}`}>
       <span className="status-dot" />

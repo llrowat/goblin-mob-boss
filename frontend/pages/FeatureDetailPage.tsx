@@ -6,6 +6,7 @@ import { useBackgroundPlanning } from "../hooks/useBackgroundPlanning";
 import { useCommandDisplay, CommandDisplayButton, CommandDisplayContent } from "../components/CommandDisplay";
 import { TaskTable, ExecutionModeSelector, EditTaskModal, PlanHistory } from "./feature-detail/PlanningComponents";
 import { ValidationPanel } from "./feature-detail/ValidationPanel";
+import { TestingPanel } from "./feature-detail/TestingPanel";
 import { ActivityLog, buildActivityLog } from "../components/ActivityLog";
 import type {
   Feature,
@@ -20,6 +21,7 @@ import type {
   PlanningQuestion,
   PlanningAnswer,
   PlanSnapshot,
+  FunctionalTestResult,
 } from "../types";
 
 type IdeationStatus = "idle" | "running" | "questions" | "done" | "error";
@@ -73,6 +75,11 @@ export function FeatureDetailPage() {
   const [verifyResult, setVerifyResult] = useState<VerifyResult | null>(null);
   const [verifying, setVerifying] = useState(false);
   const [analysis, setAnalysis] = useState<ExecutionAnalysis | null>(null);
+
+  // Functional testing state
+  const [testResults, setTestResults] = useState<FunctionalTestResult[]>([]);
+  const [startingTest, setStartingTest] = useState(false);
+  const [completingTest, setCompletingTest] = useState(false);
 
   // Check tmux availability for Teams mode
   useEffect(() => {
@@ -192,15 +199,39 @@ export function FeatureDetailPage() {
       if (completionSignaled || (allDone && countMatches)) {
         autoEnded = true;
         const sid = terminalSessionIdRef.current;
-        // Kill the PTY, mark feature ready, and clear session directly.
-        // Don't rely on pty-exit event chain — it can be unreliable on Windows.
+        // Kill the PTY and clear session directly.
         if (sid) {
           tauri.killPty(sid).catch(() => {/* best-effort cleanup */});
         }
-        tauri.markFeatureReady(featureId).then((f) => {
-          setFeature(f);
-          clearSession();
-        }).catch(() => {/* best-effort auto-complete */});
+
+        // If the feature has a test harness and testing hasn't been skipped,
+        // route to testing instead of ready.
+        tauri.getFeature(featureId).then((latestFeature) => {
+          const hasHarness = !!latestFeature.test_harness;
+          const testingSkipped = latestFeature.testing_skipped;
+          if (hasHarness && !testingSkipped) {
+            tauri.markFeatureTesting(featureId).then((f) => {
+              setFeature(f);
+              clearSession();
+            }).catch(() => {
+              // Fallback to ready if testing transition fails
+              tauri.markFeatureReady(featureId).then((f) => {
+                setFeature(f);
+                clearSession();
+              }).catch(() => {});
+            });
+          } else {
+            tauri.markFeatureReady(featureId).then((f) => {
+              setFeature(f);
+              clearSession();
+            }).catch(() => {/* best-effort auto-complete */});
+          }
+        }).catch(() => {
+          tauri.markFeatureReady(featureId).then((f) => {
+            setFeature(f);
+            clearSession();
+          }).catch(() => {});
+        });
       }
     };
 
@@ -453,6 +484,8 @@ export function FeatureDetailPage() {
         rationale,
         agents.map((a) => `${a}.md`),
         ideationResult.tasks,
+        ideationResult.test_harness,
+        ideationResult.functional_test_steps,
       );
       const sessionId = await tauri.startLaunchPty(featureId, 120, 30);
       startSession(featureId, sessionId);
@@ -480,6 +513,64 @@ export function FeatureDetailPage() {
       setVerifying(false);
     }
   };
+
+  // Functional testing handlers
+  const handleStartTesting = async () => {
+    if (!featureId) return;
+    setStartingTest(true);
+    setError("");
+    try {
+      const sessionId = await tauri.startFunctionalTesting(featureId, 120, 30);
+      startSession(featureId, sessionId);
+      const updated = await tauri.getFeature(featureId);
+      setFeature(updated);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setStartingTest(false);
+    }
+  };
+
+  const handleSkipTesting = async () => {
+    if (!featureId) return;
+    try {
+      const updated = await tauri.skipFunctionalTesting(featureId);
+      setFeature(updated);
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const handleCompleteTesting = async () => {
+    if (!featureId) return;
+    setCompletingTest(true);
+    setError("");
+    try {
+      const sid = terminalSessionIdRef.current;
+      if (sid) {
+        await tauri.killPty(sid).catch(() => {});
+      }
+      clearSession();
+      const updated = await tauri.completeFunctionalTesting(featureId);
+      setFeature(updated);
+      // Reload test results
+      const results = await tauri.getFunctionalTestResults(featureId);
+      setTestResults(results);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setCompletingTest(false);
+    }
+  };
+
+  // Load test results when feature reaches testing/ready/failed states
+  useEffect(() => {
+    if (!featureId) return;
+    const shouldLoad = feature?.status === "testing" || feature?.status === "ready"
+      || feature?.status === "failed" || feature?.status === "pushed";
+    if (!shouldLoad) return;
+    tauri.getFunctionalTestResults(featureId).then(setTestResults).catch(() => {});
+  }, [featureId, feature?.status]);
 
   const handleViewDiff = async () => {
     if (!featureId) return;
@@ -626,10 +717,11 @@ export function FeatureDetailPage() {
 
   const recommendation = ideationResult?.execution_mode;
   const isExecuting = feature.status === "executing";
+  const isTesting = feature.status === "testing";
   const isReady = feature.status === "ready" || feature.status === "failed";
   const isPushed = feature.status === "pushed";
   const isComplete = feature.status === "complete";
-  const isReadOnly = isExecuting || isReady || isPushed || isComplete;
+  const isReadOnly = isExecuting || isTesting || isReady || isPushed || isComplete;
   const activeMode = modeOverride ?? recommendation?.recommended ?? "subagents";
   const teamsMissingTmux = false; // tmux is optional — just a recommendation
 
@@ -640,13 +732,15 @@ export function FeatureDetailPage() {
 
   const headerLabel = isExecuting
     ? "Executing"
-    : isComplete
-      ? "Complete"
-      : isPushed
-        ? "Pushed"
-        : isReady
-          ? feature.status === "ready" ? "Ready" : "Failed"
-          : "Planning";
+    : isTesting
+      ? "Testing"
+      : isComplete
+        ? "Complete"
+        : isPushed
+          ? "Pushed"
+          : isReady
+            ? feature.status === "ready" ? "Ready" : "Failed"
+            : "Planning";
 
   return (
     <div>
@@ -1035,6 +1129,20 @@ export function FeatureDetailPage() {
             This feature is done. The worktree has been cleaned up.
           </div>
         </div>
+      )}
+
+      {/* Functional testing panel — shown when feature has test harness */}
+      {(isTesting || isReady || isPushed) && !hasActiveTerminal && feature.test_harness && (
+        <TestingPanel
+          feature={feature}
+          isTesting={isTesting}
+          testResults={testResults}
+          onStartTesting={handleStartTesting}
+          onSkipTesting={handleSkipTesting}
+          onCompleteTesting={handleCompleteTesting}
+          startingTest={startingTest}
+          completingTest={completingTest}
+        />
       )}
 
       {/* Validation & review panel — shown for ready and pushed states */}

@@ -9,6 +9,7 @@ const defaultPrefs = {
   default_execution_mode: "",
   default_model: "",
   auto_validate: false,
+  functional_testing_enabled: false,
 };
 
 function renderWithProviders() {
@@ -162,5 +163,38 @@ describe("SettingsPage", () => {
     expect(screen.getByText("Claude Opus 4.6")).toBeInTheDocument();
     expect(screen.getByText("Claude Sonnet 4.6")).toBeInTheDocument();
     expect(screen.getByText("Claude Haiku 4.5")).toBeInTheDocument();
+  });
+
+  it("renders functional testing checkbox", async () => {
+    vi.mocked(invoke).mockResolvedValue(defaultPrefs);
+
+    renderWithProviders();
+
+    expect(
+      screen.getByText("Enable functional testing loop"),
+    ).toBeInTheDocument();
+
+    await waitFor(() => {});
+  });
+
+  it("loads functional_testing_enabled preference", async () => {
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "get_preferences") {
+        return Promise.resolve({
+          ...defaultPrefs,
+          functional_testing_enabled: true,
+        });
+      }
+      return Promise.resolve({});
+    });
+
+    renderWithProviders();
+
+    await waitFor(() => {
+      const checkbox = screen.getByRole("checkbox", {
+        name: /enable functional testing loop/i,
+      });
+      expect(checkbox).toBeChecked();
+    });
   });
 });

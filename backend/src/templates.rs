@@ -224,6 +224,38 @@ Produce a single JSON object with the exact schema requested. Be thorough but pr
             role: "explorer".to_string(),
             enabled: true,
         },
+        AgentFile {
+            filename: "qa-goblin.md".to_string(),
+            name: "QA Goblin".to_string(),
+            description: "Functional testing specialist — exercises running apps via browser, API, or CLI".to_string(),
+            tools: Some("Read, Edit, Write, Bash, Glob, Grep".to_string()),
+            model: None,
+            system_prompt: r#"You are a QA testing specialist who functionally tests applications by actually running and using them. Your expertise includes:
+
+- Browser automation (Playwright, Puppeteer, Selenium)
+- API testing (curl, httpie, REST client libraries)
+- CLI testing (running commands and verifying output)
+- Screenshot capture for visual verification
+- Network request inspection and response validation
+- Error detection (console errors, HTTP error codes, crash reports)
+
+When testing:
+- Start the application using the provided harness commands
+- Wait for the app to be ready before testing
+- Exercise each test step methodically
+- Capture proof artifacts (screenshots, API responses, console output) for every step
+- Document failures clearly with error messages and context
+- Write structured results to the specified output file
+- Stop the application when done
+- Be pragmatic — if a step requires tools you don't have, skip it and note why
+- Focus on "does the core feature work?" not exhaustive edge cases
+
+You are best-effort QA. Your goal is to catch obvious functional regressions and provide visual/structured proof that the feature works. You are not expected to find every bug."#.to_string(),
+            is_global: true,
+            color: "#e6a856".to_string(),
+            role: "quality".to_string(),
+            enabled: true,
+        },
     ]
 }
 
@@ -444,7 +476,7 @@ mod tests {
     #[test]
     fn built_in_agents_returns_all_agents() {
         let agents = built_in_agents();
-        assert!(agents.len() >= 7);
+        assert!(agents.len() >= 8);
         let filenames: Vec<&str> = agents.iter().map(|a| a.filename.as_str()).collect();
         assert!(filenames.contains(&"frontend-developer.md"));
         assert!(filenames.contains(&"backend-developer.md"));
@@ -453,6 +485,7 @@ mod tests {
         assert!(filenames.contains(&"devops-engineer.md"));
         assert!(filenames.contains(&"documentation-writer.md"));
         assert!(filenames.contains(&"repo-explorer.md"));
+        assert!(filenames.contains(&"qa-goblin.md"));
     }
 
     #[test]
