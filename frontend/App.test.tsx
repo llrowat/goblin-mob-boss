@@ -3,7 +3,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import App from "./App";
 
-// Mock all page components to isolate sidebar testing
+// Mock all page components to isolate tab bar testing
 vi.mock("./pages/HomePage", () => ({
   HomePage: () => <div data-testid="home-page" />,
 }));
@@ -57,44 +57,48 @@ function mockCounts(agents: number, repos: number, maps: number) {
   });
 }
 
-describe("App sidebar", () => {
+describe("App tab bar", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockCounts(1, 1, 1);
   });
 
-  it("renders Setup section before Work section", async () => {
+  it("renders all navigation tabs", async () => {
     render(<App />);
-    const sectionLabels = screen.getAllByText(/^(Setup|Work)$/i);
-    expect(sectionLabels).toHaveLength(2);
-    expect(sectionLabels[0]).toHaveTextContent("Setup");
-    expect(sectionLabels[1]).toHaveTextContent("Work");
+    const nav = screen.getByRole("navigation");
+    const tabs = nav.querySelectorAll(".topbar-tab");
+    const labels = Array.from(tabs).map((el) => el.textContent?.replace(/[\d⚠]/g, "").trim());
+
+    expect(labels).toContain("Features");
+    expect(labels).toContain("Agents");
+    expect(labels).toContain("Repositories");
+    expect(labels).toContain("System Map");
     await waitFor(() => {});
   });
 
-  it("renders Agents, Repositories, and System Map before Features", async () => {
+  it("renders Features tab before the setup tabs", async () => {
     render(<App />);
     const nav = screen.getByRole("navigation");
-    const items = nav.querySelectorAll(".sidebar-nav-item");
-    const labels = Array.from(items).map((el) => el.textContent?.trim());
+    const tabs = nav.querySelectorAll(".topbar-tab");
+    const labels = Array.from(tabs).map((el) => el.textContent?.replace(/[\d⚠]/g, "").trim());
 
+    const featuresIdx = labels.indexOf("Features");
     const agentsIdx = labels.indexOf("Agents");
     const reposIdx = labels.indexOf("Repositories");
     const mapIdx = labels.indexOf("System Map");
-    const featuresIdx = labels.findIndex((l) => l?.startsWith("Features"));
 
-    expect(agentsIdx).toBeLessThan(featuresIdx);
-    expect(reposIdx).toBeLessThan(featuresIdx);
-    expect(mapIdx).toBeLessThan(featuresIdx);
+    expect(featuresIdx).toBeLessThan(agentsIdx);
+    expect(featuresIdx).toBeLessThan(reposIdx);
+    expect(featuresIdx).toBeLessThan(mapIdx);
     await waitFor(() => {});
   });
 
-  it("renders Preferences as the last nav item", async () => {
+  it("renders Preferences as a settings icon separate from tabs", async () => {
     render(<App />);
     const nav = screen.getByRole("navigation");
-    const items = nav.querySelectorAll(".sidebar-nav-item");
-    const last = items[items.length - 1];
-    expect(last).toHaveTextContent("Preferences");
+    const settingsLink = nav.querySelector(".topbar-settings");
+    expect(settingsLink).toBeTruthy();
+    expect(settingsLink).toHaveAttribute("title", "Preferences");
     await waitFor(() => {});
   });
 
@@ -103,11 +107,11 @@ describe("App sidebar", () => {
     render(<App />);
 
     await waitFor(() => {
-      const badges = document.querySelectorAll(".sidebar-count-badge");
+      const badges = document.querySelectorAll(".tab-count-badge");
       expect(badges).toHaveLength(3);
     });
 
-    const badges = document.querySelectorAll(".sidebar-count-badge");
+    const badges = document.querySelectorAll(".tab-count-badge");
     const texts = Array.from(badges).map((b) => b.textContent);
     expect(texts).toContain("3");
     expect(texts).toContain("2");
@@ -119,11 +123,11 @@ describe("App sidebar", () => {
     render(<App />);
 
     await waitFor(() => {
-      const warnBadges = document.querySelectorAll(".sidebar-count-warn");
+      const warnBadges = document.querySelectorAll(".tab-count-warn");
       expect(warnBadges).toHaveLength(3);
     });
 
-    const warnBadges = document.querySelectorAll(".sidebar-count-warn");
+    const warnBadges = document.querySelectorAll(".tab-count-warn");
     warnBadges.forEach((badge) => {
       expect(badge.textContent).toBe("\u26A0");
     });
@@ -134,11 +138,19 @@ describe("App sidebar", () => {
     render(<App />);
 
     await waitFor(() => {
-      const badges = document.querySelectorAll(".sidebar-count-badge");
+      const badges = document.querySelectorAll(".tab-count-badge");
       expect(badges).toHaveLength(3);
     });
 
-    const warnBadges = document.querySelectorAll(".sidebar-count-warn");
+    const warnBadges = document.querySelectorAll(".tab-count-warn");
     expect(warnBadges).toHaveLength(1);
+  });
+
+  it("includes a divider between Features and setup tabs", async () => {
+    render(<App />);
+    const nav = screen.getByRole("navigation");
+    const divider = nav.querySelector(".topbar-divider");
+    expect(divider).toBeTruthy();
+    await waitFor(() => {});
   });
 });

@@ -34,7 +34,7 @@ function CountBadge({ count }: { count: number | null }) {
   const isZero = count === 0;
   return (
     <span
-      className={`sidebar-count-badge${isZero ? " sidebar-count-warn" : ""}`}
+      className={`tab-count-badge${isZero ? " tab-count-warn" : ""}`}
       title={isZero ? "None configured" : `${count} configured`}
     >
       {isZero ? "\u26A0" : count}
@@ -66,87 +66,78 @@ function AppLayout() {
 
   return (
     <div className="app-layout">
-      <nav className="sidebar" aria-label="Main navigation">
-        <div className="sidebar-header">
-          <div className="sidebar-brand">
-            <span className="brand-icon" aria-hidden="true">
-              &#x2692;
-            </span>
-            <h1>Goblin Mob Boss</h1>
-          </div>
+      <nav className="topbar" aria-label="Main navigation">
+        <div className="topbar-brand">
+          <span className="brand-icon" aria-hidden="true">
+            &#x2692;
+          </span>
+          <h1>Goblin Mob Boss</h1>
         </div>
-        <div className="sidebar-nav">
-          <div className="sidebar-section-label">Setup</div>
-          <NavLink
-            to="/agents"
-            className={({ isActive }) =>
-              `sidebar-nav-item ${isActive ? "active" : ""}`
-            }
-          >
-            Agents
-            <span className="sidebar-badges">
-              <CountBadge count={agentCount} />
-            </span>
-          </NavLink>
-          <NavLink
-            to="/repos"
-            className={({ isActive }) =>
-              `sidebar-nav-item ${isActive ? "active" : ""}`
-            }
-          >
-            Repositories
-            <span className="sidebar-badges">
-              <CountBadge count={repoCount} />
-            </span>
-          </NavLink>
-          <NavLink
-            to="/map"
-            className={({ isActive }) =>
-              `sidebar-nav-item ${isActive ? "active" : ""}`
-            }
-          >
-            System Map
-            <span className="sidebar-badges">
-              <CountBadge count={mapCount} />
-            </span>
-          </NavLink>
-          <div className="sidebar-section-label">Work</div>
+        <div className="topbar-tabs">
           <NavLink
             to="/"
             end
             className={({ isActive }) =>
-              `sidebar-nav-item ${isActive ? "active" : ""}`
+              `topbar-tab ${isActive ? "active" : ""}`
             }
           >
             Features
-            <span className="sidebar-badges">
+            <span className="tab-badges">
               {activeFeatureCount !== null && activeFeatureCount > 0 && (
                 <CountBadge count={activeFeatureCount} />
               )}
               {planningCount > 0 && (
-                <span className="sidebar-planning-badge" title={`${planningCount} planning`} aria-label={`${planningCount} features planning`}>
+                <span className="tab-planning-badge" title={`${planningCount} planning`} aria-label={`${planningCount} features planning`}>
                   <span className="spinner spinner-planning" style={{ width: 10, height: 10, borderWidth: 1.5 }} aria-hidden="true" />
                   {planningCount}
                 </span>
               )}
               {executingCount > 0 && (
-                <span className="sidebar-executing-badge" title={`${executingCount} executing`} aria-label={`${executingCount} features executing`}>
+                <span className="tab-executing-badge" title={`${executingCount} executing`} aria-label={`${executingCount} features executing`}>
                   <span className="spinner" style={{ width: 10, height: 10, borderWidth: 1.5 }} aria-hidden="true" />
                   {executingCount}
                 </span>
               )}
             </span>
           </NavLink>
-          <div className="sidebar-spacer" />
+          <span className="topbar-divider" aria-hidden="true" />
           <NavLink
-            to="/settings"
+            to="/agents"
             className={({ isActive }) =>
-              `sidebar-nav-item ${isActive ? "active" : ""}`
+              `topbar-tab ${isActive ? "active" : ""}`
             }
           >
-            Preferences
+            Agents
+            <CountBadge count={agentCount} />
+          </NavLink>
+          <NavLink
+            to="/repos"
+            className={({ isActive }) =>
+              `topbar-tab ${isActive ? "active" : ""}`
+            }
+          >
+            Repositories
+            <CountBadge count={repoCount} />
+          </NavLink>
+          <NavLink
+            to="/map"
+            className={({ isActive }) =>
+              `topbar-tab ${isActive ? "active" : ""}`
+            }
+          >
+            System Map
+            <CountBadge count={mapCount} />
           </NavLink>
         </div>
+        <NavLink
+          to="/settings"
+          className={({ isActive }) =>
+            `topbar-settings ${isActive ? "active" : ""}`
+          }
+          title="Preferences"
+        >
+          &#x2699;
+        </NavLink>
       </nav>
 
       <main className="main-content">
