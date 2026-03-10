@@ -237,5 +237,47 @@ describe("useTauri", () => {
     expect(typeof tauri.completeFunctionalTesting).toBe("function");
     expect(typeof tauri.getFunctionalTestResults).toBe("function");
     expect(typeof tauri.markFeatureTesting).toBe("function");
+    expect(typeof tauri.pollTestingStatus).toBe("function");
+    expect(typeof tauri.startTestHarness).toBe("function");
+    expect(typeof tauri.stopTestHarness).toBe("function");
+    expect(typeof tauri.relaunchWithFixContext).toBe("function");
+  });
+
+  it("pollTestingStatus passes featureId", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce({});
+    const { result } = renderHook(() => useTauri());
+    await result.current.pollTestingStatus("feature-1");
+    expect(invoke).toHaveBeenCalledWith("poll_testing_status", {
+      featureId: "feature-1",
+    });
+  });
+
+  it("startTestHarness passes featureId", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce(undefined);
+    const { result } = renderHook(() => useTauri());
+    await result.current.startTestHarness("feature-1");
+    expect(invoke).toHaveBeenCalledWith("start_test_harness", {
+      featureId: "feature-1",
+    });
+  });
+
+  it("stopTestHarness passes featureId", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce(undefined);
+    const { result } = renderHook(() => useTauri());
+    await result.current.stopTestHarness("feature-1");
+    expect(invoke).toHaveBeenCalledWith("stop_test_harness", {
+      featureId: "feature-1",
+    });
+  });
+
+  it("relaunchWithFixContext passes featureId, cols, rows", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce("fix-session");
+    const { result } = renderHook(() => useTauri());
+    await result.current.relaunchWithFixContext("feature-1", 120, 30);
+    expect(invoke).toHaveBeenCalledWith("relaunch_with_fix_context", {
+      featureId: "feature-1",
+      cols: 120,
+      rows: 30,
+    });
   });
 });

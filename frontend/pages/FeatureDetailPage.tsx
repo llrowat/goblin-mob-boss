@@ -22,6 +22,7 @@ import type {
   PlanningAnswer,
   PlanSnapshot,
   FunctionalTestResult,
+  TestingStatus,
 } from "../types";
 
 type IdeationStatus = "idle" | "running" | "questions" | "done" | "error";
@@ -80,6 +81,7 @@ export function FeatureDetailPage() {
   const [testResults, setTestResults] = useState<FunctionalTestResult[]>([]);
   const [startingTest, setStartingTest] = useState(false);
   const [completingTest, setCompletingTest] = useState(false);
+  const [testingStatus, setTestingStatus] = useState<TestingStatus | null>(null);
 
   // Check tmux availability for Teams mode
   useEffect(() => {
@@ -563,13 +565,47 @@ export function FeatureDetailPage() {
     }
   };
 
+  const handleRelaunchFix = async () => {
+    if (!featureId) return;
+    setError("");
+    try {
+      const sessionId = await tauri.relaunchWithFixContext(featureId, 120, 30);
+      startSession(featureId, sessionId);
+      const updated = await tauri.getFeature(featureId);
+      setFeature(updated);
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
   // Load test results when feature reaches testing/ready/failed states
   useEffect(() => {
     if (!featureId) return;
     const shouldLoad = feature?.status === "testing" || feature?.status === "ready"
-      || feature?.status === "failed" || feature?.status === "pushed";
+      || feature?.status === "failed" || feature?.status === "pushed"
+      || feature?.status === "executing";
     if (!shouldLoad) return;
     tauri.getFunctionalTestResults(featureId).then(setTestResults).catch(() => {});
+  }, [featureId, feature?.status]);
+
+  // Poll testing status while in testing phase
+  useEffect(() => {
+    if (!featureId || feature?.status !== "testing") {
+      setTestingStatus(null);
+      return;
+    }
+    const poll = () => {
+      tauri.pollTestingStatus(featureId).then((s) => {
+        setTestingStatus(s);
+        // Auto-collect when completion signal or timeout detected
+        if ((s.completion_signal || s.timed_out) && !completingTest) {
+          handleCompleteTesting();
+        }
+      }).catch(() => {});
+    };
+    poll();
+    const interval = setInterval(poll, 3000);
+    return () => clearInterval(interval);
   }, [featureId, feature?.status]);
 
   const handleViewDiff = async () => {
@@ -1132,14 +1168,16 @@ export function FeatureDetailPage() {
       )}
 
       {/* Functional testing panel — shown when feature has test harness */}
-      {(isTesting || isReady || isPushed) && !hasActiveTerminal && feature.test_harness && (
+      {(isTesting || isReady || isPushed || isExecuting) && !hasActiveTerminal && feature.test_harness && (
         <TestingPanel
           feature={feature}
           isTesting={isTesting}
           testResults={testResults}
+          testingStatus={testingStatus}
           onStartTesting={handleStartTesting}
           onSkipTesting={handleSkipTesting}
           onCompleteTesting={handleCompleteTesting}
+          onRelaunchFix={handleRelaunchFix}
           startingTest={startingTest}
           completingTest={completingTest}
         />

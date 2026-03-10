@@ -1,12 +1,14 @@
-import type { Feature, FunctionalTestResult, TestProof } from "../../types";
+import type { Feature, FunctionalTestResult, TestProof, TestingStatus } from "../../types";
 
 interface TestingPanelProps {
   feature: Feature;
   isTesting: boolean;
   testResults: FunctionalTestResult[];
+  testingStatus: TestingStatus | null;
   onStartTesting: () => void;
   onSkipTesting: () => void;
   onCompleteTesting: () => void;
+  onRelaunchFix: () => void;
   startingTest: boolean;
   completingTest: boolean;
 }
@@ -92,13 +94,21 @@ function ProofItem({ proof }: { proof: TestProof }) {
   );
 }
 
+function formatElapsed(secs: number): string {
+  const m = Math.floor(secs / 60);
+  const s = secs % 60;
+  return m > 0 ? `${m}m ${s}s` : `${s}s`;
+}
+
 export function TestingPanel({
   feature,
   isTesting,
   testResults,
+  testingStatus,
   onStartTesting,
   onSkipTesting,
   onCompleteTesting,
+  onRelaunchFix,
   startingTest,
   completingTest,
 }: TestingPanelProps) {
@@ -109,6 +119,14 @@ export function TestingPanel({
   const attemptLabel = feature.testing_attempt > 0
     ? `Attempt ${feature.testing_attempt}/${feature.max_testing_attempts}`
     : "";
+
+  // Determine if we need a fix relaunch button
+  const needsFixRelaunch =
+    feature.status === "executing" &&
+    latestResult &&
+    !latestResult.all_passed &&
+    feature.testing_attempt < feature.max_testing_attempts &&
+    !feature.pty_session_id;
 
   return (
     <div className="panel" style={{ marginTop: 16 }}>
@@ -129,7 +147,7 @@ export function TestingPanel({
           )}
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          {!isTesting && canTest && feature.status !== "testing" && (
+          {!isTesting && canTest && feature.status !== "testing" && !needsFixRelaunch && (
             <button
               className="btn btn-primary btn-sm"
               onClick={onStartTesting}
@@ -137,6 +155,15 @@ export function TestingPanel({
               aria-label="Start functional testing"
             >
               {startingTest ? "Starting..." : "Run QA"}
+            </button>
+          )}
+          {needsFixRelaunch && (
+            <button
+              className="btn btn-primary btn-sm"
+              onClick={onRelaunchFix}
+              aria-label="Relaunch with fix context"
+            >
+              Fix &amp; Re-test
             </button>
           )}
           {(feature.status === "testing" || isTesting) && (
@@ -266,20 +293,105 @@ export function TestingPanel({
         </div>
       )}
 
-      {/* Testing in progress */}
+      {/* Live testing status — harness + timer + progress */}
       {(feature.status === "testing" || isTesting) && (
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 12,
-            padding: "16px 0",
-            color: "var(--text-secondary)",
-            fontSize: 13,
-          }}
-        >
-          <div className="spinner" />
-          QA goblin is exercising the feature...
+        <div style={{ marginTop: 12 }}>
+          {/* Harness status */}
+          {testingStatus && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
+                marginBottom: 8,
+                fontSize: 12,
+              }}
+            >
+              <span
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: "50%",
+                  backgroundColor: testingStatus.harness.running
+                    ? testingStatus.harness.ready
+                      ? "var(--success)"
+                      : "#e6a856"
+                    : "var(--muted)",
+                  display: "inline-block",
+                }}
+              />
+              <span style={{ color: "var(--text-secondary)" }}>
+                App:{" "}
+                {testingStatus.harness.running
+                  ? testingStatus.harness.ready
+                    ? "Running"
+                    : "Starting..."
+                  : "Not running"}
+              </span>
+              {testingStatus.harness.error && (
+                <span style={{ color: "var(--danger)", fontSize: 11 }}>
+                  {testingStatus.harness.error}
+                </span>
+              )}
+              <span style={{ color: "var(--muted)", marginLeft: "auto" }}>
+                {formatElapsed(testingStatus.elapsed_secs)}
+                {testingStatus.timeout_secs > 0 &&
+                  ` / ${formatElapsed(testingStatus.timeout_secs)}`}
+              </span>
+            </div>
+          )}
+
+          {/* Timeout warning */}
+          {testingStatus?.timed_out && (
+            <div
+              style={{
+                padding: "6px 10px",
+                borderRadius: 4,
+                backgroundColor: "rgba(196, 90, 106, 0.1)",
+                border: "1px solid rgba(196, 90, 106, 0.3)",
+                fontSize: 11,
+                color: "var(--danger)",
+                marginBottom: 8,
+              }}
+            >
+              Testing timed out after {formatElapsed(testingStatus.timeout_secs)}.
+              Collect results to see what was captured.
+            </div>
+          )}
+
+          {/* Completion signal detected */}
+          {testingStatus?.completion_signal && !testingStatus.timed_out && (
+            <div
+              style={{
+                padding: "6px 10px",
+                borderRadius: 4,
+                backgroundColor: "rgba(107, 158, 107, 0.1)",
+                border: "1px solid rgba(107, 158, 107, 0.3)",
+                fontSize: 11,
+                color: "var(--success)",
+                marginBottom: 8,
+              }}
+            >
+              QA agent signaled completion. Click "Collect Results" to review.
+            </div>
+          )}
+
+          {/* Spinner */}
+          {!testingStatus?.completion_signal && !testingStatus?.timed_out && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
+                padding: "8px 0",
+                color: "var(--text-secondary)",
+                fontSize: 13,
+              }}
+            >
+              <div className="spinner" />
+              QA goblin is exercising the feature...
+            </div>
+          )}
         </div>
       )}
 

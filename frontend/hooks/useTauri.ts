@@ -13,6 +13,7 @@ import type {
   FunctionalTestResult,
   TestHarness,
   FunctionalTestStep,
+  TestingStatus,
   DiffSummary,
   Preferences,
   FeatureRecipe,
@@ -193,6 +194,18 @@ export function useTauri() {
 
     markFeatureTesting: (featureId: string) =>
       invoke<Feature>("mark_feature_testing", { featureId }),
+
+    pollTestingStatus: (featureId: string) =>
+      invoke<TestingStatus>("poll_testing_status", { featureId }),
+
+    startTestHarness: (featureId: string) =>
+      invoke<void>("start_test_harness", { featureId }),
+
+    stopTestHarness: (featureId: string) =>
+      invoke<void>("stop_test_harness", { featureId }),
+
+    relaunchWithFixContext: (featureId: string, cols: number, rows: number) =>
+      invoke<string>("relaunch_with_fix_context", { featureId, cols, rows }),
 
     // Diff
     getFeatureDiff: (featureId: string) =>

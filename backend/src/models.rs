@@ -300,12 +300,22 @@ pub struct Feature {
     /// Results from functional testing rounds.
     #[serde(default)]
     pub functional_test_results: Vec<FunctionalTestResult>,
+    /// When the current testing round started (for timeout tracking).
+    #[serde(default)]
+    pub testing_started_at: Option<DateTime<Utc>>,
+    /// Timeout for each testing round in seconds. 0 = no timeout.
+    #[serde(default = "default_testing_timeout_secs")]
+    pub testing_timeout_secs: u64,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
 
 fn default_max_testing_attempts() -> u32 {
     3
+}
+
+fn default_testing_timeout_secs() -> u64 {
+    600 // 10 minutes
 }
 
 impl Feature {
@@ -334,6 +344,8 @@ impl Feature {
             max_testing_attempts: default_max_testing_attempts(),
             testing_skipped: false,
             functional_test_results: vec![],
+            testing_started_at: None,
+            testing_timeout_secs: default_testing_timeout_secs(),
             created_at: now,
             updated_at: now,
         }
@@ -578,6 +590,34 @@ pub struct TestProof {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
     pub timestamp: DateTime<Utc>,
+}
+
+/// Status of the test harness process (app under test).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HarnessStatus {
+    /// Whether the harness process is currently running.
+    pub running: bool,
+    /// Whether the ready signal has been detected.
+    pub ready: bool,
+    /// Any error that occurred during startup.
+    pub error: Option<String>,
+    /// Captured stdout (last ~2000 chars) for diagnostics.
+    pub stdout_tail: String,
+    /// PID of the harness process, if running.
+    pub pid: Option<u32>,
+}
+
+/// Combined testing status for frontend polling.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TestingStatus {
+    pub harness: HarnessStatus,
+    pub timed_out: bool,
+    pub elapsed_secs: u64,
+    pub timeout_secs: u64,
+    pub completion_signal: bool,
+    pub results_exist: bool,
+    pub attempt: u32,
+    pub max_attempts: u32,
 }
 
 /// Summary of a functional testing round.

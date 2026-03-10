@@ -25,7 +25,9 @@ A desktop app for agent-based AI development workflows. Configure agents, plan f
 - **Plan history** — Every plan revision, restart, or Q&A round automatically snapshots the previous plan. View prior versions inline with trigger labels, feedback, and task summaries to see how a plan evolved
 - **Launch command generation** — GMB builds the appropriate Claude Code command with environment variables, agent configs, and system prompts for the chosen execution mode
 - **Feature lifecycle** — Features progress through statuses: Ideation → Configuring → Executing → Testing → Ready (or Failed)
-- **Functional testing loop** — After implementation, an optional QA phase where a dedicated agent (QA Goblin) exercises the running app via browser automation (Playwright), API testing, or CLI to verify the feature works. Test proofs (screenshots, API responses, console output) are captured and displayed in the UI. If tests fail and attempts remain, the feature loops back to implementation for fixes. Configurable via Settings and skippable per-feature.
+- **Functional testing loop** — After implementation, an optional QA phase where a dedicated agent (QA Goblin) exercises the running app via browser automation (Playwright), API testing, or CLI to verify the feature works. Test proofs (screenshots, API responses, console output) are captured and displayed in the UI. If tests fail and attempts remain, the feature loops back to implementation for fixes (with failed proof context injected). Configurable via Settings and skippable per-feature.
+- **Test harness management** — GMB starts and stops the app under test as a managed background process, monitors stdout for a configurable ready signal, and reports harness status (starting/running/error) in real-time
+- **Testing resilience** — Lenient results.json parsing (handles single objects, wrapped objects, and malformed JSON with actionable error messages), per-round timeout with auto-collection, completion signal detection, and schema validation warnings appended to proof artifacts
 
 ### Execution Observability
 - **Live progress tracking** — During execution, GMB polls git activity on the feature branch showing: commit count, files changed, insertions/deletions, recent commit messages, and active file list
@@ -92,7 +94,8 @@ goblin-mob-boss/
 │   │   ├── analytics.rs        # Post-execution analysis (plan vs reality)
 │   │   ├── guidance.rs         # Mid-execution guidance notes
 │   │   ├── heuristics.rs       # Task graph analysis and mode recommendation
-│   │   └── functional_testing.rs # Functional testing loop (proof collection, QA prompts)
+│   │   ├── functional_testing.rs # Functional testing loop (proof collection, QA prompts)
+│   │   └── harness.rs          # Test harness process management (start/stop app under test)
 │   └── tauri.conf.json
 ├── frontend/           # React (TypeScript) frontend
 │   ├── components/     # AddRepoModal, StatusBadge, Terminal, ToastContainer, ActivityLog

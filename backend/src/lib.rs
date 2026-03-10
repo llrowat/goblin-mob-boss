@@ -3,6 +3,7 @@ mod commands;
 mod functional_testing;
 mod git;
 mod guidance;
+mod harness;
 mod heuristics;
 mod launch;
 mod models;
@@ -36,6 +37,7 @@ pub fn run() {
         })
         .manage(state)
         .manage(pty::PtySessions::new())
+        .manage(harness::HarnessManager::new())
         .invoke_handler(tauri::generate_handler![
             // Repository
             commands::list_repositories,
@@ -82,6 +84,10 @@ pub fn run() {
             commands::complete_functional_testing,
             commands::get_functional_test_results,
             commands::mark_feature_testing,
+            commands::poll_testing_status,
+            commands::start_test_harness,
+            commands::stop_test_harness,
+            commands::relaunch_with_fix_context,
             // Diff
             commands::get_feature_diff,
             // Feature PR

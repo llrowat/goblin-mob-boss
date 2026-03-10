@@ -2,6 +2,7 @@ use crate::analytics;
 use crate::functional_testing;
 use crate::git;
 use crate::guidance;
+use crate::harness;
 use crate::heuristics;
 use crate::launch;
 use crate::models::*;
@@ -1054,6 +1055,7 @@ pub fn start_functional_testing(
     app_handle: tauri::AppHandle,
     state: State<AppState>,
     pty_sessions: State<pty::PtySessions>,
+    harness_mgr: State<harness::HarnessManager>,
     feature_id: String,
     cols: u16,
     rows: u16,
@@ -1082,6 +1084,7 @@ pub fn start_functional_testing(
     }
 
     feature.status = FeatureStatus::Testing;
+    feature.testing_started_at = Some(Utc::now());
     feature.updated_at = Utc::now();
     let feature_snapshot = feature.clone();
     drop(features);
@@ -1142,21 +1145,36 @@ pub fn start_functional_testing(
         prefs.shell.clone()
     };
 
-    let cmd_str = format!(
-        "claude --append-system-prompt 'You are qa-goblin, a functional testing specialist.' '{}'",
-        prompt.replace('\'', "'\\''")
-    );
+    // Start the app under test (harness) before spawning the QA agent
+    if !harness.start_command.is_empty() {
+        harness::start_harness(
+            &harness_mgr,
+            &feature_id,
+            &harness.start_command,
+            &harness.ready_signal,
+            work_dir,
+            &shell,
+        )?;
+    }
 
-    let full_cmd = format!("cd {} && {}", work_dir, cmd_str);
+    let session_id = format!("qa-{}-{}", feature_id, attempt);
 
-    let session_id = pty::spawn_pty_session(
+    let cmd_args = vec![
+        "--append-system-prompt".to_string(),
+        "You are qa-goblin, a functional testing specialist.".to_string(),
+        prompt,
+    ];
+
+    pty::spawn_pty_session(
         &app_handle,
-        &pty_sessions,
-        &shell,
-        &full_cmd,
+        &session_id,
+        "claude",
+        &cmd_args,
+        work_dir,
         cols,
         rows,
-        vec![],
+        &pty_sessions,
+        &[],
     )?;
 
     // Store session ID on the feature
@@ -1174,11 +1192,14 @@ pub fn start_functional_testing(
 #[tauri::command]
 pub fn skip_functional_testing(
     state: State<AppState>,
+    harness_mgr: State<harness::HarnessManager>,
     feature_id: String,
 ) -> Result<Feature, String> {
+    harness::stop_harness(&harness_mgr, &feature_id);
     let mut features = state.features.lock().unwrap();
     let feature = features.get_mut(&feature_id).ok_or("Feature not found")?;
     feature.testing_skipped = true;
+    feature.testing_started_at = None;
     feature.status = FeatureStatus::Ready;
     feature.updated_at = Utc::now();
     let updated = feature.clone();
@@ -1193,6 +1214,7 @@ pub fn skip_functional_testing(
 #[tauri::command]
 pub fn complete_functional_testing(
     state: State<AppState>,
+    harness_mgr: State<harness::HarnessManager>,
     feature_id: String,
 ) -> Result<Feature, String> {
     let features = state.features.lock().unwrap();
@@ -1212,6 +1234,9 @@ pub fn complete_functional_testing(
     let mut features = state.features.lock().unwrap();
     let feature = features.get_mut(&feature_id).ok_or("Feature not found")?;
 
+    // Stop the harness process
+    harness::stop_harness(&harness_mgr, &feature_id);
+
     let all_passed = result.all_passed;
     feature.functional_test_results.push(result);
 
@@ -1225,6 +1250,7 @@ pub fn complete_functional_testing(
     }
 
     feature.pty_session_id = None;
+    feature.testing_started_at = None;
     feature.updated_at = Utc::now();
     let updated = feature.clone();
     drop(features);
@@ -1257,6 +1283,211 @@ pub fn mark_feature_testing(
     drop(features);
     state.save_features();
     Ok(updated)
+}
+
+/// Re-launch the implementation agent with fix context from failed test proofs.
+/// Used when the testing loop sends a feature back to Executing.
+#[tauri::command]
+pub fn relaunch_with_fix_context(
+    app_handle: tauri::AppHandle,
+    state: State<AppState>,
+    pty_sessions: State<pty::PtySessions>,
+    feature_id: String,
+    cols: u16,
+    rows: u16,
+) -> Result<String, String> {
+    let features = state.features.lock().unwrap();
+    let feature = features
+        .get(&feature_id)
+        .ok_or("Feature not found")?
+        .clone();
+    drop(features);
+
+    if feature.status != FeatureStatus::Executing {
+        return Err("Feature must be in Executing status for fix relaunch".to_string());
+    }
+
+    let repo = get_primary_repo(&state, &feature)?;
+    let work_dir = feature
+        .worktree_paths
+        .get(&repo.id)
+        .map(|s| s.as_str())
+        .unwrap_or(&repo.path);
+
+    // Build fix context from failed test proofs
+    let fix_context = feature
+        .functional_test_results
+        .last()
+        .map(|r| {
+            let failures: Vec<String> = r
+                .proofs
+                .iter()
+                .filter(|p| !p.passed)
+                .map(|p| {
+                    let err = p.error.as_deref().unwrap_or("no error details");
+                    format!("- **{}**: {} ({})", p.step_description, err, p.proof_type)
+                })
+                .collect();
+            if failures.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    "## QA Testing Failures (Round {})\n\n\
+                     The following functional tests failed. Fix these issues:\n\n{}\n\n\
+                     After fixing, the feature will be re-tested automatically.",
+                    r.attempt,
+                    failures.join("\n")
+                )
+            }
+        })
+        .unwrap_or_default();
+
+    // Read the original system prompt
+    let feature_dir = Path::new(&repo.path)
+        .join(".gmb")
+        .join("features")
+        .join(&feature.id);
+    let system_prompt_path = feature_dir.join("system-prompt.md");
+    let mut system_prompt = std::fs::read_to_string(&system_prompt_path).unwrap_or_default();
+
+    // Append fix context to the system prompt
+    if !fix_context.is_empty() {
+        system_prompt.push_str("\n\n");
+        system_prompt.push_str(&fix_context);
+    }
+
+    let (args, env, _prompt) =
+        launch::build_launch_with_repo(&feature, &system_prompt, Some(&repo.path));
+
+    let session_id = format!("fix-{}-{}", feature_id, feature.testing_attempt);
+
+    let cmd = &args[0];
+    let cmd_args: Vec<String> = args[1..].to_vec();
+
+    pty::spawn_pty_session(
+        &app_handle,
+        &session_id,
+        cmd,
+        &cmd_args,
+        work_dir,
+        cols,
+        rows,
+        &pty_sessions,
+        &env,
+    )?;
+
+    let mut features = state.features.lock().unwrap();
+    if let Some(f) = features.get_mut(&feature_id) {
+        f.pty_session_id = Some(session_id.clone());
+        f.updated_at = Utc::now();
+    }
+    drop(features);
+    state.save_features();
+
+    Ok(session_id)
+}
+
+/// Poll functional testing status — harness state, timeout check, completion signal.
+/// Returns a structured status object the frontend can use for live progress.
+#[tauri::command]
+pub fn poll_testing_status(
+    state: State<AppState>,
+    harness_mgr: State<harness::HarnessManager>,
+    feature_id: String,
+) -> Result<TestingStatus, String> {
+    let features = state.features.lock().unwrap();
+    let feature = features.get(&feature_id).ok_or("Feature not found")?.clone();
+    drop(features);
+
+    let harness_status = harness::get_harness_status(&harness_mgr, &feature_id);
+
+    // Check for timeout
+    let timed_out = if let Some(started_at) = feature.testing_started_at {
+        let elapsed = Utc::now()
+            .signed_duration_since(started_at)
+            .num_seconds()
+            .max(0) as u64;
+        feature.testing_timeout_secs > 0 && elapsed >= feature.testing_timeout_secs
+    } else {
+        false
+    };
+
+    let elapsed_secs = feature
+        .testing_started_at
+        .map(|s| Utc::now().signed_duration_since(s).num_seconds().max(0) as u64)
+        .unwrap_or(0);
+
+    // Check for completion signal (testing-complete file)
+    let repo = get_primary_repo(&state, &feature)?;
+    let work_dir = feature
+        .worktree_paths
+        .get(&repo.id)
+        .map(|s| s.as_str())
+        .unwrap_or(&repo.path);
+    let proofs_dir =
+        functional_testing::proofs_dir(work_dir, &feature_id, feature.testing_attempt);
+    let completion_signal = proofs_dir.join("testing-complete").exists();
+    let results_exist = proofs_dir.join("results.json").exists();
+
+    Ok(TestingStatus {
+        harness: harness_status,
+        timed_out,
+        elapsed_secs,
+        timeout_secs: feature.testing_timeout_secs,
+        completion_signal,
+        results_exist,
+        attempt: feature.testing_attempt,
+        max_attempts: feature.max_testing_attempts,
+    })
+}
+
+/// Start the test harness (app under test) manually.
+#[tauri::command]
+pub fn start_test_harness(
+    state: State<AppState>,
+    harness_mgr: State<harness::HarnessManager>,
+    feature_id: String,
+) -> Result<(), String> {
+    let features = state.features.lock().unwrap();
+    let feature = features.get(&feature_id).ok_or("Feature not found")?.clone();
+    drop(features);
+
+    let test_harness = feature
+        .test_harness
+        .ok_or("No test harness configured")?;
+
+    let repo = get_primary_repo(&state, &feature)?;
+    let work_dir = feature
+        .worktree_paths
+        .get(&repo.id)
+        .map(|s| s.as_str())
+        .unwrap_or(&repo.path);
+
+    let prefs = state.preferences.lock().unwrap().clone();
+    let shell = if prefs.shell.is_empty() {
+        "bash".to_string()
+    } else {
+        prefs.shell.clone()
+    };
+
+    harness::start_harness(
+        &harness_mgr,
+        &feature_id,
+        &test_harness.start_command,
+        &test_harness.ready_signal,
+        work_dir,
+        &shell,
+    )
+}
+
+/// Stop the test harness for a feature.
+#[tauri::command]
+pub fn stop_test_harness(
+    harness_mgr: State<harness::HarnessManager>,
+    feature_id: String,
+) -> Result<(), String> {
+    harness::stop_harness(&harness_mgr, &feature_id);
+    Ok(())
 }
 
 // ── Diff Commands ──

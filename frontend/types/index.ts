@@ -77,6 +77,25 @@ export interface FunctionalTestResult {
   timestamp: string;
 }
 
+export interface HarnessStatus {
+  running: boolean;
+  ready: boolean;
+  error: string | null;
+  stdout_tail: string;
+  pid: number | null;
+}
+
+export interface TestingStatus {
+  harness: HarnessStatus;
+  timed_out: boolean;
+  elapsed_secs: number;
+  timeout_secs: number;
+  completion_signal: boolean;
+  results_exist: boolean;
+  attempt: number;
+  max_attempts: number;
+}
+
 export interface Feature {
   id: string;
   /** @deprecated Use repo_ids instead. Present for backward compat with old features. */
@@ -110,6 +129,10 @@ export interface Feature {
   testing_skipped: boolean;
   /** Results from functional testing rounds. */
   functional_test_results: FunctionalTestResult[];
+  /** When the current testing round started. */
+  testing_started_at: string | null;
+  /** Timeout per testing round in seconds. */
+  testing_timeout_secs: number;
   created_at: string;
   updated_at: string;
 }
