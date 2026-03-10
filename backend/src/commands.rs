@@ -1068,10 +1068,9 @@ pub fn start_functional_testing(
         .clone()
         .ok_or("No test harness configured for this feature")?;
 
-    feature.testing_attempt += 1;
-    let attempt = feature.testing_attempt;
+    let next_attempt = feature.testing_attempt + 1;
 
-    if attempt > feature.max_testing_attempts {
+    if next_attempt > feature.max_testing_attempts {
         feature.status = FeatureStatus::Failed;
         feature.updated_at = Utc::now();
         let updated = feature.clone();
@@ -1086,6 +1085,8 @@ pub fn start_functional_testing(
     feature.status = FeatureStatus::Testing;
     feature.testing_started_at = Some(Utc::now());
     feature.updated_at = Utc::now();
+    // Don't increment attempt yet — wait until PTY spawn succeeds
+    let attempt = next_attempt;
     let feature_snapshot = feature.clone();
     drop(features);
     state.save_features();
@@ -1127,13 +1128,55 @@ pub fn start_functional_testing(
         None
     };
 
+    // Run validators to capture any failures for the QA prompt
+    let validator_feedback = {
+        let repos = state.repositories.lock().unwrap();
+        let repo = repos
+            .get(feature_snapshot.primary_repo_id().unwrap_or(""))
+            .cloned();
+        drop(repos);
+        repo.and_then(|r| {
+            if r.validators.is_empty() {
+                return None;
+            }
+            let vpath = feature_snapshot
+                .worktree_paths
+                .get(&r.id)
+                .map(|s| s.as_str())
+                .unwrap_or(&r.path);
+            match validators::run_validators(vpath, &r.validators, attempt) {
+                Ok(vr) if !vr.all_passed => {
+                    let failures: Vec<String> = vr
+                        .results
+                        .iter()
+                        .filter(|v| !v.success)
+                        .map(|v| {
+                            format!(
+                                "- `{}` (exit {}): {}",
+                                v.command,
+                                v.exit_code,
+                                if v.stderr.is_empty() {
+                                    v.stdout.lines().take(5).collect::<Vec<_>>().join("\n")
+                                } else {
+                                    v.stderr.lines().take(5).collect::<Vec<_>>().join("\n")
+                                }
+                            )
+                        })
+                        .collect();
+                    Some(failures.join("\n"))
+                }
+                _ => None,
+            }
+        })
+    };
+
     let prompt = functional_testing::build_testing_prompt(
         &feature_snapshot.name,
         &feature_snapshot.description,
         &feature_snapshot.functional_test_steps,
         &harness,
         &proofs_path_str,
-        None, // TODO: could pass validator failures
+        validator_feedback.as_deref(),
         prior_proof_feedback.as_deref(),
     );
 
@@ -1165,7 +1208,7 @@ pub fn start_functional_testing(
         prompt,
     ];
 
-    pty::spawn_pty_session(
+    if let Err(e) = pty::spawn_pty_session(
         &app_handle,
         &session_id,
         "claude",
@@ -1175,12 +1218,22 @@ pub fn start_functional_testing(
         rows,
         &pty_sessions,
         &[],
-    )?;
+    ) {
+        // PTY spawn failed — stop the harness to prevent orphaned processes
+        harness::stop_harness(&harness_mgr, &feature_id);
+        return Err(e);
+    }
 
-    // Store session ID on the feature
+    // PTY spawn succeeded — now commit the attempt increment and log the decision
     let mut features = state.features.lock().unwrap();
     if let Some(f) = features.get_mut(&feature_id) {
+        f.testing_attempt = attempt;
         f.pty_session_id = Some(session_id.clone());
+        f.testing_decisions.push(TestingDecision {
+            action: "started".to_string(),
+            reason: format!("Started testing attempt {}", attempt),
+            timestamp: Utc::now(),
+        });
     }
     drop(features);
     state.save_features();
@@ -1238,15 +1291,37 @@ pub fn complete_functional_testing(
     harness::stop_harness(&harness_mgr, &feature_id);
 
     let all_passed = result.all_passed;
+    let fail_count = result.proofs.iter().filter(|p| !p.passed && !p.is_meta).count();
     feature.functional_test_results.push(result);
 
     if all_passed {
         feature.status = FeatureStatus::Ready;
+        feature.testing_decisions.push(TestingDecision {
+            action: "passed".to_string(),
+            reason: format!("All proofs passed on attempt {}", attempt),
+            timestamp: Utc::now(),
+        });
     } else if feature.testing_attempt >= feature.max_testing_attempts {
         feature.status = FeatureStatus::Failed;
+        feature.testing_decisions.push(TestingDecision {
+            action: "max_attempts_reached".to_string(),
+            reason: format!(
+                "Failed after {} attempts (max {})",
+                feature.testing_attempt, feature.max_testing_attempts
+            ),
+            timestamp: Utc::now(),
+        });
     } else {
         // Loop back to executing — implementer needs to fix issues
         feature.status = FeatureStatus::Executing;
+        feature.testing_decisions.push(TestingDecision {
+            action: "loop_back".to_string(),
+            reason: format!(
+                "Attempt {} had {} failing proof(s) — looping back for fixes",
+                attempt, fail_count
+            ),
+            timestamp: Utc::now(),
+        });
     }
 
     feature.pty_session_id = None;

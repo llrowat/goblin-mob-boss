@@ -306,6 +306,9 @@ pub struct Feature {
     /// Timeout for each testing round in seconds. 0 = no timeout.
     #[serde(default = "default_testing_timeout_secs")]
     pub testing_timeout_secs: u64,
+    /// Audit log of testing loop decisions (started, passed, failed, looped back, etc.).
+    #[serde(default)]
+    pub testing_decisions: Vec<TestingDecision>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -346,6 +349,7 @@ impl Feature {
             functional_test_results: vec![],
             testing_started_at: None,
             testing_timeout_secs: default_testing_timeout_secs(),
+            testing_decisions: vec![],
             created_at: now,
             updated_at: now,
         }
@@ -575,13 +579,34 @@ pub struct FunctionalTestStep {
     pub agent: String,
 }
 
+/// Type of proof artifact captured during functional testing.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum ProofType {
+    Screenshot,
+    ApiResponse,
+    ConsoleOutput,
+    Error,
+}
+
+impl std::fmt::Display for ProofType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ProofType::Screenshot => write!(f, "screenshot"),
+            ProofType::ApiResponse => write!(f, "api_response"),
+            ProofType::ConsoleOutput => write!(f, "console_output"),
+            ProofType::Error => write!(f, "error"),
+        }
+    }
+}
+
 /// A proof artifact captured during functional testing — screenshots, API responses, etc.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TestProof {
     /// What was being tested.
     pub step_description: String,
-    /// Type of proof: "screenshot", "api_response", "console_output", "error".
-    pub proof_type: String,
+    /// Type of proof: screenshot, api_response, console_output, error.
+    pub proof_type: ProofType,
     /// File path (relative to .gmb/features/{id}/proofs/) or inline content.
     pub content: String,
     /// Whether this step passed.
@@ -590,6 +615,9 @@ pub struct TestProof {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
     pub timestamp: DateTime<Utc>,
+    /// Whether this is a meta/system proof (e.g. schema validation warnings) rather than a real test result.
+    #[serde(default)]
+    pub is_meta: bool,
 }
 
 /// Status of the test harness process (app under test).
@@ -626,6 +654,14 @@ pub struct FunctionalTestResult {
     pub attempt: u32,
     pub all_passed: bool,
     pub proofs: Vec<TestProof>,
+    pub timestamp: DateTime<Utc>,
+}
+
+/// An entry in the feature's testing decision audit log.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TestingDecision {
+    pub action: String,
+    pub reason: String,
     pub timestamp: DateTime<Utc>,
 }
 
@@ -1138,12 +1174,14 @@ Review code for issues."#;
             default_execution_mode: "teams".to_string(),
             default_model: "claude-opus-4-6".to_string(),
             auto_validate: true,
+            functional_testing_enabled: true,
         };
         let json = serde_json::to_string(&prefs).unwrap();
         let parsed: Preferences = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.default_execution_mode, "teams");
         assert_eq!(parsed.default_model, "claude-opus-4-6");
         assert!(parsed.auto_validate);
+        assert!(parsed.functional_testing_enabled);
     }
 
     #[test]

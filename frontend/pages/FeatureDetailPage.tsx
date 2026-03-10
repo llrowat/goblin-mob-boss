@@ -82,6 +82,8 @@ export function FeatureDetailPage() {
   const [startingTest, setStartingTest] = useState(false);
   const [completingTest, setCompletingTest] = useState(false);
   const [testingStatus, setTestingStatus] = useState<TestingStatus | null>(null);
+  const [testingError, setTestingError] = useState("");
+  const autoCollectedRef = useRef(false);
 
   // Check tmux availability for Teams mode
   useEffect(() => {
@@ -521,13 +523,17 @@ export function FeatureDetailPage() {
     if (!featureId) return;
     setStartingTest(true);
     setError("");
+    setTestingError("");
+    autoCollectedRef.current = false;
     try {
-      const sessionId = await tauri.startFunctionalTesting(featureId, 120, 30);
+      const cols = Math.max(80, Math.floor(window.innerWidth / 8));
+      const rows = Math.max(24, Math.floor(window.innerHeight / 20));
+      const sessionId = await tauri.startFunctionalTesting(featureId, cols, rows);
       startSession(featureId, sessionId);
       const updated = await tauri.getFeature(featureId);
       setFeature(updated);
     } catch (e) {
-      setError(String(e));
+      setTestingError(String(e));
     } finally {
       setStartingTest(false);
     }
@@ -546,7 +552,7 @@ export function FeatureDetailPage() {
   const handleCompleteTesting = async () => {
     if (!featureId) return;
     setCompletingTest(true);
-    setError("");
+    setTestingError("");
     try {
       const sid = terminalSessionIdRef.current;
       if (sid) {
@@ -559,7 +565,7 @@ export function FeatureDetailPage() {
       const results = await tauri.getFunctionalTestResults(featureId);
       setTestResults(results);
     } catch (e) {
-      setError(String(e));
+      setTestingError(String(e));
     } finally {
       setCompletingTest(false);
     }
@@ -569,7 +575,9 @@ export function FeatureDetailPage() {
     if (!featureId) return;
     setError("");
     try {
-      const sessionId = await tauri.relaunchWithFixContext(featureId, 120, 30);
+      const cols = Math.max(80, Math.floor(window.innerWidth / 8));
+      const rows = Math.max(24, Math.floor(window.innerHeight / 20));
+      const sessionId = await tauri.relaunchWithFixContext(featureId, cols, rows);
       startSession(featureId, sessionId);
       const updated = await tauri.getFeature(featureId);
       setFeature(updated);
@@ -592,13 +600,15 @@ export function FeatureDetailPage() {
   useEffect(() => {
     if (!featureId || feature?.status !== "testing") {
       setTestingStatus(null);
+      autoCollectedRef.current = false;
       return;
     }
     const poll = () => {
       tauri.pollTestingStatus(featureId).then((s) => {
         setTestingStatus(s);
-        // Auto-collect when completion signal or timeout detected
-        if ((s.completion_signal || s.timed_out) && !completingTest) {
+        // Auto-collect when completion signal or timeout detected (guard prevents double-fire)
+        if ((s.completion_signal || s.timed_out) && !completingTest && !autoCollectedRef.current) {
+          autoCollectedRef.current = true;
           handleCompleteTesting();
         }
       }).catch(() => {});
@@ -1180,6 +1190,7 @@ export function FeatureDetailPage() {
           onRelaunchFix={handleRelaunchFix}
           startingTest={startingTest}
           completingTest={completingTest}
+          error={testingError}
         />
       )}
 

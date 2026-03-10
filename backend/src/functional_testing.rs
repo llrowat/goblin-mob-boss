@@ -1,9 +1,7 @@
-use crate::models::{FunctionalTestResult, TestProof};
+use crate::models::{FunctionalTestResult, ProofType, TestProof};
 use chrono::Utc;
 use std::fs;
 use std::path::Path;
-
-const VALID_PROOF_TYPES: &[&str] = &["screenshot", "api_response", "console_output", "error"];
 
 /// Directory where proof artifacts are stored for a feature testing round.
 pub fn proofs_dir(worktree_path: &str, feature_id: &str, attempt: u32) -> std::path::PathBuf {
@@ -24,16 +22,6 @@ fn validate_proof(proof: &TestProof, index: usize) -> Vec<String> {
         warnings.push(format!(
             "Proof #{}: missing step_description — cannot identify what was tested",
             index + 1
-        ));
-    }
-
-    if !VALID_PROOF_TYPES.contains(&proof.proof_type.as_str()) {
-        warnings.push(format!(
-            "Proof #{} ({}): unknown proof_type '{}' — expected one of: {}",
-            index + 1,
-            proof.step_description,
-            proof.proof_type,
-            VALID_PROOF_TYPES.join(", ")
         ));
     }
 
@@ -115,7 +103,7 @@ pub fn collect_proofs(
             all_passed: false,
             proofs: vec![TestProof {
                 step_description: "Functional testing".to_string(),
-                proof_type: "error".to_string(),
+                proof_type: ProofType::Error,
                 content: format!(
                     "QA agent did not produce results.json at {}\n\n{}",
                     results_file.display(),
@@ -124,6 +112,7 @@ pub fn collect_proofs(
                 passed: false,
                 error: Some("No results file found".to_string()),
                 timestamp: Utc::now(),
+                is_meta: false,
             }],
             timestamp: Utc::now(),
         });
@@ -139,12 +128,13 @@ pub fn collect_proofs(
             all_passed: false,
             proofs: vec![TestProof {
                 step_description: "Functional testing".to_string(),
-                proof_type: "error".to_string(),
+                proof_type: ProofType::Error,
                 content: "results.json is empty — the QA agent wrote the file but no content."
                     .to_string(),
                 passed: false,
                 error: Some("Empty results file".to_string()),
                 timestamp: Utc::now(),
+                is_meta: false,
             }],
             timestamp: Utc::now(),
         });
@@ -158,11 +148,12 @@ pub fn collect_proofs(
                 all_passed: false,
                 proofs: vec![TestProof {
                     step_description: "Functional testing".to_string(),
-                    proof_type: "error".to_string(),
+                    proof_type: ProofType::Error,
                     content: msg,
                     passed: false,
                     error: Some("Invalid results.json format".to_string()),
                     timestamp: Utc::now(),
+                    is_meta: false,
                 }],
                 timestamp: Utc::now(),
             });
@@ -180,19 +171,18 @@ pub fn collect_proofs(
     if !all_warnings.is_empty() {
         final_proofs.push(TestProof {
             step_description: "Schema validation warnings".to_string(),
-            proof_type: "console_output".to_string(),
+            proof_type: ProofType::ConsoleOutput,
             content: all_warnings.join("\n"),
             passed: true, // warnings don't fail the run
             error: None,
             timestamp: Utc::now(),
+            is_meta: true,
         });
     }
 
-    let all_passed = !final_proofs.is_empty()
-        && final_proofs
-            .iter()
-            .filter(|p| p.step_description != "Schema validation warnings")
-            .all(|p| p.passed);
+    // Filter out meta proofs (e.g. schema warnings) for pass/fail determination
+    let real_proofs: Vec<_> = final_proofs.iter().filter(|p| !p.is_meta).collect();
+    let all_passed = !real_proofs.is_empty() && real_proofs.iter().all(|p| p.passed);
 
     Ok(FunctionalTestResult {
         attempt,
@@ -330,7 +320,7 @@ As you test, capture proof of each step. Write a JSON file to `{proofs_path}/res
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{FunctionalTestStep, HarnessType, TestHarness};
+    use crate::models::{FunctionalTestStep, HarnessType, ProofType, TestHarness};
     use tempfile::TempDir;
 
     #[test]
@@ -357,7 +347,7 @@ mod tests {
         assert!(!result.all_passed);
         assert_eq!(result.attempt, 1);
         assert_eq!(result.proofs.len(), 1);
-        assert_eq!(result.proofs[0].proof_type, "error");
+        assert_eq!(result.proofs[0].proof_type, ProofType::Error);
     }
 
     #[test]
@@ -371,19 +361,21 @@ mod tests {
         let proofs_json = serde_json::to_string(&vec![
             TestProof {
                 step_description: "Login page loads".to_string(),
-                proof_type: "screenshot".to_string(),
+                proof_type: ProofType::Screenshot,
                 content: "login.png".to_string(),
                 passed: true,
                 error: None,
                 timestamp: Utc::now(),
+                is_meta: false,
             },
             TestProof {
                 step_description: "Dashboard renders".to_string(),
-                proof_type: "screenshot".to_string(),
+                proof_type: ProofType::Screenshot,
                 content: "dashboard.png".to_string(),
                 passed: true,
                 error: None,
                 timestamp: Utc::now(),
+                is_meta: false,
             },
         ])
         .unwrap();
@@ -392,6 +384,18 @@ mod tests {
         let result = collect_proofs(&worktree, "feat-1", 1).unwrap();
         assert!(result.all_passed);
         assert_eq!(result.proofs.len(), 2);
+    }
+
+    #[test]
+    fn collect_proofs_empty_array_fails() {
+        let dir = TempDir::new().unwrap();
+        let worktree = dir.path().to_string_lossy().to_string();
+        let proofs_path = proofs_dir(&worktree, "feat-1", 1);
+        fs::create_dir_all(&proofs_path).unwrap();
+        fs::write(proofs_path.join("results.json"), "[]").unwrap();
+
+        let result = collect_proofs(&worktree, "feat-1", 1).unwrap();
+        assert!(!result.all_passed, "Empty proofs array should not pass");
     }
 
     #[test]
@@ -405,19 +409,21 @@ mod tests {
         let proofs_json = serde_json::to_string(&vec![
             TestProof {
                 step_description: "Login works".to_string(),
-                proof_type: "screenshot".to_string(),
+                proof_type: ProofType::Screenshot,
                 content: "login.png".to_string(),
                 passed: true,
                 error: None,
                 timestamp: Utc::now(),
+                is_meta: false,
             },
             TestProof {
                 step_description: "Dashboard crashes".to_string(),
-                proof_type: "error".to_string(),
+                proof_type: ProofType::Error,
                 content: "TypeError: Cannot read property 'map' of undefined".to_string(),
                 passed: false,
                 error: Some("Component crash on render".to_string()),
                 timestamp: Utc::now(),
+                is_meta: false,
             },
         ])
         .unwrap();
@@ -515,7 +521,7 @@ mod tests {
 
         let result = collect_proofs(&worktree, "feat-1", 1).unwrap();
         assert!(!result.all_passed);
-        assert_eq!(result.proofs[0].proof_type, "error");
+        assert_eq!(result.proofs[0].proof_type, ProofType::Error);
         assert!(result.proofs[0].content.contains("empty"));
     }
 
@@ -529,11 +535,12 @@ mod tests {
         // Agent writes a single object instead of an array
         let single = serde_json::to_string(&TestProof {
             step_description: "Single test".to_string(),
-            proof_type: "api_response".to_string(),
+            proof_type: ProofType::ApiResponse,
             content: "200 OK".to_string(),
             passed: true,
             error: None,
             timestamp: Utc::now(),
+            is_meta: false,
         })
         .unwrap();
         fs::write(proofs_path.join("results.json"), single).unwrap();
@@ -553,11 +560,12 @@ mod tests {
         // Agent wraps in {"results": [...]}
         let proof = TestProof {
             step_description: "Wrapped test".to_string(),
-            proof_type: "console_output".to_string(),
+            proof_type: ProofType::ConsoleOutput,
             content: "OK".to_string(),
             passed: true,
             error: None,
             timestamp: Utc::now(),
+            is_meta: false,
         };
         let wrapped = format!(
             r#"{{"results": [{}]}}"#,
@@ -584,29 +592,23 @@ mod tests {
     }
 
     #[test]
-    fn validate_proof_warns_on_unknown_type() {
-        let proof = TestProof {
-            step_description: "Test".to_string(),
-            proof_type: "video_recording".to_string(),
-            content: "video.mp4".to_string(),
-            passed: true,
-            error: None,
-            timestamp: Utc::now(),
-        };
-        let warnings = validate_proof(&proof, 0);
-        assert!(!warnings.is_empty());
-        assert!(warnings[0].contains("unknown proof_type"));
+    fn unknown_proof_type_rejected_at_parse() {
+        // With ProofType as an enum, invalid types are caught during JSON parsing
+        let json = r#"[{"step_description":"Test","proof_type":"video_recording","content":"vid","passed":true,"error":null,"timestamp":"2026-01-01T00:00:00Z"}]"#;
+        let result = parse_results_lenient(json);
+        assert!(result.is_err(), "Unknown proof_type should fail to parse");
     }
 
     #[test]
     fn validate_proof_warns_on_empty_description() {
         let proof = TestProof {
             step_description: "".to_string(),
-            proof_type: "screenshot".to_string(),
+            proof_type: ProofType::Screenshot,
             content: "img.png".to_string(),
             passed: true,
             error: None,
             timestamp: Utc::now(),
+            is_meta: false,
         };
         let warnings = validate_proof(&proof, 0);
         assert!(warnings.iter().any(|w| w.contains("missing step_description")));
@@ -616,11 +618,12 @@ mod tests {
     fn validate_proof_warns_on_passed_empty_content() {
         let proof = TestProof {
             step_description: "Check page".to_string(),
-            proof_type: "screenshot".to_string(),
+            proof_type: ProofType::Screenshot,
             content: "".to_string(),
             passed: true,
             error: None,
             timestamp: Utc::now(),
+            is_meta: false,
         };
         let warnings = validate_proof(&proof, 0);
         assert!(warnings.iter().any(|w| w.contains("empty content")));
@@ -630,11 +633,12 @@ mod tests {
     fn validate_proof_warns_on_failed_no_error() {
         let proof = TestProof {
             step_description: "Login".to_string(),
-            proof_type: "error".to_string(),
+            proof_type: ProofType::Error,
             content: "crash".to_string(),
             passed: false,
             error: None,
             timestamp: Utc::now(),
+            is_meta: false,
         };
         let warnings = validate_proof(&proof, 0);
         assert!(warnings.iter().any(|w| w.contains("no error description")));
@@ -644,11 +648,12 @@ mod tests {
     fn validate_proof_no_warnings_for_valid_proof() {
         let proof = TestProof {
             step_description: "Login page".to_string(),
-            proof_type: "screenshot".to_string(),
+            proof_type: ProofType::Screenshot,
             content: "login.png".to_string(),
             passed: true,
             error: None,
             timestamp: Utc::now(),
+            is_meta: false,
         };
         let warnings = validate_proof(&proof, 0);
         assert!(warnings.is_empty());
@@ -661,14 +666,15 @@ mod tests {
         let proofs_path = proofs_dir(&worktree, "feat-1", 1);
         fs::create_dir_all(&proofs_path).unwrap();
 
-        // Proof with unknown type — should trigger a warning
+        // Proof with empty description — should trigger a warning
         let proofs_json = serde_json::to_string(&vec![TestProof {
-            step_description: "Test".to_string(),
-            proof_type: "video".to_string(),
+            step_description: "".to_string(),
+            proof_type: ProofType::Screenshot,
             content: "vid.mp4".to_string(),
             passed: true,
             error: None,
             timestamp: Utc::now(),
+            is_meta: false,
         }])
         .unwrap();
         fs::write(proofs_path.join("results.json"), proofs_json).unwrap();
@@ -676,10 +682,7 @@ mod tests {
         let result = collect_proofs(&worktree, "feat-1", 1).unwrap();
         // Should have 2 proofs: original + validation warnings
         assert_eq!(result.proofs.len(), 2);
-        assert_eq!(
-            result.proofs[1].step_description,
-            "Schema validation warnings"
-        );
+        assert!(result.proofs[1].is_meta);
         // Warnings don't affect pass/fail of real proofs
         assert!(result.all_passed);
     }

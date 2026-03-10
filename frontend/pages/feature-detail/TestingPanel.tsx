@@ -11,6 +11,17 @@ interface TestingPanelProps {
   onRelaunchFix: () => void;
   startingTest: boolean;
   completingTest: boolean;
+  /** Error message from a failed testing action (start, collect, etc.). */
+  error?: string;
+}
+
+function formatTimestamp(ts: string): string {
+  try {
+    const d = new Date(ts);
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  } catch {
+    return "";
+  }
 }
 
 function ProofItem({ proof }: { proof: TestProof }) {
@@ -28,9 +39,11 @@ function ProofItem({ proof }: { proof: TestProof }) {
         marginBottom: 6,
         borderRadius: 4,
         border: "1px solid var(--border)",
-        backgroundColor: proof.passed
-          ? "rgba(107, 158, 107, 0.05)"
-          : "rgba(196, 90, 106, 0.05)",
+        backgroundColor: proof.is_meta
+          ? "rgba(128, 128, 128, 0.05)"
+          : proof.passed
+            ? "rgba(107, 158, 107, 0.05)"
+            : "rgba(196, 90, 106, 0.05)",
       }}
     >
       <div
@@ -41,16 +54,23 @@ function ProofItem({ proof }: { proof: TestProof }) {
           marginBottom: 4,
         }}
       >
-        <span
-          style={{
-            color: proof.passed ? "var(--success)" : "var(--danger)",
-            fontWeight: 600,
-            fontSize: 10,
-            textTransform: "uppercase",
-          }}
-        >
-          {proof.passed ? "PASS" : "FAIL"}
-        </span>
+        {!proof.is_meta && (
+          <span
+            style={{
+              color: proof.passed ? "var(--success)" : "var(--danger)",
+              fontWeight: 600,
+              fontSize: 10,
+              textTransform: "uppercase",
+            }}
+          >
+            {proof.passed ? "PASS" : "FAIL"}
+          </span>
+        )}
+        {proof.is_meta && (
+          <span style={{ color: "var(--muted)", fontWeight: 600, fontSize: 10, textTransform: "uppercase" }}>
+            INFO
+          </span>
+        )}
         <span
           style={{
             fontSize: 10,
@@ -64,6 +84,11 @@ function ProofItem({ proof }: { proof: TestProof }) {
         <span style={{ fontSize: 12, color: "var(--text-secondary)", flex: 1 }}>
           {proof.step_description}
         </span>
+        {proof.timestamp && (
+          <span style={{ fontSize: 10, color: "var(--muted)" }}>
+            {formatTimestamp(proof.timestamp)}
+          </span>
+        )}
       </div>
       {proof.content && (
         <div
@@ -111,6 +136,7 @@ export function TestingPanel({
   onRelaunchFix,
   startingTest,
   completingTest,
+  error,
 }: TestingPanelProps) {
   const hasHarness = !!feature.test_harness;
   const hasSteps = feature.functional_test_steps.length > 0;
@@ -187,6 +213,23 @@ export function TestingPanel({
           )}
         </div>
       </div>
+
+      {/* Error banner */}
+      {error && (
+        <div
+          style={{
+            padding: "8px 12px",
+            borderRadius: 4,
+            backgroundColor: "rgba(196, 90, 106, 0.1)",
+            border: "1px solid rgba(196, 90, 106, 0.3)",
+            fontSize: 12,
+            color: "var(--danger)",
+            marginTop: 8,
+          }}
+        >
+          {error}
+        </div>
+      )}
 
       {/* No harness configured */}
       {!canTest && (

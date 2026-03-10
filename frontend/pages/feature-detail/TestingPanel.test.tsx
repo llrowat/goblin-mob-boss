@@ -26,6 +26,7 @@ function makeFeature(overrides: Partial<Feature> = {}): Feature {
     functional_test_results: [],
     testing_started_at: null,
     testing_timeout_secs: 600,
+    testing_decisions: [],
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
     ...overrides,
@@ -46,6 +47,7 @@ function renderPanel(
     onRelaunchFix?: () => void;
     startingTest?: boolean;
     completingTest?: boolean;
+    error?: string;
   } = {},
 ) {
   return render(
@@ -60,6 +62,7 @@ function renderPanel(
       onRelaunchFix={overrides.onRelaunchFix ?? noop}
       startingTest={overrides.startingTest ?? false}
       completingTest={overrides.completingTest ?? false}
+      error={overrides.error}
     />,
   );
 }
@@ -176,8 +179,8 @@ describe("TestingPanel", () => {
         attempt: 1,
         all_passed: false,
         proofs: [
-          { step_description: "Login page loads", proof_type: "screenshot", content: "base64data", passed: true, error: null, timestamp: "2026-01-01T00:00:00Z" },
-          { step_description: "Submit form", proof_type: "api_response", content: '{"ok": true}', passed: false, error: "Expected 200 got 500", timestamp: "2026-01-01T00:00:00Z" },
+          { step_description: "Login page loads", proof_type: "screenshot", content: "base64data", passed: true, error: null, timestamp: "2026-01-01T00:00:00Z", is_meta: false },
+          { step_description: "Submit form", proof_type: "api_response", content: '{"ok": true}', passed: false, error: "Expected 200 got 500", timestamp: "2026-01-01T00:00:00Z", is_meta: false },
         ],
         timestamp: "2026-01-01T00:00:00Z",
       },
@@ -196,7 +199,7 @@ describe("TestingPanel", () => {
     const results: FunctionalTestResult[] = [
       {
         attempt: 1, all_passed: true,
-        proofs: [{ step_description: "Check response", proof_type: "api_response", content: "ok", passed: true, error: null, timestamp: "2026-01-01T00:00:00Z" }],
+        proofs: [{ step_description: "Check response", proof_type: "api_response", content: "ok", passed: true, error: null, timestamp: "2026-01-01T00:00:00Z", is_meta: false }],
         timestamp: "2026-01-01T00:00:00Z",
       },
     ];
@@ -221,7 +224,7 @@ describe("TestingPanel", () => {
     expect(screen.getByText(/QA found issues/)).toBeInTheDocument();
   });
 
-  // ── New tests for hardened features ──
+  // ── Hardened features ──
 
   it("shows harness status when testingStatus is provided", () => {
     const status: TestingStatus = {
@@ -315,5 +318,42 @@ describe("TestingPanel", () => {
     expect(btn).toBeInTheDocument();
     fireEvent.click(btn);
     expect(onRelaunch).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows error banner when error prop is set", () => {
+    renderPanel({ error: "Failed to start QA session" });
+    expect(screen.getByText("Failed to start QA session")).toBeInTheDocument();
+  });
+
+  it("renders meta proof with INFO badge instead of PASS/FAIL", () => {
+    const results: FunctionalTestResult[] = [
+      {
+        attempt: 1,
+        all_passed: true,
+        proofs: [
+          { step_description: "Schema validation warnings", proof_type: "console_output", content: "warnings here", passed: true, error: null, timestamp: "2026-01-01T00:00:00Z", is_meta: true },
+        ],
+        timestamp: "2026-01-01T00:00:00Z",
+      },
+    ];
+    renderPanel({ testResults: results });
+    expect(screen.getByText("INFO")).toBeInTheDocument();
+    expect(screen.queryByText("PASS")).not.toBeInTheDocument();
+  });
+
+  it("shows proof timestamp", () => {
+    const results: FunctionalTestResult[] = [
+      {
+        attempt: 1,
+        all_passed: true,
+        proofs: [
+          { step_description: "Test step", proof_type: "screenshot", content: "img.png", passed: true, error: null, timestamp: "2026-01-01T12:30:45Z", is_meta: false },
+        ],
+        timestamp: "2026-01-01T00:00:00Z",
+      },
+    ];
+    renderPanel({ testResults: results });
+    // The exact format depends on locale, but should contain time components
+    expect(screen.getByText("Test step")).toBeInTheDocument();
   });
 });

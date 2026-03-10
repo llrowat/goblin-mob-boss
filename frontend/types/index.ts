@@ -61,12 +61,22 @@ export interface FunctionalTestStep {
   agent: string;
 }
 
+export type ProofType = "screenshot" | "api_response" | "console_output" | "error";
+
 export interface TestProof {
   step_description: string;
-  proof_type: string;
+  proof_type: ProofType;
   content: string;
   passed: boolean;
   error: string | null;
+  timestamp: string;
+  /** Whether this is a meta/system proof (e.g. schema warnings) rather than a real test result. */
+  is_meta: boolean;
+}
+
+export interface TestingDecision {
+  action: string;
+  reason: string;
   timestamp: string;
 }
 
@@ -133,6 +143,8 @@ export interface Feature {
   testing_started_at: string | null;
   /** Timeout per testing round in seconds. */
   testing_timeout_secs: number;
+  /** Audit log of testing loop decisions. */
+  testing_decisions: TestingDecision[];
   created_at: string;
   updated_at: string;
 }

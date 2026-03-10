@@ -1,22 +1,49 @@
 use crate::models::HarnessStatus;
 use std::collections::HashMap;
+use std::collections::VecDeque;
 use std::io::{BufRead, BufReader};
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-/// Maximum stdout to keep in memory per harness (bytes).
-const MAX_STDOUT_TAIL: usize = 4000;
+/// Maximum lines to keep in the ring buffer per harness.
+const MAX_STDOUT_LINES: usize = 100;
 
 /// Default timeout waiting for the ready signal (seconds).
 const READY_TIMEOUT_SECS: u64 = 60;
+
+/// Ring buffer for stdout/stderr tail capture.
+struct OutputRing {
+    lines: VecDeque<String>,
+    max_lines: usize,
+}
+
+impl OutputRing {
+    fn new(max_lines: usize) -> Self {
+        Self {
+            lines: VecDeque::with_capacity(max_lines),
+            max_lines,
+        }
+    }
+
+    fn push(&mut self, line: String) {
+        if self.lines.len() >= self.max_lines {
+            self.lines.pop_front();
+        }
+        self.lines.push_back(line);
+    }
+
+    fn to_string(&self) -> String {
+        self.lines.iter().cloned().collect::<Vec<_>>().join("\n")
+    }
+}
 
 struct HarnessProcess {
     child: Child,
     pid: u32,
     ready: bool,
     error: Option<String>,
-    stdout_tail: String,
+    output_ring: OutputRing,
 }
 
 pub struct HarnessManager(pub Arc<Mutex<HashMap<String, HarnessProcess>>>);
@@ -58,18 +85,22 @@ pub fn start_harness(
 
     let pid = child.id();
 
-    // Take stdout for monitoring
+    // Take stdout and stderr for monitoring
     let stdout = child
         .stdout
         .take()
         .ok_or("Failed to capture harness stdout")?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or("Failed to capture harness stderr")?;
 
     let proc = HarnessProcess {
         child,
         pid,
         ready: ready_signal.is_empty(), // If no signal, consider ready immediately
         error: None,
-        stdout_tail: String::new(),
+        output_ring: OutputRing::new(MAX_STDOUT_LINES),
     };
 
     let mut map = manager.0.lock().unwrap();
@@ -81,14 +112,34 @@ pub fn start_harness(
     let fid = feature_id.to_string();
     let signal = ready_signal.to_string();
     std::thread::spawn(move || {
-        monitor_stdout(manager_arc, &fid, stdout, &signal);
+        monitor_output(manager_arc, &fid, stdout, &signal);
+    });
+
+    // Spawn a second thread to capture stderr into the same ring buffer
+    let manager_arc2 = manager.0.clone();
+    let fid2 = feature_id.to_string();
+    std::thread::spawn(move || {
+        let reader = BufReader::new(stderr);
+        for line in reader.lines() {
+            match line {
+                Ok(text) => {
+                    let mut map = manager_arc2.lock().unwrap();
+                    if let Some(proc) = map.get_mut(&fid2) {
+                        proc.output_ring.push(format!("[stderr] {}", text));
+                    } else {
+                        return;
+                    }
+                }
+                Err(_) => break,
+            }
+        }
     });
 
     Ok(())
 }
 
 /// Monitor the harness stdout for the ready signal.
-fn monitor_stdout(
+fn monitor_output(
     manager: Arc<Mutex<HashMap<String, HarnessProcess>>>,
     feature_id: &str,
     stdout: std::process::ChildStdout,
@@ -98,19 +149,14 @@ fn monitor_stdout(
     let start = Instant::now();
     let has_signal = !ready_signal.is_empty();
     let timeout = Duration::from_secs(READY_TIMEOUT_SECS);
+    let mut timed_out = false;
 
     for line in reader.lines() {
         match line {
             Ok(text) => {
                 let mut map = manager.lock().unwrap();
                 if let Some(proc) = map.get_mut(feature_id) {
-                    // Append to tail, trimming if too large
-                    proc.stdout_tail.push_str(&text);
-                    proc.stdout_tail.push('\n');
-                    if proc.stdout_tail.len() > MAX_STDOUT_TAIL {
-                        let trim_at = proc.stdout_tail.len() - MAX_STDOUT_TAIL;
-                        proc.stdout_tail = proc.stdout_tail[trim_at..].to_string();
-                    }
+                    proc.output_ring.push(text.clone());
 
                     // Check for ready signal
                     if has_signal && !proc.ready && text.contains(ready_signal) {
@@ -124,8 +170,9 @@ fn monitor_stdout(
             Err(_) => break,
         }
 
-        // Check timeout for ready signal
-        if has_signal && start.elapsed() > timeout {
+        // Check timeout for ready signal — kill the process on timeout
+        if has_signal && !timed_out && start.elapsed() > timeout {
+            timed_out = true;
             let mut map = manager.lock().unwrap();
             if let Some(proc) = map.get_mut(feature_id) {
                 if !proc.ready {
@@ -133,9 +180,10 @@ fn monitor_stdout(
                         "Timed out waiting for ready signal '{}' after {}s",
                         ready_signal, READY_TIMEOUT_SECS
                     ));
+                    // Kill the process to prevent orphans
+                    let _ = proc.child.kill();
                 }
             }
-            // Don't return — keep reading stdout for diagnostics even after timeout
         }
     }
 
@@ -143,16 +191,13 @@ fn monitor_stdout(
     let mut map = manager.lock().unwrap();
     if let Some(proc) = map.get_mut(feature_id) {
         // Check if process actually exited
-        match proc.child.try_wait() {
-            Ok(Some(status)) => {
-                if !status.success() && proc.error.is_none() {
-                    proc.error = Some(format!(
-                        "Harness process exited with code {}",
-                        status.code().unwrap_or(-1)
-                    ));
-                }
+        if let Ok(Some(status)) = proc.child.try_wait() {
+            if !status.success() && proc.error.is_none() {
+                proc.error = Some(format!(
+                    "Harness process exited with code {}",
+                    status.code().unwrap_or(-1)
+                ));
             }
-            _ => {}
         }
     }
 }
@@ -174,7 +219,7 @@ pub fn get_harness_status(manager: &HarnessManager, feature_id: &str) -> Harness
             running: true,
             ready: proc.ready,
             error: proc.error.clone(),
-            stdout_tail: proc.stdout_tail.clone(),
+            stdout_tail: proc.output_ring.to_string(),
             pid: Some(proc.pid),
         },
         None => HarnessStatus {
