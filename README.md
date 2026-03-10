@@ -62,6 +62,11 @@ A desktop app for agent-based AI development workflows. Configure agents, plan f
 - **Input validation** — Feature names are validated for length, path traversal, and invalid characters
 - **Adaptive polling** — Ideation and execution polling use adaptive intervals with maximum retry counts to prevent infinite requests
 
+### UX
+- **Toast notifications** — Non-intrusive, auto-dismissing toast messages for confirmations and errors. Toasts appear in the bottom-right corner and can be clicked to dismiss.
+- **Activity log** — Collapsible timeline on each feature detail page showing the full lifecycle: creation, plan revisions, Q&A rounds, execution launch, task progress, validation results, push status, and completion. Built from existing feature data — no extra backend storage needed.
+- **Configurable preferences** — Settings page includes shell selection, default execution mode (Teams/Subagents/auto), preferred Claude model, and auto-validate toggle.
+
 ### Infrastructure
 - **Repository management** — Register local git repos, configure base branch, validators, PR commands, and similar repositories. Similar repos serve as pattern hints during ideation, giving agents reference implementations to follow.
 - **Dark theme UI** — Full dark theme with sidebar navigation
@@ -88,9 +93,9 @@ goblin-mob-boss/
 │   │   └── heuristics.rs       # Task graph analysis and mode recommendation
 │   └── tauri.conf.json
 ├── frontend/           # React (TypeScript) frontend
-│   ├── components/     # AddRepoModal, StatusBadge, Terminal
-│   ├── pages/          # HomePage, IdeationPage, LaunchConfigPage, FeatureStatusPage, AgentsPage, ReposPage, SettingsPage, SystemMapPage
-│   ├── hooks/          # useTauri (IPC wrapper)
+│   ├── components/     # AddRepoModal, StatusBadge, Terminal, ToastContainer, ActivityLog
+│   ├── pages/          # HomePage, FeatureDetailPage, AgentsPage, ReposPage, SettingsPage, SystemMapPage
+│   ├── hooks/          # useTauri (IPC wrapper), useToast, useTerminalSession, useBackgroundPlanning
 │   ├── types/          # TypeScript type definitions
 │   ├── test/           # Vitest setup
 │   └── styles.css      # Global styles (dark theme)

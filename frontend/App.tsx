@@ -8,18 +8,23 @@ import { SettingsPage } from "./pages/SettingsPage";
 import { SystemMapPage } from "./pages/SystemMapPage";
 import { TerminalSessionProvider } from "./hooks/useTerminalSession";
 import { BackgroundPlanningProvider, useBackgroundPlanning } from "./hooks/useBackgroundPlanning";
+import { ToastProvider } from "./hooks/useToast";
 import { PersistentTerminal } from "./components/PersistentTerminal";
+import { ToastContainer } from "./components/ToastContainer";
 import { useTauri } from "./hooks/useTauri";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 
 function App() {
   return (
     <BrowserRouter>
-      <TerminalSessionProvider>
-        <BackgroundPlanningProvider>
-          <AppLayout />
-        </BackgroundPlanningProvider>
-      </TerminalSessionProvider>
+      <ToastProvider>
+        <TerminalSessionProvider>
+          <BackgroundPlanningProvider>
+            <AppLayout />
+          </BackgroundPlanningProvider>
+        </TerminalSessionProvider>
+        <ToastContainer />
+      </ToastProvider>
     </BrowserRouter>
   );
 }

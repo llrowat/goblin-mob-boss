@@ -1742,9 +1742,24 @@ pub fn get_preferences(state: State<AppState>) -> Preferences {
 }
 
 #[tauri::command]
-pub fn set_preferences(state: State<AppState>, shell: String) -> Preferences {
+pub fn set_preferences(
+    state: State<AppState>,
+    shell: String,
+    default_execution_mode: Option<String>,
+    default_model: Option<String>,
+    auto_validate: Option<bool>,
+) -> Preferences {
     let mut prefs = state.preferences.lock().unwrap();
     prefs.shell = shell;
+    if let Some(mode) = default_execution_mode {
+        prefs.default_execution_mode = mode;
+    }
+    if let Some(model) = default_model {
+        prefs.default_model = model;
+    }
+    if let Some(av) = auto_validate {
+        prefs.auto_validate = av;
+    }
     let updated = prefs.clone();
     drop(prefs);
     state.save_preferences();

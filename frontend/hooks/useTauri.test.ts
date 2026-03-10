@@ -125,9 +125,12 @@ describe("useTauri", () => {
   it("setPreferences passes shell", async () => {
     vi.mocked(invoke).mockResolvedValueOnce({});
     const { result } = renderHook(() => useTauri());
-    await result.current.setPreferences("zsh");
+    await result.current.setPreferences({ shell: "zsh" });
     expect(invoke).toHaveBeenCalledWith("set_preferences", {
       shell: "zsh",
+      defaultExecutionMode: null,
+      defaultModel: null,
+      autoValidate: null,
     });
   });
 

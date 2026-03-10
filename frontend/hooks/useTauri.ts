@@ -188,8 +188,18 @@ export function useTauri() {
     // Preferences
     getPreferences: () => invoke<Preferences>("get_preferences"),
 
-    setPreferences: (shell: string) =>
-      invoke<Preferences>("set_preferences", { shell }),
+    setPreferences: (prefs: {
+      shell: string;
+      defaultExecutionMode?: string;
+      defaultModel?: string;
+      autoValidate?: boolean;
+    }) =>
+      invoke<Preferences>("set_preferences", {
+        shell: prefs.shell,
+        defaultExecutionMode: prefs.defaultExecutionMode ?? null,
+        defaultModel: prefs.defaultModel ?? null,
+        autoValidate: prefs.autoValidate ?? null,
+      }),
 
     // Ideation (background)
     runIdeation: (featureId: string) =>
