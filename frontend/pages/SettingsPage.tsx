@@ -2,6 +2,8 @@ import { useState, useEffect } from "react";
 import { useTauri } from "../hooks/useTauri";
 import { useToast } from "../hooks/useToast";
 
+import headerSettings from "../assets/headers/header-settings.png";
+
 const SHELL_OPTIONS = [
   { value: "powershell", label: "PowerShell" },
   { value: "cmd", label: "Command Prompt (cmd)" },
@@ -58,6 +60,7 @@ export function SettingsPage() {
       <div className="page-header">
         <h2>Settings</h2>
         <p>Tune things to your liking.</p>
+        <img src={headerSettings} className="page-header-art" alt="" />
       </div>
 
       <div className="panel">
