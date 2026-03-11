@@ -597,6 +597,19 @@ pub fn get_ideation_terminal_command(
     ))
 }
 
+/// Log a "Plan created" activity entry on a feature, but only if one hasn't
+/// already been logged since the last plan revision (or ever, if no revision
+/// was requested). This is safe to call from the repeated polling loop.
+fn log_plan_created_once(state: &State<AppState>, feature_id: &str) {
+    let mut features = state.features.lock().unwrap();
+    if let Some(feature) = features.get_mut(feature_id) {
+        if feature.log_plan_created_once() {
+            drop(features);
+            state.save_features();
+        }
+    }
+}
+
 /// Poll for the ideation plan.json file. Returns discovered tasks + execution mode recommendation.
 #[tauri::command]
 pub fn poll_ideation_result(
@@ -636,6 +649,10 @@ pub fn poll_ideation_result(
             Ok(data) => match serde_json::from_str::<IdeationResult>(&data) {
                 Ok(mut result) => {
                     result.answered_questions = answered_questions;
+                    // Log "Plan created" once when a plan with tasks is first discovered
+                    if !result.tasks.is_empty() {
+                        log_plan_created_once(&state, &feature_id);
+                    }
                     return Ok(result);
                 }
                 Err(e) => {
@@ -715,6 +732,11 @@ pub fn poll_ideation_result(
                 }
             }
         }
+    }
+
+    // Log "Plan created" once when tasks are first discovered (old format)
+    if !specs.is_empty() {
+        log_plan_created_once(&state, &feature_id);
     }
 
     Ok(IdeationResult {
