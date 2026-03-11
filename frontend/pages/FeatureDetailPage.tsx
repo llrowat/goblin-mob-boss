@@ -791,7 +791,11 @@ export function FeatureDetailPage() {
   return (
     <div>
       <div className="page-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-        <div>
+        <div className="page-header-with-back">
+          <button className="back-btn" onClick={() => navigate("/")} title="Back to features">
+            &larr;
+          </button>
+          <div>
           <h2>{headerLabel}: {feature.name}</h2>
           <p>
             {feature.description}
@@ -816,6 +820,7 @@ export function FeatureDetailPage() {
                 {feature.branch}
               </span>
             )}
+          </div>
           </div>
         </div>
         {!deleteConfirm ? (
