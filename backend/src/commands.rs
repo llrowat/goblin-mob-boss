@@ -744,10 +744,11 @@ pub fn configure_launch(
 ) -> Result<Feature, String> {
     let mut features = state.features.lock().unwrap();
     let feature = features.get_mut(&feature_id).ok_or("Feature not found")?;
-    feature.execution_mode = Some(execution_mode);
+    feature.execution_mode = Some(execution_mode.clone());
     feature.execution_rationale = Some(execution_rationale);
     feature.selected_agents = selected_agents;
     feature.task_specs = task_specs;
+    feature.log_activity(format!("Launch configured in {:?} mode", execution_mode), "info");
     if let Some(h) = test_harness {
         feature.test_harness = Some(h);
     }
@@ -913,7 +914,7 @@ pub fn mark_feature_executing(
     let mut features = state.features.lock().unwrap();
     let feature = features.get_mut(&feature_id).ok_or("Feature not found")?;
     feature.status = FeatureStatus::Executing;
-    feature.updated_at = Utc::now();
+    feature.log_activity("Execution started", "info");
     let updated = feature.clone();
     drop(features);
     state.save_features();
@@ -926,7 +927,7 @@ pub fn mark_feature_ready(state: State<AppState>, feature_id: String) -> Result<
     let mut features = state.features.lock().unwrap();
     let feature = features.get_mut(&feature_id).ok_or("Feature not found")?;
     feature.status = FeatureStatus::Ready;
-    feature.updated_at = Utc::now();
+    feature.log_activity("Execution finished — ready for review", "success");
     let updated = feature.clone();
     drop(features);
     state.save_features();
@@ -956,7 +957,7 @@ pub fn complete_feature(state: State<AppState>, feature_id: String) -> Result<Fe
     }
 
     feature.status = FeatureStatus::Complete;
-    feature.updated_at = Utc::now();
+    feature.log_activity("Feature marked complete", "success");
 
     // Collect worktree info before clearing
     let worktrees: Vec<(String, String)> = feature
@@ -995,7 +996,7 @@ pub fn cancel_execution(
         let _ = pty::kill_pty_session(&pty_sessions, &session_id);
     }
     feature.status = FeatureStatus::Ideation;
-    feature.updated_at = Utc::now();
+    feature.log_activity("Execution cancelled", "warning");
     let updated = feature.clone();
     drop(features);
     state.save_features();
@@ -1206,7 +1207,7 @@ pub fn start_functional_testing(
     // Build command
     let prefs = state.preferences.lock().unwrap().clone();
     let shell = if prefs.shell.is_empty() {
-        "bash".to_string()
+        default_shell()
     } else {
         prefs.shell.clone()
     };
@@ -1277,7 +1278,7 @@ pub fn skip_functional_testing(
     feature.testing_skipped = true;
     feature.testing_started_at = None;
     feature.status = FeatureStatus::Ready;
-    feature.updated_at = Utc::now();
+    feature.log_activity("Functional testing skipped", "info");
     let updated = feature.clone();
     drop(features);
     state.save_features();
@@ -1324,6 +1325,7 @@ pub fn complete_functional_testing(
             reason: format!("All proofs passed on attempt {}", attempt),
             timestamp: Utc::now(),
         });
+        feature.log_activity(format!("Testing passed on attempt {}", attempt), "success");
     } else if feature.testing_attempt >= feature.max_testing_attempts {
         feature.status = FeatureStatus::Failed;
         feature.testing_decisions.push(TestingDecision {
@@ -1334,6 +1336,7 @@ pub fn complete_functional_testing(
             ),
             timestamp: Utc::now(),
         });
+        feature.log_activity(format!("Testing failed after {} attempts", feature.testing_attempt), "error");
     } else {
         // Loop back to executing — implementer needs to fix issues
         feature.status = FeatureStatus::Executing;
@@ -1345,6 +1348,7 @@ pub fn complete_functional_testing(
             ),
             timestamp: Utc::now(),
         });
+        feature.log_activity(format!("Testing attempt {} failed — looping back for fixes", attempt), "warning");
     }
 
     feature.pty_session_id = None;
@@ -1376,7 +1380,7 @@ pub fn mark_feature_testing(
     let mut features = state.features.lock().unwrap();
     let feature = features.get_mut(&feature_id).ok_or("Feature not found")?;
     feature.status = FeatureStatus::Testing;
-    feature.updated_at = Utc::now();
+    feature.log_activity("Functional testing started", "info");
     let updated = feature.clone();
     drop(features);
     state.save_features();
@@ -1564,7 +1568,7 @@ pub fn start_test_harness(
 
     let prefs = state.preferences.lock().unwrap().clone();
     let shell = if prefs.shell.is_empty() {
-        "bash".to_string()
+        default_shell()
     } else {
         prefs.shell.clone()
     };
@@ -1698,7 +1702,12 @@ pub fn push_feature_repo(
     let mut features = state.features.lock().unwrap();
     if let Some(f) = features.get_mut(&feature_id) {
         f.repo_push_status.insert(repo_id, push_status.clone());
-        f.updated_at = Utc::now();
+
+        match &push_status {
+            RepoPushStatus::Pushed => f.log_activity(format!("Pushed {} to origin", repo.name), "success"),
+            RepoPushStatus::Failed => f.log_activity(format!("Push failed for {}", repo.name), "error"),
+            _ => {}
+        }
 
         // If all repos are pushed, promote feature status to Pushed
         let all_repo_ids = f.effective_repo_ids();
@@ -2174,6 +2183,16 @@ pub fn revise_ideation(
         .map(|s| s.as_str())
         .unwrap_or(&repo.path);
 
+    // Log the revision
+    {
+        let mut features = state.features.lock().unwrap();
+        if let Some(f) = features.get_mut(&feature_id) {
+            f.log_activity("Plan revision requested", "info");
+        }
+        drop(features);
+        state.save_features();
+    }
+
     spawn_ideation_process(&feature_dir, work_dir, &system_prompt_content, &revised_prompt)
 }
 
@@ -2268,6 +2287,16 @@ pub fn submit_planning_answers(
         .get(&repo.id)
         .map(|s| s.as_str())
         .unwrap_or(&repo.path);
+
+    // Log the Q&A submission
+    {
+        let mut features = state.features.lock().unwrap();
+        if let Some(f) = features.get_mut(&feature_id) {
+            f.log_activity("Planning questions answered", "info");
+        }
+        drop(features);
+        state.save_features();
+    }
 
     spawn_ideation_process(&feature_dir, work_dir, &system_prompt_content, &user_prompt)
 }
@@ -2984,6 +3013,15 @@ fn service_type_color(st: &ServiceType) -> String {
 // ── Helpers ──
 
 /// Shell-quote a string for safe inclusion in shell commands.
+/// Platform-aware default shell when no preference is set.
+fn default_shell() -> String {
+    if cfg!(target_os = "windows") {
+        "powershell".to_string()
+    } else {
+        "bash".to_string()
+    }
+}
+
 fn shell_quote(s: &str) -> String {
     if s.chars()
         .all(|c| c.is_alphanumeric() || c == '/' || c == '.' || c == '-' || c == '_')

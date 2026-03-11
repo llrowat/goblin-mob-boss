@@ -246,6 +246,14 @@ pub enum RepoPushStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ActivityEntry {
+    pub message: String,
+    #[serde(rename = "type")]
+    pub entry_type: String,
+    pub timestamp: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Feature {
     pub id: String,
     /// Deprecated: use `repo_ids` instead. Kept for backward compat with old features.json.
@@ -309,6 +317,9 @@ pub struct Feature {
     /// Audit log of testing loop decisions (started, passed, failed, looped back, etc.).
     #[serde(default)]
     pub testing_decisions: Vec<TestingDecision>,
+    /// Persisted activity log entries.
+    #[serde(default)]
+    pub activity_log: Vec<ActivityEntry>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -350,9 +361,24 @@ impl Feature {
             testing_started_at: None,
             testing_timeout_secs: default_testing_timeout_secs(),
             testing_decisions: vec![],
+            activity_log: vec![ActivityEntry {
+                message: "Feature created".to_string(),
+                entry_type: "info".to_string(),
+                timestamp: now,
+            }],
             created_at: now,
             updated_at: now,
         }
+    }
+
+    /// Append an activity log entry and update the timestamp.
+    pub fn log_activity(&mut self, message: impl Into<String>, entry_type: &str) {
+        self.activity_log.push(ActivityEntry {
+            message: message.into(),
+            entry_type: entry_type.to_string(),
+            timestamp: Utc::now(),
+        });
+        self.updated_at = Utc::now();
     }
 
     /// Get the effective list of repo IDs, handling legacy single-repo features.
@@ -1942,5 +1968,50 @@ You are enabled by default."#;
         }"#;
         let feature: Feature = serde_json::from_str(json).unwrap();
         assert!(feature.plan_history.is_empty());
+    }
+
+    #[test]
+    fn feature_new_seeds_activity_log() {
+        let feature = Feature::new(
+            vec!["r1".into()],
+            "Test".into(),
+            "A test feature".into(),
+            "feat/test".into(),
+        );
+        assert_eq!(feature.activity_log.len(), 1);
+        assert_eq!(feature.activity_log[0].message, "Feature created");
+        assert_eq!(feature.activity_log[0].entry_type, "info");
+    }
+
+    #[test]
+    fn log_activity_appends_entry() {
+        let mut feature = Feature::new(
+            vec!["r1".into()],
+            "Test".into(),
+            "desc".into(),
+            "feat/test".into(),
+        );
+        let before = feature.updated_at;
+        feature.log_activity("Execution started", "info");
+        assert_eq!(feature.activity_log.len(), 2);
+        assert_eq!(feature.activity_log[1].message, "Execution started");
+        assert_eq!(feature.activity_log[1].entry_type, "info");
+        assert!(feature.updated_at >= before);
+    }
+
+    #[test]
+    fn activity_log_defaults_empty_for_old_features() {
+        let json = r#"{
+            "id": "feat-old",
+            "repo_ids": ["r1"],
+            "name": "Old",
+            "description": "Old feature",
+            "branch": "feat/old",
+            "status": "ideation",
+            "created_at": "2025-01-01T00:00:00Z",
+            "updated_at": "2025-01-01T00:00:00Z"
+        }"#;
+        let feature: Feature = serde_json::from_str(json).unwrap();
+        assert!(feature.activity_log.is_empty());
     }
 }

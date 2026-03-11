@@ -7,7 +7,7 @@ import { useCommandDisplay, CommandDisplayButton, CommandDisplayContent } from "
 import { TaskTable, ExecutionModeSelector, EditTaskModal, PlanHistory } from "./feature-detail/PlanningComponents";
 import { ValidationPanel } from "./feature-detail/ValidationPanel";
 import { TestingPanel } from "./feature-detail/TestingPanel";
-import { ActivityLog, buildActivityLog } from "../components/ActivityLog";
+import { ActivityLog, toDisplayEntries } from "../components/ActivityLog";
 import type {
   Feature,
   Repository,
@@ -1248,13 +1248,7 @@ export function FeatureDetailPage() {
             Activity Log
           </div>
           <ActivityLog
-            entries={buildActivityLog(
-              feature,
-              planHistory ?? [],
-              taskProgress,
-              verifyResult,
-              analysis,
-            )}
+            entries={toDisplayEntries(feature.activity_log ?? [])}
           />
         </div>
       </div>

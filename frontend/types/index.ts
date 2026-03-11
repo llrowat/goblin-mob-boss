@@ -145,8 +145,16 @@ export interface Feature {
   testing_timeout_secs: number;
   /** Audit log of testing loop decisions. */
   testing_decisions: TestingDecision[];
+  /** Persisted activity log entries from the backend. */
+  activity_log: ActivityEntry[];
   created_at: string;
   updated_at: string;
+}
+
+export interface ActivityEntry {
+  message: string;
+  type: "success" | "error" | "warning" | "info";
+  timestamp: string;
 }
 
 export interface TaskSpec {
