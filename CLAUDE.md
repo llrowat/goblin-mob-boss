@@ -16,23 +16,42 @@ goblin-mob-boss/
 │   │   ├── launch.rs           # Launch command builder (Teams/Subagents mode)
 │   │   ├── git.rs              # Git operations (branches, merge, push, diff)
 │   │   ├── prompts.rs          # Ideation prompt templates with execution mode heuristics
-│   │   └── validators.rs       # Validator execution and result aggregation
+│   │   ├── validators.rs       # Validator execution and result aggregation
+│   │   ├── templates.rs        # Built-in agent definitions and feature recipes
+│   │   ├── observer.rs         # Execution observability (git activity polling)
+│   │   ├── analytics.rs        # Post-execution analysis (plan vs reality)
+│   │   ├── guidance.rs         # Mid-execution guidance notes
+│   │   ├── heuristics.rs       # Task graph analysis and mode recommendation
+│   │   ├── functional_testing.rs # Functional testing loop (proof collection, QA prompts)
+│   │   ├── harness.rs          # Test harness process management (start/stop app under test)
+│   │   └── pty.rs              # PTY session management for embedded terminal
 │   └── tauri.conf.json
 ├── frontend/           # React frontend
 │   ├── components/     # Shared UI components
 │   │   ├── AddRepoModal        # Repository addition dialog (with folder picker)
-│   │   └── StatusBadge         # Feature status indicator
+│   │   ├── StatusBadge         # Feature status indicator
+│   │   ├── Terminal            # xterm.js PTY terminal emulation
+│   │   ├── PersistentTerminal  # Portal-based terminal with session persistence
+│   │   ├── CommandDisplay      # Shell command transparency display
+│   │   ├── ToastContainer      # Auto-dismissing toast notifications
+│   │   ├── ActivityLog         # Feature lifecycle timeline
+│   │   └── ErrorBoundary       # React error boundary with retry
 │   ├── pages/          # Page components
 │   │   ├── HomePage            # Feature launcher (describe what to build, list active features)
-│   │   ├── IdeationPage        # Interactive Claude Code planning + task discovery (polls plan.json)
-│   │   ├── LaunchConfigPage    # Execution mode selection, agent picker, launch command generation
-│   │   ├── FeatureStatusPage   # Execution monitor (diff summary, validators, status transitions)
+│   │   ├── FeatureDetailPage   # Unified feature lifecycle (ideation, execution, validation, testing, PR)
+│   │   ├── feature-detail/     # Sub-components for FeatureDetailPage
+│   │   │   ├── PlanningComponents  # TaskTable, ExecutionModeSelector, PlanHistory
+│   │   │   ├── ValidationPanel     # Validator results, diff summary, push status
+│   │   │   └── TestingPanel        # Functional testing harness, proof collection
 │   │   ├── AgentsPage          # Agent CRUD (form-based editor for .claude/agents/*.md files)
 │   │   ├── ReposPage           # Repository management (validators, base branch, PR command)
-│   │   ├── SettingsPage        # App preferences (shell selection)
-│   │   └── SystemMapPage       # Interactive system topology map (goblin treasure map style)
+│   │   ├── SettingsPage        # App preferences (shell, execution defaults, model, auto-validate, functional testing)
+│   │   └── SystemMapPage       # Interactive system topology map (SVG visualization)
 │   ├── hooks/          # React hooks
-│   │   └── useTauri            # Tauri IPC wrapper
+│   │   ├── useTauri            # Tauri IPC wrapper
+│   │   ├── useToast            # Global toast notification context
+│   │   ├── useTerminalSession  # PTY session lifecycle context
+│   │   └── useBackgroundPlanning # Background ideation tracking and polling
 │   ├── types/          # TypeScript type definitions
 │   ├── test/           # Test setup
 │   │   └── setup.ts            # Vitest global setup (Tauri mock, jest-dom)
@@ -44,13 +63,14 @@ goblin-mob-boss/
 
 ## Core Workflow
 
-1. **Agents** — Defined as `.claude/agents/*.md` files with YAML frontmatter (name, description, tools, model, system_prompt, color). Per-repo and global agents supported.
-2. **Feature** — User starts a feature → creates feature branch from repo base branch
-3. **Ideation** — Interactive Claude Code session in plan mode; discovers task specs with assigned agents and recommends an execution mode (Teams vs Subagents)
+1. **Agents** — Defined as `.claude/agents/*.md` files with YAML frontmatter (name, description, tools, model, system_prompt, color, role). Per-repo and global agents supported. Built-in agent templates available for one-click setup.
+2. **Feature** — User starts a feature → creates feature branch from repo base branch with isolated git worktree per repo
+3. **Ideation** — Background Claude Code session in plan mode; discovers task specs with assigned agents, recommends an execution mode (Teams vs Subagents) with confidence scoring. Can pause to ask clarifying questions.
 4. **Launch Config** — User reviews tasks and execution mode recommendation, selects agents, generates launch command
-5. **Execution** — User runs the generated Claude Code command; GMB tracks feature status
-6. **Validation** — Run repository validators (tests, linters) against the feature branch; review diff summary
-7. **PR** — Push feature branch and create PR
+5. **Execution** — Launch command runs in an embedded PTY terminal; GMB tracks feature status with live progress (commits, file changes, task completion)
+6. **Validation** — Run repository validators (tests, linters) against the feature branch; review diff summary; post-execution analysis compares plan vs actual changes
+7. **Functional Testing** — Optional QA phase: a test harness runs the app under test while a QA agent exercises it via browser/API/CLI, collecting proof artifacts (screenshots, responses, console output)
+8. **PR** — Push feature branch to all repos and create PRs
 
 ## Development
 
@@ -91,11 +111,11 @@ npm run test:watch
 - **Frontend**: Use Vitest + React Testing Library. Test files live next to the source files they test (e.g., `Foo.test.tsx` next to `Foo.tsx`). Mock Tauri `invoke` calls via the setup in `frontend/test/setup.ts`.
 - **Test naming**: Use descriptive names that explain what is being tested.
 - **Verify before committing**: Run `cd backend && cargo test --lib` and `npm test` to ensure all tests pass before committing.
-- **CI**: Tests run automatically on every push to `main` and on pull requests via GitHub Actions (`.github/workflows/tests.yml`). Both Rust and frontend test jobs must pass.
+- **CI**: GitHub Actions workflow (`.github/workflows/tests.yml`) runs Rust backend and frontend test jobs. Currently set to `workflow_dispatch` (manual trigger) — re-enable push/PR triggers when ready for automated CI.
 
 ## Voice & Tone
 
-The app has a light **goblin mob-boss personality** woven into UI copy — empty states, page descriptions, and status messages use playful mob/heist/crew language (e.g., "Your mob is waiting for orders," "No lairs claimed yet"). Follow these guidelines:
+The app has a light **goblin mob-boss personality** woven into UI copy — empty states, page descriptions, and status messages use playful mob/heist/crew language (e.g., "The crew is idle," "No lairs claimed yet"). Follow these guidelines:
 
 - **Keep it subtle** — One short phrase per empty state or description. Never let flavor text crowd out functional guidance.
 - **No war or military language** — Avoid words like battle, war, raid, rally, recruit, orders, troops, deploy. Prefer crew/mob/heist/scheme/lair/hustle framing instead.
