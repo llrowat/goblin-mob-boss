@@ -146,6 +146,15 @@ describe("App tab bar", () => {
     expect(warnBadges).toHaveLength(1);
   });
 
+  it("renders the brand logo in the topbar", async () => {
+    render(<App />);
+    const nav = screen.getByRole("navigation");
+    const logo = nav.querySelector(".brand-logo");
+    expect(logo).toBeTruthy();
+    expect(logo).toHaveAttribute("alt", "Goblin Mob Boss");
+    await waitFor(() => {});
+  });
+
   it("includes a divider between Features and setup tabs", async () => {
     render(<App />);
     const nav = screen.getByRole("navigation");

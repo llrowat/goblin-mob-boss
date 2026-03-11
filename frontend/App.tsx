@@ -13,6 +13,7 @@ import { PersistentTerminal } from "./components/PersistentTerminal";
 import { ToastContainer } from "./components/ToastContainer";
 import { useTauri } from "./hooks/useTauri";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import goblinLogo from "./assets/icon/goblin-logo.png";
 
 function App() {
   return (
@@ -68,10 +69,11 @@ function AppLayout() {
     <div className="app-layout">
       <nav className="topbar" aria-label="Main navigation">
         <div className="topbar-brand">
-          <span className="brand-icon" aria-hidden="true">
-            &#x2692;
-          </span>
-          <h1>Goblin Mob Boss</h1>
+          <img
+            src={goblinLogo}
+            alt="Goblin Mob Boss"
+            className="brand-logo"
+          />
         </div>
         <div className="topbar-tabs">
           <NavLink

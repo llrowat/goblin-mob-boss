@@ -76,16 +76,10 @@ body {
   flex-shrink: 0;
 }
 
-.topbar-brand h1 {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text);
-  letter-spacing: -0.3px;
-  white-space: nowrap;
-}
-
-.topbar-brand .brand-icon {
-  font-size: 18px;
+.topbar-brand .brand-logo {
+  height: 28px;
+  width: auto;
+  object-fit: contain;
 }
 
 .topbar-tabs {
