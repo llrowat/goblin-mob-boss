@@ -381,6 +381,22 @@ impl Feature {
         self.updated_at = Utc::now();
     }
 
+    /// Log "Plan created" only if it hasn't been logged since the last plan
+    /// revision (or ever). Returns `true` if the entry was added.
+    pub fn log_plan_created_once(&mut self) -> bool {
+        let needs_log = self
+            .activity_log
+            .iter()
+            .rev()
+            .find(|e| e.message == "Plan created" || e.message == "Plan revision requested")
+            .map_or(true, |e| e.message == "Plan revision requested");
+
+        if needs_log {
+            self.log_activity("Plan created", "success");
+        }
+        needs_log
+    }
+
     /// Get the effective list of repo IDs, handling legacy single-repo features.
     pub fn effective_repo_ids(&self) -> Vec<String> {
         if !self.repo_ids.is_empty() {
@@ -1997,6 +2013,72 @@ You are enabled by default."#;
         assert_eq!(feature.activity_log[1].message, "Execution started");
         assert_eq!(feature.activity_log[1].entry_type, "info");
         assert!(feature.updated_at >= before);
+    }
+
+    #[test]
+    fn log_plan_created_once_adds_entry_on_new_feature() {
+        let mut feature = Feature::new(
+            vec!["r1".into()],
+            "Test".into(),
+            "Desc".into(),
+            "feat/test".into(),
+        );
+        assert_eq!(feature.activity_log.len(), 1); // "Feature created"
+
+        let added = feature.log_plan_created_once();
+        assert!(added);
+        assert_eq!(feature.activity_log.len(), 2);
+        assert_eq!(feature.activity_log[1].message, "Plan created");
+        assert_eq!(feature.activity_log[1].entry_type, "success");
+    }
+
+    #[test]
+    fn log_plan_created_once_is_idempotent() {
+        let mut feature = Feature::new(
+            vec!["r1".into()],
+            "Test".into(),
+            "Desc".into(),
+            "feat/test".into(),
+        );
+
+        assert!(feature.log_plan_created_once());
+        assert!(!feature.log_plan_created_once());
+        assert!(!feature.log_plan_created_once());
+        assert_eq!(
+            feature
+                .activity_log
+                .iter()
+                .filter(|e| e.message == "Plan created")
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn log_plan_created_once_logs_again_after_revision() {
+        let mut feature = Feature::new(
+            vec!["r1".into()],
+            "Test".into(),
+            "Desc".into(),
+            "feat/test".into(),
+        );
+
+        // First plan created
+        assert!(feature.log_plan_created_once());
+        assert_eq!(feature.activity_log.len(), 2);
+
+        // Simulate a plan revision
+        feature.log_activity("Plan revision requested", "info");
+        assert_eq!(feature.activity_log.len(), 3);
+
+        // Should log again after revision
+        assert!(feature.log_plan_created_once());
+        assert_eq!(feature.activity_log.len(), 4);
+        assert_eq!(feature.activity_log[3].message, "Plan created");
+
+        // But not a second time
+        assert!(!feature.log_plan_created_once());
+        assert_eq!(feature.activity_log.len(), 4);
     }
 
     #[test]
