@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { BrowserRouter, Routes, Route, NavLink } from "react-router-dom";
 import { HomePage } from "./pages/HomePage";
+import { OnboardingPage } from "./pages/OnboardingPage";
 import { FeatureDetailPage } from "./pages/FeatureDetailPage";
 import { AgentsPage } from "./pages/AgentsPage";
 import { ReposPage } from "./pages/ReposPage";
@@ -68,13 +69,13 @@ function AppLayout() {
   return (
     <div className="app-layout">
       <nav className="topbar" aria-label="Main navigation">
-        <div className="topbar-brand">
+        <NavLink to="/onboarding" className="topbar-brand topbar-brand-link" title="How it works">
           <img
             src={goblinLogo}
             alt="Goblin Mob Boss"
             className="brand-logo"
           />
-        </div>
+        </NavLink>
         <div className="topbar-tabs">
           <NavLink
             to="/"
@@ -146,6 +147,7 @@ function AppLayout() {
         <ErrorBoundary>
           <Routes>
             <Route path="/" element={<HomePage />} />
+            <Route path="/onboarding" element={<OnboardingPage />} />
             <Route
               path="/feature/:featureId/detail"
               element={<FeatureDetailPage />}
