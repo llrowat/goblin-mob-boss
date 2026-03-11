@@ -91,7 +91,7 @@ body {
 .topbar-tabs {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
   flex: 1;
   min-width: 0;
 }
@@ -122,9 +122,9 @@ body {
 
 .topbar-divider {
   width: 1px;
-  height: 20px;
+  height: 24px;
   background: var(--border);
-  margin: 0 6px;
+  margin: 0 10px;
   flex-shrink: 0;
 }
 
@@ -152,6 +152,35 @@ body {
 .topbar-settings.active {
   background: var(--panel);
   color: var(--accent);
+}
+
+/* Page header with back button */
+.page-header-with-back {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.back-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--text-secondary);
+  font-size: 18px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  flex-shrink: 0;
+}
+
+.back-btn:hover {
+  background: var(--panel-hover);
+  color: var(--text);
+  border-color: var(--text-secondary);
 }
 
 /* Feature cards on HomePage */
@@ -1642,7 +1671,7 @@ body {
 .system-map-page {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 64px);
+  height: calc(100vh - 48px - 48px);
 }
 
 /* ── Page header ── */
@@ -1792,26 +1821,26 @@ body {
 /* ── Side panels ── */
 .map-detail-panel {
   position: absolute;
-  bottom: 12px;
-  left: 12px;
+  top: 12px;
   right: 12px;
-  max-height: 45%;
+  width: 320px;
+  max-height: calc(100% - 24px);
   overflow-y: auto;
   z-index: 10;
   animation: map-panel-in 0.15s ease-out;
-  box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow-lg);
 }
 
 @keyframes map-panel-in {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: translateX(8px); }
+  to { opacity: 1; transform: translateX(0); }
 }
 
 /* ── Detail panel ── */
 .map-detail-body {
   display: flex;
-  gap: 24px;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .map-detail-title {

@@ -1219,8 +1219,8 @@ export function SystemMapPage() {
   return (
     <div className="system-map-page">
       <div className="page-header map-page-header">
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <button className="btn btn-secondary btn-sm" onClick={() => setActiveMapId(null)}>
+        <div className="page-header-with-back">
+          <button className="back-btn" onClick={() => setActiveMapId(null)} title="Back to maps">
             &larr;
           </button>
           <div>
