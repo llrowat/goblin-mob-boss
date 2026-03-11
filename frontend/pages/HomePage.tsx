@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTauri } from "../hooks/useTauri";
 import { useBackgroundPlanning } from "../hooks/useBackgroundPlanning";
-import type { Repository, Feature } from "../types";
+import type { Repository, Feature, SystemMap } from "../types";
 
 export function HomePage() {
   const tauri = useTauri();
@@ -17,6 +17,8 @@ export function HomePage() {
   const [features, setFeatures] = useState<Feature[]>([]);
   const [filterRepoId, setFilterRepoId] = useState<string>("");
   const [showNewFeature, setShowNewFeature] = useState(false);
+  const [maps, setMaps] = useState<SystemMap[]>([]);
+  const [selectedMapId, setSelectedMapId] = useState<string | null>(null);
 
   useEffect(() => {
     tauri.listRepositories().then((r) => {
@@ -25,7 +27,20 @@ export function HomePage() {
         setSelectedRepoIds([r[0].id]);
       }
     });
+    tauri.listSystemMaps().then(setMaps).catch(() => {});
   }, []);
+
+  // Auto-select map when repos change
+  useEffect(() => {
+    if (maps.length === 0 || selectedRepoIds.length === 0) {
+      setSelectedMapId(null);
+      return;
+    }
+    const match = maps.find((m) =>
+      m.services.some((s) => s.repo_id && selectedRepoIds.includes(s.repo_id))
+    );
+    setSelectedMapId(match?.id ?? null);
+  }, [selectedRepoIds, maps]);
 
   useEffect(() => {
     const loadFeatures = () => {
@@ -49,6 +64,7 @@ export function HomePage() {
         selectedRepoIds,
         name.trim(),
         description.trim(),
+        selectedMapId,
       );
       // Start planning immediately in the background
       addPlanning(feature.id);
@@ -325,6 +341,30 @@ export function HomePage() {
                 you.
               </div>
             </div>
+
+            {maps.length > 0 && (
+              <div className="form-group">
+                <label className="form-label">System Map</label>
+                <select
+                  className="form-select"
+                  value={selectedMapId ?? ""}
+                  onChange={(e) => setSelectedMapId(e.target.value || null)}
+                >
+                  <option value="">None</option>
+                  {maps.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
+                      {m.services.some((s) => s.repo_id && selectedRepoIds.includes(s.repo_id))
+                        ? " (auto-detected)"
+                        : ""}
+                    </option>
+                  ))}
+                </select>
+                <div className="form-help">
+                  Architecture context to include in planning. Auto-detected from selected repos.
+                </div>
+              </div>
+            )}
 
             <div className="modal-actions">
               <button

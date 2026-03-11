@@ -1,21 +1,47 @@
 /// System prompt context for ideation — appended via --append-system-prompt.
-/// Contains only repository context and available agents.
+/// Contains repository context, system architecture, and available agents.
 pub fn ideation_system_prompt(
     repo_map: &str,
     available_agents: &str,
 ) -> String {
+    ideation_system_prompt_with_architecture(repo_map, available_agents, "")
+}
+
+/// System prompt with optional architecture context from a system map.
+pub fn ideation_system_prompt_with_architecture(
+    repo_map: &str,
+    available_agents: &str,
+    architecture_context: &str,
+) -> String {
+    let arch_section = if architecture_context.is_empty() {
+        String::new()
+    } else {
+        format!(
+            r#"## System Architecture
+
+The following system map describes the deployment topology and how services communicate.
+Use this to understand how the feature fits into the broader system.
+
+{architecture_context}
+
+"#,
+            architecture_context = architecture_context,
+        )
+    };
+
     format!(
         r#"## Repository Overview
 
 {repo_map}
 
-## Available Agents
+{arch_section}## Available Agents
 
 The user has these agents configured:
 
 {available_agents}
 "#,
         repo_map = repo_map,
+        arch_section = arch_section,
         available_agents = available_agents,
     )
 }

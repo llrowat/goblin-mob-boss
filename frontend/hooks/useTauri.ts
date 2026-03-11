@@ -107,8 +107,8 @@ export function useTauri() {
       invoke<void>("delete_global_agent", { filename }),
 
     // Features
-    startFeature: (repoIds: string[], name: string, description: string) =>
-      invoke<Feature>("start_feature", { repoIds, name, description }),
+    startFeature: (repoIds: string[], name: string, description: string, mapId?: string | null) =>
+      invoke<Feature>("start_feature", { repoIds, name, description, mapId: mapId ?? null }),
 
     listFeatures: (repoId?: string) =>
       invoke<Feature[]>("list_features", { repoId: repoId ?? null }),

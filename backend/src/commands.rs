@@ -265,6 +265,7 @@ pub fn start_feature(
     repo_ids: Vec<String>,
     name: String,
     description: String,
+    map_id: Option<String>,
 ) -> Result<Feature, String> {
     if repo_ids.is_empty() {
         return Err("At least one repository must be selected".to_string());
@@ -385,7 +386,23 @@ pub fn start_feature(
         .collect::<Vec<_>>()
         .join("\n");
 
-    let system_prompt = prompts::ideation_system_prompt(&repo_map, &agent_list);
+    // Use explicit map if provided, otherwise auto-detect from repo overlap
+    let architecture_context = {
+        let maps = state.system_maps.lock().unwrap();
+        let chosen_map = if let Some(ref mid) = map_id {
+            maps.get(mid)
+        } else {
+            let repo_id_set: std::collections::HashSet<&String> = feature.repo_ids.iter().collect();
+            maps.values().find(|m| {
+                m.services.iter().any(|s| {
+                    s.repo_id.as_ref().map_or(false, |rid| repo_id_set.contains(rid))
+                })
+            })
+        };
+        chosen_map.map(|m| format_map_context(m)).unwrap_or_default()
+    };
+
+    let system_prompt = prompts::ideation_system_prompt_with_architecture(&repo_map, &agent_list, &architecture_context);
     std::fs::write(ideation_dir.join("system-prompt.md"), &system_prompt)
         .map_err(|e| format!("Failed to write system prompt: {}", e))?;
 
@@ -1829,7 +1846,17 @@ fn ensure_ideation_prompts(
         let (agent_list, quality_agent_list) = build_agent_lists(&all_repos);
 
         if !system_prompt_path.exists() {
-            let system_prompt = prompts::ideation_system_prompt(&repo_map, &agent_list);
+            let architecture_context = {
+                let maps = state.system_maps.lock().unwrap();
+                let repo_id_set: std::collections::HashSet<&String> = feature.repo_ids.iter().collect();
+                let matching_map = maps.values().find(|m| {
+                    m.services.iter().any(|s| {
+                        s.repo_id.as_ref().map_or(false, |rid| repo_id_set.contains(rid))
+                    })
+                });
+                matching_map.map(|m| format_map_context(m)).unwrap_or_default()
+            };
+            let system_prompt = prompts::ideation_system_prompt_with_architecture(&repo_map, &agent_list, &architecture_context);
             std::fs::write(&system_prompt_path, &system_prompt)
                 .map_err(|e| format!("Failed to write system prompt: {}", e))?;
         }
@@ -3042,6 +3069,50 @@ fn generate_multi_repo_context_with_similar(
     }
 
     context
+}
+
+/// Format a SystemMap into a human-readable architecture context for the ideation prompt.
+fn format_map_context(map: &SystemMap) -> String {
+    let mut out = String::new();
+    out.push_str(&format!("**{}**", map.name));
+    if !map.description.is_empty() {
+        out.push_str(&format!(" — {}", map.description));
+    }
+    out.push('\n');
+
+    if !map.services.is_empty() {
+        out.push_str("\nServices:\n");
+        for svc in &map.services {
+            let mut parts = vec![format!("  - **{}** ({:?})", svc.name, svc.service_type)];
+            if !svc.runtime.is_empty() {
+                parts.push(format!(" [{}]", svc.runtime));
+            }
+            if !svc.description.is_empty() {
+                parts.push(format!(" — {}", svc.description));
+            }
+            out.push_str(&parts.join(""));
+            out.push('\n');
+        }
+    }
+
+    if !map.connections.is_empty() {
+        out.push_str("\nConnections:\n");
+        for conn in &map.connections {
+            let from_name = map.services.iter().find(|s| s.id == conn.from_service).map(|s| s.name.as_str()).unwrap_or("?");
+            let to_name = map.services.iter().find(|s| s.id == conn.to_service).map(|s| s.name.as_str()).unwrap_or("?");
+            let mut line = format!("  - {} → {} ({:?})", from_name, to_name, conn.connection_type);
+            if !conn.label.is_empty() {
+                line.push_str(&format!(": {}", conn.label));
+            }
+            if !conn.sync {
+                line.push_str(" [async]");
+            }
+            out.push_str(&line);
+            out.push('\n');
+        }
+    }
+
+    out
 }
 
 fn generate_context_pack_string(repo_path: &str) -> String {

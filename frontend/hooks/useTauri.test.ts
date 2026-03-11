@@ -103,6 +103,7 @@ describe("useTauri", () => {
       repoIds: ["r1", "r2"],
       name: "Auth",
       description: "Add auth",
+      mapId: null,
     });
   });
 

@@ -149,9 +149,15 @@ export function FeatureDetailPage() {
   }, [featureId, feature?.status]);
 
   // Refresh feature when terminal session clears (execution completed or cancelled)
+  const hadSessionRef = useRef(false);
   useEffect(() => {
-    if (!featureId || terminalSession) return;
-    // Session just cleared — refresh feature to pick up ready/failed status
+    if (terminalSession) {
+      hadSessionRef.current = true;
+      return;
+    }
+    // Only refresh if there was a session that just cleared (not on initial mount)
+    if (!featureId || !hadSessionRef.current) return;
+    hadSessionRef.current = false;
     tauri.getFeature(featureId).then(setFeature).catch((e) => setError(String(e)));
   }, [featureId, terminalSession]);
 
@@ -279,7 +285,7 @@ export function FeatureDetailPage() {
     if (!featureId) return;
     setStatus("running");
     setError("");
-    setIdeationResult(null);
+    // Keep previous ideationResult visible while re-planning
     clearSession();
     try {
       // Fetch the command being run for transparency
@@ -418,7 +424,7 @@ export function FeatureDetailPage() {
     try {
       await tauri.reviseIdeation(featureId, feedback.trim());
       setFeedback("");
-      setIdeationResult(null);
+      // Keep previous ideationResult visible while re-planning
       tauri.getPlanHistory(featureId).then(setPlanHistory).catch(() => {});
     } catch (err) {
       setStatus("error");
