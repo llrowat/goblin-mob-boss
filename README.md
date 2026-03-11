@@ -50,7 +50,7 @@ A desktop app for agent-based AI development workflows. Configure agents, plan f
 - **Discovery mode** — Run Claude against your repositories to automatically discover services and connections; progress tracked in the UI
 
 ### Intelligent Mode Selection
-- **Task dependency graph** — Backend analysis of task dependencies with depth levels, parallelism ratio, and critical path length. IPC command is wired up; frontend visualization is not yet implemented.
+- **Task dependency graph** — Tasks display their dependencies in the task list (e.g., "TASK-1, TASK-2"). Backend also provides deeper graph analysis (depth levels, parallelism ratio, critical path length) for mode recommendation.
 - **Heuristic analysis** — Automatic recommendation based on: task count, parallelism ratio, agent diversity, and critical path length
 - **Confidence scoring** — Each recommendation includes a confidence percentage and detailed reasoning
 
