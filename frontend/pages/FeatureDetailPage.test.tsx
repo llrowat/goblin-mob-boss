@@ -1014,6 +1014,49 @@ describe("FeatureDetailPage", () => {
     });
   });
 
+  it("collapses and expands the activity log", async () => {
+    const featureWithLog: Feature = {
+      ...mockFeature,
+      activity_log: [
+        { message: "Feature created", type: "info", timestamp: "2026-01-01T00:00:00Z" },
+        { message: "Plan generated", type: "success", timestamp: "2026-01-01T01:00:00Z" },
+      ],
+    };
+
+    mockedInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "get_feature") return featureWithLog;
+      if (cmd === "get_ideation_prompt") return "system prompt";
+      if (cmd === "poll_ideation_result") return mockIdeationResult;
+      if (cmd === "get_plan_history") return [];
+      return undefined;
+    });
+
+    render(<FeatureDetailPage />);
+
+    // Activity log entries should be visible initially
+    await waitFor(() => {
+      expect(screen.getByText("Feature created")).toBeInTheDocument();
+    });
+    expect(screen.getByText("Plan generated")).toBeInTheDocument();
+
+    // Click the toggle to collapse
+    const toggle = screen.getByRole("button", { name: /Activity Log/i });
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    await userEvent.click(toggle);
+
+    // Entries should be hidden, count badge should appear
+    expect(screen.queryByText("Feature created")).not.toBeInTheDocument();
+    expect(screen.queryByText("Plan generated")).not.toBeInTheDocument();
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByText("2")).toBeInTheDocument(); // count badge
+
+    // Click again to expand
+    await userEvent.click(toggle);
+    expect(screen.getByText("Feature created")).toBeInTheDocument();
+    expect(screen.getByText("Plan generated")).toBeInTheDocument();
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+  });
+
   it("does not show per-repo panel for single-repo ready features", async () => {
     const singleRepoReady: Feature = {
       ...mockFeature,

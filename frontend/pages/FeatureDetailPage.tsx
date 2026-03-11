@@ -43,6 +43,7 @@ export function FeatureDetailPage() {
   const [feedback, setFeedback] = useState("");
   const [showFeedback, setShowFeedback] = useState(false);
   const [showContext, setShowContext] = useState(false);
+  const [activityLogCollapsed, setActivityLogCollapsed] = useState(false);
   // Planning questions state
   const [questions, setQuestions] = useState<PlanningQuestion[]>([]);
   const [questionAnswers, setQuestionAnswers] = useState<Record<string, string>>({});
@@ -1244,12 +1245,26 @@ export function FeatureDetailPage() {
       {/* Activity Log Sidebar */}
       <div className="feature-detail-sidebar">
         <div className="panel feature-sidebar-panel">
-          <div className="panel-title" style={{ fontSize: 12, marginBottom: 8 }}>
-            Activity Log
-          </div>
-          <ActivityLog
-            entries={toDisplayEntries(feature.activity_log ?? [])}
-          />
+          <button
+            className="activity-log-toggle"
+            onClick={() => setActivityLogCollapsed((c) => !c)}
+            aria-expanded={!activityLogCollapsed}
+          >
+            <span className={`activity-log-chevron${activityLogCollapsed ? " collapsed" : ""}`}>&#9662;</span>
+            <span className="panel-title" style={{ fontSize: 12 }}>
+              Activity Log
+            </span>
+            {activityLogCollapsed && (
+              <span className="activity-log-count">
+                {(feature.activity_log ?? []).length}
+              </span>
+            )}
+          </button>
+          {!activityLogCollapsed && (
+            <ActivityLog
+              entries={toDisplayEntries(feature.activity_log ?? [])}
+            />
+          )}
         </div>
       </div>
     </div>
