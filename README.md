@@ -13,7 +13,7 @@ A desktop app for agent-based AI development workflows. Configure agents, plan f
    You can accept or override the recommendation, and select which agents participate.
 5. **Execute & Monitor** — The launch command runs in an embedded PTY terminal. GMB tracks task completion progress in real-time, detects stale execution, and shows auto-completion when all tasks finish.
 6. **Validate & Analyze** — Run repository validators, review diffs, and analyze execution results across all repos. The post-execution analysis compares the original plan against actual file changes, assesses whether the chosen execution mode was appropriate, and identifies unplanned modifications.
-7. **PR** — Push the feature branch to all repos and create PRs.
+7. **PR** — Push the feature branch to all repos. PR command generation is available in the backend but not yet surfaced in the UI.
 
 ## Features
 
@@ -24,6 +24,7 @@ A desktop app for agent-based AI development workflows. Configure agents, plan f
 - **Interactive planning** — Back-and-forth conversation with Claude in plan mode; task specs written to `plan.json` with automatic polling. Planner can ask clarifying questions via `questions.json` when decisions would materially change the plan — users answer in the UI and planning resumes with full context
 - **Plan history** — Every plan revision, restart, or Q&A round automatically snapshots the previous plan. View prior versions inline with trigger labels, feedback, and task summaries to see how a plan evolved
 - **Launch command generation** — GMB builds the appropriate Claude Code command with environment variables, agent configs, and system prompts for the chosen execution mode
+- **Feature recipes** — Built-in task templates for common patterns (CRUD endpoint, new UI page, full-stack feature, refactor module). Backend-ready; not yet surfaced in the UI.
 - **Feature lifecycle** — Features progress through statuses: Ideation → Configuring → Executing → Testing → Ready → Pushed → Complete (or Failed at any stage)
 - **Functional testing loop** — After implementation, an optional QA phase where a dedicated agent (QA Goblin) exercises the running app via browser automation (Playwright), API testing, or CLI to verify the feature works. Test proofs (screenshots, API responses, console output) are captured and displayed in the UI. If tests fail and attempts remain, the feature loops back to implementation for fixes (with failed proof context injected). Configurable via Settings and skippable per-feature.
 - **Test harness management** — GMB starts and stops the app under test as a managed background process, monitors stdout for a configurable ready signal, and reports harness status (starting/running/error) in real-time
@@ -44,8 +45,9 @@ A desktop app for agent-based AI development workflows. Configure agents, plan f
 - **Connection mapping** — Define connections between services with type (REST, gRPC, GraphQL, WebSocket, event, shared DB, file system, IPC), sync/async mode, and labels
 - **Interactive SVG visualization** — Services rendered with type-specific shapes and color-coded abbreviations, connections with distinct line styles per connection type. Includes a legend bar for service types and connection types
 - **Drag-and-drop layout** — Reposition service nodes on the map by dragging; positions are persisted automatically
-- **Service detail panel** — Click a service to see its connections (incoming/outgoing), owned data ("treasure hoard"), runtime, framework, and description
+- **Service detail panel** — Click a service to see its connections (incoming/outgoing), runtime, framework, and description
 - **Multiple maps** — Create and switch between multiple system maps for different environments or subsystems
+- **Discovery mode** — Run Claude against your repositories to automatically discover services and connections; progress tracked in the UI
 
 ### Intelligent Mode Selection
 - **Task dependency graph** — Backend analysis of task dependencies with depth levels, parallelism ratio, and critical path length. IPC command is wired up; frontend visualization is not yet implemented.
@@ -56,7 +58,7 @@ A desktop app for agent-based AI development workflows. Configure agents, plan f
 - **Repository validators** — Configure shell commands (tests, linters) per repo; run them in the feature's worktree with per-command timeout protection (10 min default) and detailed stdout/stderr output
 - **Git worktrees** — Each feature gets isolated worktrees per repo, enabling concurrent feature development without branch checkout conflicts
 - **Git diff summary** — View files changed, lines added/removed before pushing
-- **PR creation** — Push feature branch and generate PR command (supports custom `pr_command` templates with `{branch}` placeholder)
+- **PR creation** — Push feature branch with per-repo push status tracking. PR command generation (with custom `pr_command` templates using `{branch}` placeholder) is available in the backend; UI for displaying the generated PR command is not yet implemented.
 
 ### Robustness
 - **Atomic persistence** — JSON state files (features, repos, preferences) are saved via write-to-temp-then-rename to prevent corruption from partial writes
