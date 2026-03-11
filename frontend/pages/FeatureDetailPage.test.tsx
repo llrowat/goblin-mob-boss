@@ -37,8 +37,8 @@ vi.mock("react-router-dom", () => ({
 }));
 
 const mockRepos: Repository[] = [
-  { id: "r1", name: "frontend-app", path: "/tmp/frontend", base_branch: "main", description: "", validators: [], pr_command: null, created_at: "2026-01-01T00:00:00Z" },
-  { id: "r2", name: "backend-api", path: "/tmp/backend", base_branch: "main", description: "", validators: [], pr_command: null, created_at: "2026-01-01T00:00:00Z" },
+  { id: "r1", name: "frontend-app", path: "/tmp/frontend", base_branch: "main", description: "", validators: [], pr_command: null, similar_repo_ids: [], created_at: "2026-01-01T00:00:00Z" },
+  { id: "r2", name: "backend-api", path: "/tmp/backend", base_branch: "main", description: "", validators: [], pr_command: null, similar_repo_ids: [], created_at: "2026-01-01T00:00:00Z" },
 ];
 
 const mockFeature: Feature = {
@@ -56,6 +56,15 @@ const mockFeature: Feature = {
   launched_command: null,
   worktree_paths: {},
   repo_push_status: {},
+  functional_test_steps: [],
+  test_harness: null,
+  testing_attempt: 0,
+  max_testing_attempts: 3,
+  testing_skipped: false,
+  functional_test_results: [],
+  testing_started_at: null,
+  testing_timeout_secs: 300,
+  testing_decisions: [],
   created_at: "2026-01-01T00:00:00Z",
   updated_at: "2026-01-01T00:00:00Z",
 };
@@ -84,6 +93,8 @@ const mockIdeationResult: IdeationResult = {
   },
   questions: null,
   answered_questions: null,
+  test_harness: null,
+  functional_test_steps: null,
 };
 
 const emptyIdeationResult: IdeationResult = {
@@ -91,6 +102,8 @@ const emptyIdeationResult: IdeationResult = {
   execution_mode: null,
   questions: null,
   answered_questions: null,
+  test_harness: null,
+  functional_test_steps: null,
 };
 
 const mockQuestions: PlanningQuestion[] = [
@@ -113,6 +126,8 @@ const mockQuestionsResult: IdeationResult = {
   execution_mode: null,
   questions: mockQuestions,
   answered_questions: null,
+  test_harness: null,
+  functional_test_steps: null,
 };
 
 describe("FeatureDetailPage", () => {
@@ -616,7 +631,7 @@ describe("FeatureDetailPage", () => {
       task_specs: [],
     };
 
-    mockedInvoke.mockImplementation(async (cmd: string, args?: Record<string, unknown>) => {
+    mockedInvoke.mockImplementation(async (cmd: string, _args?: any) => {
       if (cmd === "get_feature") {
         // Return ideation feature after cancel_execution has been called
         if (mockedInvoke.mock.calls.some(c => c[0] === "cancel_execution")) {
@@ -815,7 +830,7 @@ describe("FeatureDetailPage", () => {
       repo_push_status: { r1: "pushed" },
     };
 
-    mockedInvoke.mockImplementation(async (cmd: string, args?: Record<string, unknown>) => {
+    mockedInvoke.mockImplementation(async (cmd: string, _args?: any) => {
       if (cmd === "get_feature") {
         if (mockedInvoke.mock.calls.some(c => c[0] === "push_feature_repo")) {
           return afterPushFeature;

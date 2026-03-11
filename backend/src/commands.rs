@@ -642,6 +642,8 @@ pub fn poll_ideation_result(
                         execution_mode: None,
                         questions: Some(qf.questions),
                         answered_questions,
+                        test_harness: None,
+                        functional_test_steps: None,
                     });
                 }
                 Err(e) => {
@@ -661,6 +663,8 @@ pub fn poll_ideation_result(
             execution_mode: None,
             questions: None,
             answered_questions: None,
+            test_harness: None,
+            functional_test_steps: None,
         });
     }
 
@@ -701,6 +705,8 @@ pub fn poll_ideation_result(
         execution_mode: None,
         questions: None,
         answered_questions,
+        test_harness: None,
+        functional_test_steps: None,
     })
 }
 
@@ -1529,6 +1535,7 @@ pub fn start_test_harness(
 
     let test_harness = feature
         .test_harness
+        .clone()
         .ok_or("No test harness configured")?;
 
     let repo = get_primary_repo(&state, &feature)?;

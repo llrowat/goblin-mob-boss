@@ -73,7 +73,7 @@ export function useTauri() {
       invoke<void>("remove_repository", { id }),
 
     detectRepoInfo: (path: string) =>
-      invoke<{ name: string; base_branch: string; has_claude_md: boolean }>(
+      invoke<{ name: string; base_branch: string; has_claude_md: boolean; is_empty?: boolean }>(
         "detect_repo_info",
         { path },
       ),

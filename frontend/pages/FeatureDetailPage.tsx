@@ -126,7 +126,7 @@ export function FeatureDetailPage() {
       // If task_specs exist (set by configureLaunch), always use them as the plan source.
       // This covers executing, ready, failed, and cancelled-back-to-ideation features.
       if (f.task_specs.length > 0) {
-        setIdeationResult({ tasks: f.task_specs, execution_mode: null, questions: null, answered_questions: null });
+        setIdeationResult({ tasks: f.task_specs, execution_mode: null, questions: null, answered_questions: null, test_harness: null, functional_test_steps: null });
         setStatus("done");
       }
     }).catch(console.error);
@@ -307,7 +307,7 @@ export function FeatureDetailPage() {
     // the user's configured plan.
     tauri.getFeature(featureId).then((f) => {
       if (f.task_specs.length > 0) {
-        setIdeationResult({ tasks: f.task_specs, execution_mode: null, questions: null, answered_questions: null });
+        setIdeationResult({ tasks: f.task_specs, execution_mode: null, questions: null, answered_questions: null, test_harness: null, functional_test_steps: null });
         setStatus("done");
         return;
       }
@@ -618,14 +618,7 @@ export function FeatureDetailPage() {
     return () => clearInterval(interval);
   }, [featureId, feature?.status]);
 
-  const handleViewDiff = async () => {
-    if (!featureId) return;
-    try {
-      setDiff(await tauri.getFeatureDiff(featureId));
-    } catch (e) {
-      setError(String(e));
-    }
-  };
+  // handleViewDiff removed — diff is loaded automatically via useEffect
 
   const [pushing, setPushing] = useState(false);
   const [pushed, setPushed] = useState(false);
@@ -761,14 +754,14 @@ export function FeatureDetailPage() {
     );
   }
 
-  const recommendation = ideationResult?.execution_mode;
+  const recommendation = ideationResult?.execution_mode ?? null;
   const isExecuting = feature.status === "executing";
   const isTesting = feature.status === "testing";
   const isReady = feature.status === "ready" || feature.status === "failed";
   const isPushed = feature.status === "pushed";
   const isComplete = feature.status === "complete";
   const isReadOnly = isExecuting || isTesting || isReady || isPushed || isComplete;
-  const activeMode = modeOverride ?? recommendation?.recommended ?? "subagents";
+  // activeMode removed — mode selection is handled by ExecutionModeSelector
   const teamsMissingTmux = false; // tmux is optional — just a recommendation
 
   const featureRepoIds = feature.repo_ids?.length > 0 ? feature.repo_ids : feature.repo_id ? [feature.repo_id] : [];

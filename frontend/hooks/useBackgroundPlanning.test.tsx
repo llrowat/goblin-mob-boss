@@ -1,6 +1,7 @@
-import { render, act, waitFor } from "@testing-library/react";
+import { render, act } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { BackgroundPlanningProvider, useBackgroundPlanning } from "./useBackgroundPlanning";
+import type { IdeationResult } from "../types";
 
 const mockedInvoke = vi.mocked(invoke);
 
@@ -201,7 +202,7 @@ describe("useBackgroundPlanning", () => {
     });
 
     // Plan should be available for consumption
-    let plan: ReturnType<typeof captured.consumePlan> = null;
+    let plan: IdeationResult | null = null;
     act(() => {
       plan = captured!.consumePlan("f1");
     });
