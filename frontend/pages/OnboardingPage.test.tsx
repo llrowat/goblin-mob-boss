@@ -32,37 +32,46 @@ describe("OnboardingPage", () => {
     expect(screen.getByAltText("Goblin Mob Boss")).toBeInTheDocument();
   });
 
-  it("renders all four onboarding steps", () => {
+  it("renders all four onboarding steps with functional titles", () => {
     renderPage();
 
-    expect(screen.getByText("Claim Your Turf")).toBeInTheDocument();
-    expect(screen.getByText("Assemble the Crew")).toBeInTheDocument();
-    expect(screen.getByText("Map the Territory")).toBeInTheDocument();
-    expect(screen.getByText("Run the Schemes")).toBeInTheDocument();
+    expect(screen.getByText("Add Repositories")).toBeInTheDocument();
+    expect(screen.getByText("Create Agents")).toBeInTheDocument();
+    expect(screen.getByText("Build a System Map")).toBeInTheDocument();
+    expect(screen.getByText("Implement Features")).toBeInTheDocument();
+  });
+
+  it("renders flavor subtext for each step", () => {
+    renderPage();
+
+    expect(screen.getByText("Claim your turf.")).toBeInTheDocument();
+    expect(screen.getByText("Assemble the crew.")).toBeInTheDocument();
+    expect(screen.getByText("Map the territory.")).toBeInTheDocument();
+    expect(screen.getByText("Time to hustle.")).toBeInTheDocument();
   });
 
   it("renders step descriptions", () => {
     renderPage();
 
-    expect(screen.getByText(/Add the repositories/)).toBeInTheDocument();
+    expect(screen.getByText(/Point GMB at the repos/)).toBeInTheDocument();
     expect(screen.getByText(/Define specialized agents/)).toBeInTheDocument();
-    expect(screen.getByText(/Draw out your system architecture/)).toBeInTheDocument();
+    expect(screen.getByText(/Lay out your architecture/)).toBeInTheDocument();
     expect(screen.getByText(/Describe what you want to build/)).toBeInTheDocument();
   });
 
   it("renders action buttons for each step", () => {
     renderPage();
 
-    expect(screen.getByText(/Add Repositories/)).toBeInTheDocument();
-    expect(screen.getByText(/Add Agents/)).toBeInTheDocument();
-    expect(screen.getByText(/Create System Map/)).toBeInTheDocument();
-    expect(screen.getByText(/Start a Feature/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Add Repositories/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Create Agents/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Build System Map/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Start a Feature/ })).toBeInTheDocument();
   });
 
   it("navigates to repos page when step 1 button is clicked", () => {
     renderPage();
 
-    fireEvent.click(screen.getByText(/Add Repositories/));
+    fireEvent.click(screen.getByRole("button", { name: /Add Repositories/ }));
 
     expect(mockNavigate).toHaveBeenCalledWith("/repos");
   });
@@ -70,7 +79,7 @@ describe("OnboardingPage", () => {
   it("navigates to agents page when step 2 button is clicked", () => {
     renderPage();
 
-    fireEvent.click(screen.getByText(/Add Agents/));
+    fireEvent.click(screen.getByRole("button", { name: /Create Agents/ }));
 
     expect(mockNavigate).toHaveBeenCalledWith("/agents");
   });
@@ -78,7 +87,7 @@ describe("OnboardingPage", () => {
   it("navigates to system map page when step 3 button is clicked", () => {
     renderPage();
 
-    fireEvent.click(screen.getByText(/Create System Map/));
+    fireEvent.click(screen.getByRole("button", { name: /Build System Map/ }));
 
     expect(mockNavigate).toHaveBeenCalledWith("/map");
   });
@@ -95,7 +104,7 @@ describe("OnboardingPage", () => {
     renderPage();
 
     // Click the step card container (not the button)
-    const stepTitle = screen.getByText("Claim Your Turf");
+    const stepTitle = screen.getByText("Add Repositories");
     fireEvent.click(stepTitle.closest(".onboarding-step")!);
 
     expect(mockNavigate).toHaveBeenCalledWith("/repos");

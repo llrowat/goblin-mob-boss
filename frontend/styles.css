@@ -2345,6 +2345,16 @@ body {
   font-size: 15px;
   font-weight: 600;
   margin-bottom: 4px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.onboarding-step-flavor {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+  font-style: italic;
 }
 
 .onboarding-step-desc {

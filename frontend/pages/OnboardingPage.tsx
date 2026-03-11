@@ -8,36 +8,40 @@ import headerHome from "../assets/headers/header-home.png";
 const steps = [
   {
     number: 1,
-    title: "Claim Your Turf",
+    title: "Add Repositories",
+    flavor: "Claim your turf.",
     description:
-      "Add the repositories you want to work on. Each repo becomes a lair where features take shape.",
+      "Point GMB at the repos you want to work on. Configure base branches, validators, and PR settings.",
     action: "Add Repositories",
     route: "/repos",
     art: emptyRepos,
   },
   {
     number: 2,
-    title: "Assemble the Crew",
+    title: "Create Agents",
+    flavor: "Assemble the crew.",
     description:
-      "Define specialized agents — each one a goblin with unique skills and tools. They'll do the heavy lifting.",
-    action: "Add Agents",
+      "Define specialized agents with specific tools, models, and system prompts. They handle the work.",
+    action: "Create Agents",
     route: "/agents",
     art: emptyAgents,
   },
   {
     number: 3,
-    title: "Map the Territory",
+    title: "Build a System Map",
+    flavor: "Map the territory.",
     description:
-      "Draw out your system architecture so the crew knows how the pieces fit together.",
-    action: "Create System Map",
+      "Lay out your architecture — services, databases, queues — so agents understand how the pieces connect.",
+    action: "Build System Map",
     route: "/map",
     art: null,
   },
   {
     number: 4,
-    title: "Run the Schemes",
+    title: "Implement Features",
+    flavor: "Time to hustle.",
     description:
-      "Describe what you want to build. Claude plans the work, your agents execute it, and you ship the result.",
+      "Describe what you want to build. Claude plans the tasks, agents execute them, and you review and ship.",
     action: "Start a Feature",
     route: "/",
     art: headerHome,
@@ -71,7 +75,10 @@ export function OnboardingPage() {
           >
             <div className="onboarding-step-number">{step.number}</div>
             <div className="onboarding-step-content">
-              <h3 className="onboarding-step-title">{step.title}</h3>
+              <h3 className="onboarding-step-title">
+                {step.title}
+                <span className="onboarding-step-flavor">{step.flavor}</span>
+              </h3>
               <p className="onboarding-step-desc">{step.description}</p>
               <button
                 className="btn btn-secondary btn-sm"
