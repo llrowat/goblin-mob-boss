@@ -19,7 +19,7 @@ const steps = [
   {
     number: 2,
     title: "Create Agents",
-    flavor: "Assemble the crew.",
+    flavor: "Assemble the mob.",
     description:
       "Define specialized agents with specific tools, models, and system prompts. They handle the work.",
     action: "Create Agents",
@@ -61,7 +61,7 @@ export function OnboardingPage() {
         />
         <h1 className="onboarding-title">Welcome to Goblin Mob Boss</h1>
         <p className="onboarding-subtitle">
-          Your crew of AI agents, ready to scheme and ship features on your
+          Your mob of AI agents, ready to scheme and ship features on your
           command.
         </p>
       </div>

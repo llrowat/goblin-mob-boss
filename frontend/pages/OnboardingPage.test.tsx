@@ -45,7 +45,7 @@ describe("OnboardingPage", () => {
     renderPage();
 
     expect(screen.getByText("Claim your turf.")).toBeInTheDocument();
-    expect(screen.getByText("Assemble the crew.")).toBeInTheDocument();
+    expect(screen.getByText("Assemble the mob.")).toBeInTheDocument();
     expect(screen.getByText("Map the territory.")).toBeInTheDocument();
     expect(screen.getByText("Time to hustle.")).toBeInTheDocument();
   });
