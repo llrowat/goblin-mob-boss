@@ -10,8 +10,8 @@ A desktop app for agent-based AI development workflows. Configure agents, plan f
 4. **Configure Launch** — GMB analyzes your task dependency graph and recommends an execution mode with confidence scoring:
    - **Agent Teams** — Multiple Claude Code instances in parallel tmux panes, each with its own agent identity. Best for large features with 3+ independent workstreams.
    - **Subagents** — A single lead Claude Code instance that delegates subtasks. Best for focused features with dependent tasks.
-   You can accept or override the recommendation, and select which agents participate. The task graph visualization shows parallel execution lanes and the critical path.
-5. **Execute & Monitor** — Copy the generated launch command and run it. GMB provides live execution observability: commit tracking, file change monitoring, and active file lists updated in real-time. Send guidance notes mid-execution to steer the agent.
+   You can accept or override the recommendation, and select which agents participate.
+5. **Execute & Monitor** — The launch command runs in an embedded PTY terminal. GMB tracks task completion progress in real-time, detects stale execution, and shows auto-completion when all tasks finish.
 6. **Validate & Analyze** — Run repository validators, review diffs, and analyze execution results across all repos. The post-execution analysis compares the original plan against actual file changes, assesses whether the chosen execution mode was appropriate, and identifies unplanned modifications.
 7. **PR** — Push the feature branch to all repos and create PRs.
 
@@ -24,14 +24,15 @@ A desktop app for agent-based AI development workflows. Configure agents, plan f
 - **Interactive planning** — Back-and-forth conversation with Claude in plan mode; task specs written to `plan.json` with automatic polling. Planner can ask clarifying questions via `questions.json` when decisions would materially change the plan — users answer in the UI and planning resumes with full context
 - **Plan history** — Every plan revision, restart, or Q&A round automatically snapshots the previous plan. View prior versions inline with trigger labels, feedback, and task summaries to see how a plan evolved
 - **Launch command generation** — GMB builds the appropriate Claude Code command with environment variables, agent configs, and system prompts for the chosen execution mode
-- **Feature lifecycle** — Features progress through statuses: Ideation → Configuring → Executing → Testing → Ready (or Failed)
+- **Feature lifecycle** — Features progress through statuses: Ideation → Configuring → Executing → Testing → Ready → Pushed → Complete (or Failed at any stage)
 - **Functional testing loop** — After implementation, an optional QA phase where a dedicated agent (QA Goblin) exercises the running app via browser automation (Playwright), API testing, or CLI to verify the feature works. Test proofs (screenshots, API responses, console output) are captured and displayed in the UI. If tests fail and attempts remain, the feature loops back to implementation for fixes (with failed proof context injected). Configurable via Settings and skippable per-feature.
 - **Test harness management** — GMB starts and stops the app under test as a managed background process, monitors stdout for a configurable ready signal, and reports harness status (starting/running/error) in real-time
 - **Testing resilience** — Lenient results.json parsing (handles single objects, wrapped objects, and malformed JSON with actionable error messages), per-round timeout with auto-collection, completion signal detection, and schema validation warnings appended to proof artifacts
 
 ### Execution Observability
-- **Live progress tracking** — During execution, GMB polls git activity on the feature branch showing: commit count, files changed, insertions/deletions, recent commit messages, and active file list
-- **Guidance notes** — Send mid-execution notes (info, important, critical) that are written to the feature directory where the agent can read them. Enables course correction without restarting execution.
+- **Task progress tracking** — During execution, GMB polls task completion status from the plan, showing per-task progress and stale execution warnings (5-minute threshold)
+- **Git activity polling** — Backend tracks commit count, files changed, insertions/deletions, and active file list via the observer module. IPC command is wired up; detailed git activity display in the UI is not yet implemented.
+- **Guidance notes** — Backend support for mid-execution notes (info, important, critical) written to the feature directory where the agent can read them. IPC commands are wired up; UI for sending notes is not yet implemented.
 
 ### Post-Execution Learning
 - **Execution analysis** — Compare the original plan against actual file changes to assess task coverage
@@ -41,13 +42,13 @@ A desktop app for agent-based AI development workflows. Configure agents, plan f
 ### System Map
 - **Service topology** — Map your services, their types (backend, frontend, worker, gateway, database, queue, cache, external), and how they connect
 - **Connection mapping** — Define connections between services with type (REST, gRPC, GraphQL, WebSocket, event, shared DB, file system, IPC), sync/async mode, and labels
-- **Goblin treasure map UI** — Interactive SVG visualization with a parchment-textured, treasure-map aesthetic. Services are "lairs" with type-specific icons, connections are "routes" with distinct line styles per connection type. Includes compass rose, vignette, and map legend
+- **Interactive SVG visualization** — Services rendered with type-specific shapes and color-coded abbreviations, connections with distinct line styles per connection type. Includes a legend bar for service types and connection types
 - **Drag-and-drop layout** — Reposition service nodes on the map by dragging; positions are persisted automatically
 - **Service detail panel** — Click a service to see its connections (incoming/outgoing), owned data ("treasure hoard"), runtime, framework, and description
 - **Multiple maps** — Create and switch between multiple system maps for different environments or subsystems
 
 ### Intelligent Mode Selection
-- **Task dependency graph** — Visual representation of task dependencies with parallel execution lanes, grouped by depth level
+- **Task dependency graph** — Backend analysis of task dependencies with depth levels, parallelism ratio, and critical path length. IPC command is wired up; frontend visualization is not yet implemented.
 - **Heuristic analysis** — Automatic recommendation based on: task count, parallelism ratio, agent diversity, and critical path length
 - **Confidence scoring** — Each recommendation includes a confidence percentage and detailed reasoning
 
@@ -63,7 +64,7 @@ A desktop app for agent-based AI development workflows. Configure agents, plan f
 - **Worktree-based validation** — Validators run in isolated worktrees rather than modifying the main working directory, preventing branch state corruption
 - **PTY lifecycle management** — PTY sessions are automatically cleaned up when the reader thread exits, preventing file descriptor and session leaks
 - **Input validation** — Feature names are validated for length, path traversal, and invalid characters
-- **Adaptive polling** — Ideation and execution polling use adaptive intervals with maximum retry counts to prevent infinite requests
+- **Polling with safety limits** — Ideation and execution polling use fixed intervals with maximum poll counts to prevent runaway requests
 
 ### UX
 - **Toast notifications** — Non-intrusive, auto-dismissing toast messages for confirmations and errors. Toasts appear in the bottom-right corner and can be clicked to dismiss.
@@ -95,11 +96,13 @@ goblin-mob-boss/
 │   │   ├── guidance.rs         # Mid-execution guidance notes
 │   │   ├── heuristics.rs       # Task graph analysis and mode recommendation
 │   │   ├── functional_testing.rs # Functional testing loop (proof collection, QA prompts)
-│   │   └── harness.rs          # Test harness process management (start/stop app under test)
+│   │   ├── harness.rs          # Test harness process management (start/stop app under test)
+│   │   └── pty.rs              # PTY session management for embedded terminal
 │   └── tauri.conf.json
 ├── frontend/           # React (TypeScript) frontend
-│   ├── components/     # AddRepoModal, StatusBadge, Terminal, ToastContainer, ActivityLog
+│   ├── components/     # AddRepoModal, StatusBadge, Terminal, PersistentTerminal, CommandDisplay, ToastContainer, ActivityLog, ErrorBoundary
 │   ├── pages/          # HomePage, FeatureDetailPage, AgentsPage, ReposPage, SettingsPage, SystemMapPage
+│   │   └── feature-detail/     # Sub-components: PlanningComponents, ValidationPanel, TestingPanel
 │   ├── hooks/          # useTauri (IPC wrapper), useToast, useTerminalSession, useBackgroundPlanning
 │   ├── types/          # TypeScript type definitions
 │   ├── test/           # Vitest setup
