@@ -1,6 +1,16 @@
 import { useToast } from "../hooks/useToast";
 import type { ToastType } from "../hooks/useToast";
 
+import toastSuccess from "../assets/toast/toast-success.png";
+import toastWarning from "../assets/toast/toast-warning.png";
+import toastError from "../assets/toast/toast-error.png";
+
+const toastIcons: Partial<Record<ToastType, string>> = {
+  success: toastSuccess,
+  warning: toastWarning,
+  error: toastError,
+};
+
 const typeStyles: Record<ToastType, { bg: string; border: string; color: string }> = {
   success: {
     bg: "rgba(90, 138, 92, 0.15)",
@@ -45,7 +55,10 @@ export function ToastContainer() {
             onClick={() => removeToast(toast.id)}
             role="alert"
           >
-            {toast.message}
+            {toastIcons[toast.type] && (
+              <img src={toastIcons[toast.type]} className="toast-icon" alt="" />
+            )}
+            <span>{toast.message}</span>
           </div>
         );
       })}

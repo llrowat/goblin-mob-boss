@@ -4,6 +4,10 @@ import { useTauri } from "../hooks/useTauri";
 import { useBackgroundPlanning } from "../hooks/useBackgroundPlanning";
 import type { Repository, Feature, SystemMap } from "../types";
 
+import headerHome from "../assets/headers/header-home.png";
+import emptyFeatures from "../assets/empty/empty-features.png";
+import emptyRepos from "../assets/empty/empty-repos.png";
+
 export function HomePage() {
   const tauri = useTauri();
   const navigate = useNavigate();
@@ -105,6 +109,7 @@ export function HomePage() {
   if (repos.length === 0) {
     return (
       <div className="empty-state">
+        <img src={emptyRepos} className="empty-state-art" alt="" />
         <h3>No repositories yet</h3>
         <p>The crew needs a base of operations. Add a repository to get started.</p>
         <button
@@ -146,6 +151,7 @@ export function HomePage() {
           <p>
             Start a new feature to plan and execute with Claude.
           </p>
+          <img src={headerHome} className="page-header-art" alt="" />
         </div>
         <button
           className="btn btn-primary"
@@ -238,6 +244,7 @@ export function HomePage() {
               </div>
               {activeFeatures.length === 0 ? (
                 <div className="empty-state">
+                  <img src={emptyFeatures} className="empty-state-art" alt="" />
                   <h3>No active features</h3>
                   <p>The mob is idle. Click &quot;New Feature&quot; to start something new.</p>
                 </div>

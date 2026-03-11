@@ -2,6 +2,9 @@ import { useState, useEffect, useRef } from "react";
 import { useTauri } from "../hooks/useTauri";
 import type { AgentFile } from "../types";
 
+import headerAgents from "../assets/headers/header-agents.png";
+import emptyAgents from "../assets/empty/empty-agents.png";
+
 const PRESET_COLORS = [
   "#5a8a5c",
   "#5b8abd",
@@ -163,6 +166,7 @@ export function AgentsPage() {
           Manage your global agents. These ~/.claude/agents/*.md files define
           who&apos;s available for task execution across all repos.
         </p>
+        <img src={headerAgents} className="page-header-art" alt="" />
       </div>
 
       {error && !modalMode && <div className="error-banner">{error}</div>}
@@ -215,6 +219,7 @@ export function AgentsPage() {
 
       {agents.length === 0 && unappliedBuiltIns.length === 0 && (
         <div className="empty-state">
+          <img src={emptyAgents} className="empty-state-art" alt="" />
           <h3>No Agents</h3>
           <p>
             No crew members yet. Add an agent above to populate your

@@ -3,6 +3,9 @@ import { useTauri } from "../hooks/useTauri";
 import { AddRepoModal } from "../components/AddRepoModal";
 import type { Repository } from "../types";
 
+import headerRepos from "../assets/headers/header-repos.png";
+import emptyRepos from "../assets/empty/empty-repos.png";
+
 export function ReposPage() {
   const tauri = useTauri();
   const [repos, setRepos] = useState<Repository[]>([]);
@@ -61,6 +64,7 @@ export function ReposPage() {
       <div className="page-header">
         <h2>Repositories</h2>
         <p>Manage the repositories your agents work in.</p>
+        <img src={headerRepos} className="page-header-art" alt="" />
       </div>
 
       <div style={{ marginBottom: 16 }}>
@@ -71,6 +75,7 @@ export function ReposPage() {
 
       {repos.length === 0 ? (
         <div className="empty-state">
+          <img src={emptyRepos} className="empty-state-art" alt="" />
           <p>No repos on the map yet. Add one to set up shop.</p>
         </div>
       ) : (

@@ -13,9 +13,9 @@ describe("StatusBadge", () => {
     expect(badge).toHaveClass("running");
   });
 
-  it("renders a status dot element", () => {
+  it("renders a status icon image", () => {
     const { container } = render(<StatusBadge status="ready" />);
-    expect(container.querySelector(".status-dot")).toBeInTheDocument();
+    expect(container.querySelector(".status-icon")).toBeInTheDocument();
   });
 
   it("applies the correct CSS class for testing status", () => {

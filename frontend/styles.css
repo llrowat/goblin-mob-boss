@@ -552,6 +552,12 @@ body {
   background: currentColor;
 }
 
+.status-icon {
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
+}
+
 /* Task Board */
 .task-board {
   display: flex;
@@ -1085,6 +1091,14 @@ body {
   color: var(--text-secondary);
 }
 
+.empty-state-art {
+  width: 160px;
+  height: 160px;
+  object-fit: contain;
+  margin-bottom: 1rem;
+  opacity: 0.8;
+}
+
 .empty-state h3 {
   font-size: 16px;
   margin-bottom: 8px;
@@ -1111,6 +1125,15 @@ body {
 .page-header p {
   color: var(--text-secondary);
   font-size: 13px;
+}
+
+.page-header-art {
+  width: 100%;
+  max-width: 600px;
+  height: 60px;
+  object-fit: contain;
+  opacity: 0.6;
+  margin-top: 8px;
 }
 
 /* Verification results */
@@ -2126,6 +2149,9 @@ body {
 }
 
 .toast {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 10px 16px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
@@ -2135,6 +2161,13 @@ body {
   pointer-events: auto;
   animation: toast-in 0.2s ease-out;
   box-shadow: var(--shadow);
+}
+
+.toast-icon {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+  flex-shrink: 0;
 }
 
 @keyframes toast-in {
