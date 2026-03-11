@@ -225,8 +225,8 @@ Produce a single JSON object with the exact schema requested. Be thorough but pr
             enabled: true,
         },
         AgentFile {
-            filename: "qa-goblin.md".to_string(),
-            name: "QA Goblin".to_string(),
+            filename: "qa-tester.md".to_string(),
+            name: "QA Tester".to_string(),
             description: "Functional testing specialist — exercises running apps via browser, API, or CLI".to_string(),
             tools: Some("Read, Edit, Write, Bash, Glob, Grep".to_string()),
             model: None,
@@ -485,7 +485,7 @@ mod tests {
         assert!(filenames.contains(&"devops-engineer.md"));
         assert!(filenames.contains(&"documentation-writer.md"));
         assert!(filenames.contains(&"repo-explorer.md"));
-        assert!(filenames.contains(&"qa-goblin.md"));
+        assert!(filenames.contains(&"qa-tester.md"));
     }
 
     #[test]

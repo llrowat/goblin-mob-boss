@@ -147,7 +147,7 @@ describe("FeatureDetailPage", () => {
   it("shows feature name after loading", async () => {
     render(<FeatureDetailPage />);
     await waitFor(() => {
-      expect(screen.getByText(/Test Feature/)).toBeInTheDocument();
+      expect(screen.getByText(/Planning: Test Feature/)).toBeInTheDocument();
     });
   });
 

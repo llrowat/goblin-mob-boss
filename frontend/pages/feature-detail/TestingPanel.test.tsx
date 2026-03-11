@@ -100,8 +100,8 @@ describe("TestingPanel", () => {
           harness_type: "api",
         },
         functional_test_steps: [
-          { description: "Login with valid creds", tool: "playwright", agent: "qa-goblin" },
-          { description: "Check dashboard loads", tool: "playwright", agent: "qa-goblin" },
+          { description: "Login with valid creds", tool: "playwright", agent: "qa-tester" },
+          { description: "Check dashboard loads", tool: "playwright", agent: "qa-tester" },
         ],
       },
     });
@@ -170,7 +170,7 @@ describe("TestingPanel", () => {
 
   it("shows testing in-progress spinner when no status signals", () => {
     renderPanel({ feature: { status: "testing" }, isTesting: true });
-    expect(screen.getByText("QA goblin is exercising the feature...")).toBeInTheDocument();
+    expect(screen.getByText("QA tester is exercising the feature...")).toBeInTheDocument();
   });
 
   it("renders test results with proofs", () => {

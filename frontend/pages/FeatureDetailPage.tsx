@@ -709,9 +709,6 @@ export function FeatureDetailPage() {
     }
   };
 
-  // Activity log
-  const [showActivityLog, setShowActivityLog] = useState(false);
-
   // Delete
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const handleDelete = async () => {
@@ -782,7 +779,8 @@ export function FeatureDetailPage() {
             : "Planning";
 
   return (
-    <div>
+    <div className="feature-detail-layout">
+      <div className="feature-detail-main">
       <div className="page-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
         <div className="page-header-with-back">
           <button className="back-btn" onClick={() => navigate("/")} title="Back to features">
@@ -1225,33 +1223,6 @@ export function FeatureDetailPage() {
         />
       )}
 
-      {/* Activity Log */}
-      <div className="panel" style={{ marginTop: 16 }}>
-        <div
-          className="panel-header"
-          style={{ cursor: "pointer", marginBottom: showActivityLog ? 16 : 0 }}
-          onClick={() => setShowActivityLog(!showActivityLog)}
-        >
-          <div className="panel-title" style={{ fontSize: 14 }}>
-            Activity Log
-          </div>
-          <span style={{ fontSize: 12, color: "var(--muted)" }}>
-            {showActivityLog ? "Hide" : "Show"}
-          </span>
-        </div>
-        {showActivityLog && (
-          <ActivityLog
-            entries={buildActivityLog(
-              feature,
-              planHistory,
-              taskProgress,
-              verifyResult,
-              analysis,
-            )}
-          />
-        )}
-      </div>
-
       {/* Edit Task Dialog */}
       {editingTask !== null && editDraft && (
         <EditTaskModal
@@ -1262,6 +1233,25 @@ export function FeatureDetailPage() {
           onCancel={cancelEditTask}
         />
       )}
+      </div>
+
+      {/* Activity Log Sidebar */}
+      <div className="feature-detail-sidebar">
+        <div className="panel feature-sidebar-panel">
+          <div className="panel-title" style={{ fontSize: 12, marginBottom: 8 }}>
+            Activity Log
+          </div>
+          <ActivityLog
+            entries={buildActivityLog(
+              feature,
+              planHistory ?? [],
+              taskProgress,
+              verifyResult,
+              analysis,
+            )}
+          />
+        </div>
+      </div>
     </div>
   );
 }

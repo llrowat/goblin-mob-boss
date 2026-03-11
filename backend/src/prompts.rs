@@ -83,7 +83,7 @@ In your plan.json, include these additional fields:
     {
       "description": "What to test — e.g. 'Login page loads and shows email/password fields'",
       "tool": "playwright|curl|cli",
-      "agent": "qa-goblin"
+      "agent": "qa-tester"
     }
   ]
 }
@@ -96,7 +96,7 @@ Rules for functional testing:
 - `functional_test_steps`: 3-8 steps that exercise the NEW feature
   - Focus on verifying the feature works, not exhaustive testing
   - Each step should be automatable (no manual browser interaction)
-  - Assign steps to "qa-goblin" agent
+  - Assign steps to "qa-tester" agent
 - If the feature is purely internal (no user-facing changes), you may omit these fields
 
 "#.to_string()

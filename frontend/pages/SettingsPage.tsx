@@ -170,7 +170,7 @@ export function SettingsPage() {
             Enable functional testing loop
           </label>
           <div className="form-help" style={{ marginLeft: 26 }}>
-            After implementation, a QA goblin exercises the running app to verify the feature works.
+            After implementation, a QA tester exercises the running app to verify the feature works.
             Best-effort — can be skipped per feature.
           </div>
         </div>

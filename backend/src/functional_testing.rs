@@ -457,7 +457,7 @@ mod tests {
         let steps = vec![FunctionalTestStep {
             description: "Login page renders".to_string(),
             tool: "playwright".to_string(),
-            agent: "qa-goblin".to_string(),
+            agent: "qa-tester".to_string(),
         }];
 
         let prompt =

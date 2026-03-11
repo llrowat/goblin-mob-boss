@@ -1210,7 +1210,7 @@ pub fn start_functional_testing(
 
     let cmd_args = vec![
         "--append-system-prompt".to_string(),
-        "You are qa-goblin, a functional testing specialist.".to_string(),
+        "You are qa-tester, a functional testing specialist.".to_string(),
         prompt,
     ];
 

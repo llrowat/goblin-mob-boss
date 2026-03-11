@@ -432,7 +432,7 @@ export function TestingPanel({
               }}
             >
               <div className="spinner" />
-              QA goblin is exercising the feature...
+              QA tester is exercising the feature...
             </div>
           )}
         </div>
