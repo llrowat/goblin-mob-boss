@@ -547,12 +547,6 @@ body {
   background: currentColor;
 }
 
-.status-icon {
-  width: 18px;
-  height: 18px;
-  object-fit: contain;
-}
-
 /* Task Board */
 .task-board {
   display: flex;
@@ -2139,13 +2133,6 @@ body {
   pointer-events: auto;
   animation: toast-in 0.2s ease-out;
   box-shadow: var(--shadow);
-}
-
-.toast-icon {
-  width: 20px;
-  height: 20px;
-  object-fit: contain;
-  flex-shrink: 0;
 }
 
 @keyframes toast-in {
