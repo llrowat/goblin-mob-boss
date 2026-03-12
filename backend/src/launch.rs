@@ -44,6 +44,8 @@ pub fn build_launch_with_repo(
                 "1".to_string(),
             ));
             args.extend([
+                "--permission-mode".to_string(),
+                "auto".to_string(),
                 "--teammate-mode".to_string(),
                 "tmux".to_string(),
                 "--append-system-prompt".to_string(),
@@ -53,6 +55,8 @@ pub fn build_launch_with_repo(
         }
         ExecutionMode::Subagents => {
             args.extend([
+                "--permission-mode".to_string(),
+                "auto".to_string(),
                 "--append-system-prompt".to_string(),
                 system_prompt_content.to_string(),
                 prompt.clone(),
@@ -299,6 +303,8 @@ mod tests {
         assert!(env.iter().any(|(k, _)| k == "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"));
         assert!(args.contains(&"--teammate-mode".to_string()));
         assert!(args.contains(&"tmux".to_string()));
+        assert!(args.contains(&"--permission-mode".to_string()));
+        assert!(args.contains(&"auto".to_string()));
         assert!(prompt.contains("MUST use an agent team"));
         assert!(prompt.contains("Add theme context"));
         assert!(prompt.contains("frontend-dev"));
@@ -311,6 +317,8 @@ mod tests {
 
         assert!(env.is_empty());
         assert!(!args.contains(&"--teammate-mode".to_string()));
+        assert!(args.contains(&"--permission-mode".to_string()));
+        assert!(args.contains(&"auto".to_string()));
         assert!(prompt.contains("lead agent"));
         assert!(prompt.contains("delegate subtasks"));
         assert!(prompt.contains("Write tests"));

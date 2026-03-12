@@ -944,15 +944,45 @@ pub fn mark_feature_executing(
 }
 
 /// Mark a feature as ready (execution complete, ready for validation/PR).
+/// If tasks were not all completed, returns the feature to planning (Ideation) instead.
 #[tauri::command]
 pub fn mark_feature_ready(state: State<AppState>, feature_id: String) -> Result<Feature, String> {
     let mut features = state.features.lock().unwrap();
     let feature = features.get_mut(&feature_id).ok_or("Feature not found")?;
-    // Only log if status is actually changing (prevent duplicate entries from concurrent calls)
-    if feature.status != FeatureStatus::Ready {
-        feature.log_activity("Execution finished — ready for review", "success");
+
+    // Check if all tasks were actually completed by reading progress.json
+    let all_tasks_done = {
+        let repo_id = feature.primary_repo_id().map(|s| s.to_string());
+        let repos = state.repositories.lock().unwrap();
+        let repo_path = repo_id.and_then(|rid| repos.get(&rid).map(|r| r.path.clone()));
+        drop(repos);
+        repo_path
+            .and_then(|rp| {
+                let progress_path = Path::new(&rp)
+                    .join(".gmb")
+                    .join("features")
+                    .join(&feature.id)
+                    .join("tasks")
+                    .join("progress.json");
+                read_task_progress(&progress_path)
+            })
+            .map(|p| {
+                !p.tasks.is_empty()
+                    && p.tasks.iter().all(|t| t.status == TaskStatus::Done)
+            })
+            .unwrap_or(false)
+    };
+
+    if all_tasks_done {
+        if feature.status != FeatureStatus::Ready {
+            feature.log_activity("Execution finished — ready for review", "success");
+        }
+        feature.status = FeatureStatus::Ready;
+    } else {
+        feature.log_activity("Execution ended before all tasks completed — returned to planning", "warning");
+        feature.status = FeatureStatus::Ideation;
     }
-    feature.status = FeatureStatus::Ready;
+
     let updated = feature.clone();
     drop(features);
     state.save_features();
@@ -1252,6 +1282,8 @@ pub fn start_functional_testing(
     let session_id = format!("qa-{}-{}", feature_id, attempt);
 
     let cmd_args = vec![
+        "--permission-mode".to_string(),
+        "auto".to_string(),
         "--append-system-prompt".to_string(),
         "You are qa-tester, a functional testing specialist.".to_string(),
         prompt,
