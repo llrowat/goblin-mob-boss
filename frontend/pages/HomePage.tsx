@@ -4,9 +4,6 @@ import { useTauri } from "../hooks/useTauri";
 import { useBackgroundPlanning } from "../hooks/useBackgroundPlanning";
 import type { Repository, Feature, SystemMap } from "../types";
 
-import headerHome from "../assets/headers/header-home.png";
-import emptyFeatures from "../assets/empty/empty-features.png";
-import emptyRepos from "../assets/empty/empty-repos.png";
 
 export function HomePage() {
   const tauri = useTauri();
@@ -109,7 +106,6 @@ export function HomePage() {
   if (repos.length === 0) {
     return (
       <div className="empty-state">
-        <img src={emptyRepos} className="empty-state-art" alt="" />
         <h3>No repositories yet</h3>
         <p>The crew needs a base of operations. Add a repository to get started.</p>
         <button
@@ -151,7 +147,6 @@ export function HomePage() {
           <p>
             Start a new feature to plan and execute with Claude.
           </p>
-          <img src={headerHome} className="page-header-art" alt="" />
         </div>
         <button
           className="btn btn-primary"
@@ -187,25 +182,24 @@ export function HomePage() {
               <div className="feature-card-desc">{f.description}</div>
               <div className="feature-card-meta">
                 <span className="feature-card-tag" title="Branch">
-                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                    <circle cx="3" cy="3" r="1.5" stroke="currentColor" strokeWidth="1" />
-                    <circle cx="9" cy="9" r="1.5" stroke="currentColor" strokeWidth="1" />
-                    <path d="M3 4.5V7a2 2 0 0 0 2 2h2.5" stroke="currentColor" strokeWidth="1" />
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                    <path d="M5 3a2 2 0 1 0-4 0 2 2 0 0 0 4 0ZM5 3v5a2 2 0 0 0 2 2h2m0 0a2 2 0 1 0 4 0 2 2 0 0 0-4 0Z" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                   {f.branch}
                 </span>
                 <span className="feature-card-tag" title="Repository">
-                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                    <path d="M2 2h8v8H2z" stroke="currentColor" strokeWidth="1" />
-                    <path d="M2 5h8" stroke="currentColor" strokeWidth="1" />
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                    <path d="M2 4.5C2 3.12 3.12 2 4.5 2h7A1.5 1.5 0 0 1 13 3.5v9a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 3 12.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+                    <path d="M2 4.5A1.5 1.5 0 0 1 3.5 3H13" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+                    <path d="M5 8h4M5 10.5h2.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
                   </svg>
                   {featureRepoNames(f)}
                 </span>
                 {hasWorktree && (
                   <span className="feature-card-tag feature-card-tag-wt" title="Running in worktree (isolated copy)">
-                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                      <path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1" />
-                      <circle cx="6" cy="6" r="4.5" stroke="currentColor" strokeWidth="1" />
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                      <path d="M8 2v12M4 6l4-4 4 4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+                      <path d="M3 10h10" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
                     </svg>
                     Worktree
                   </span>
@@ -244,7 +238,6 @@ export function HomePage() {
               </div>
               {activeFeatures.length === 0 ? (
                 <div className="empty-state">
-                  <img src={emptyFeatures} className="empty-state-art" alt="" />
                   <h3>No active features</h3>
                   <p>The mob is idle. Click &quot;New Feature&quot; to start something new.</p>
                 </div>

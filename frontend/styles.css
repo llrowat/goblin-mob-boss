@@ -77,9 +77,10 @@ body {
 }
 
 .topbar-brand .brand-logo {
-  height: 28px;
+  height: 52px;
   width: auto;
   object-fit: contain;
+  padding: 6px;
 }
 
 .topbar-tabs {
@@ -1085,14 +1086,6 @@ body {
   color: var(--text-secondary);
 }
 
-.empty-state-art {
-  width: 160px;
-  height: 160px;
-  object-fit: contain;
-  margin-bottom: 1rem;
-  opacity: 0.8;
-}
-
 .empty-state h3 {
   font-size: 16px;
   margin-bottom: 8px;
@@ -1119,15 +1112,6 @@ body {
 .page-header p {
   color: var(--text-secondary);
   font-size: 13px;
-}
-
-.page-header-art {
-  width: 100%;
-  max-width: 600px;
-  height: 60px;
-  object-fit: contain;
-  opacity: 0.6;
-  margin-top: 8px;
 }
 
 /* Verification results */
@@ -2302,6 +2286,16 @@ body {
   margin: 0 auto;
 }
 
+.onboarding-section-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin-top: 24px;
+  margin-bottom: 8px;
+}
+
 .onboarding-steps {
   display: flex;
   flex-direction: column;
@@ -2362,15 +2356,6 @@ body {
   color: var(--text-secondary);
   margin-bottom: 10px;
   line-height: 1.5;
-}
-
-.onboarding-step-art {
-  width: 72px;
-  height: 72px;
-  object-fit: contain;
-  opacity: 0.6;
-  flex-shrink: 0;
-  align-self: center;
 }
 
 .onboarding-footer {

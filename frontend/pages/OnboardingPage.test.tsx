@@ -29,7 +29,6 @@ describe("OnboardingPage", () => {
     expect(
       screen.getByText(/ready to scheme and ship features/),
     ).toBeInTheDocument();
-    expect(screen.getByAltText("Goblin Mob Boss")).toBeInTheDocument();
   });
 
   it("renders all four onboarding steps with functional titles", () => {
