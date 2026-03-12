@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { BrowserRouter, Routes, Route, NavLink } from "react-router-dom";
+import { BrowserRouter, Routes, Route, NavLink, Navigate, useLocation } from "react-router-dom";
 import { HomePage } from "./pages/HomePage";
 import { OnboardingPage } from "./pages/OnboardingPage";
 import { FeatureDetailPage } from "./pages/FeatureDetailPage";
@@ -47,15 +47,27 @@ function CountBadge({ count }: { count: number | null }) {
 function AppLayout() {
   const { planningCount, executingCount } = useBackgroundPlanning();
   const tauri = useTauri();
+  const location = useLocation();
   const [agentCount, setAgentCount] = useState<number | null>(null);
   const [repoCount, setRepoCount] = useState<number | null>(null);
   const [mapCount, setMapCount] = useState<number | null>(null);
   const [activeFeatureCount, setActiveFeatureCount] = useState<number | null>(null);
+  const [initialRoute, setInitialRoute] = useState<string | null>(null);
 
+  // Re-fetch badge counts whenever the route changes
   useEffect(() => {
     tauri.listGlobalAgents().then((a) => setAgentCount(a.length));
-    tauri.listRepositories().then((r) => setRepoCount(r.length));
+    tauri.listRepositories().then((r) => {
+      setRepoCount(r.length);
+      // On first load, determine if we should redirect to onboarding
+      if (initialRoute === null) {
+        setInitialRoute(r.length === 0 ? "/onboarding" : "");
+      }
+    });
     tauri.listSystemMaps().then((m) => setMapCount(m.length));
+  }, [location.pathname]);
+
+  useEffect(() => {
     const loadFeatureCount = () => {
       tauri.listAllFeatures().then((f) => {
         setActiveFeatureCount(f.filter((feat) => feat.status !== "complete").length);
@@ -146,7 +158,9 @@ function AppLayout() {
       <main className="main-content">
         <ErrorBoundary>
           <Routes>
-            <Route path="/" element={<HomePage />} />
+            <Route path="/" element={
+              initialRoute === "/onboarding" ? <Navigate to="/onboarding" replace /> : <HomePage />
+            } />
             <Route path="/onboarding" element={<OnboardingPage />} />
             <Route
               path="/feature/:featureId/detail"

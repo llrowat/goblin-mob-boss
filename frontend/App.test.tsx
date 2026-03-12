@@ -22,6 +22,9 @@ vi.mock("./pages/SettingsPage", () => ({
 vi.mock("./pages/SystemMapPage", () => ({
   SystemMapPage: () => <div data-testid="system-map-page" />,
 }));
+vi.mock("./pages/OnboardingPage", () => ({
+  OnboardingPage: () => <div data-testid="onboarding-page" />,
+}));
 
 // Mock providers and components that need Tauri
 vi.mock("./hooks/useBackgroundPlanning", () => ({
@@ -161,5 +164,25 @@ describe("App tab bar", () => {
     const divider = nav.querySelector(".topbar-divider");
     expect(divider).toBeTruthy();
     await waitFor(() => {});
+  });
+
+  it("redirects to onboarding when no repos are configured", async () => {
+    mockCounts(0, 0, 0);
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("onboarding-page")).toBeTruthy();
+    });
+  });
+
+  it("shows home page when repos exist", async () => {
+    mockCounts(1, 1, 1);
+    // Reset URL to root since previous test may have navigated away
+    window.history.pushState({}, "", "/");
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("home-page")).toBeTruthy();
+    });
   });
 });
