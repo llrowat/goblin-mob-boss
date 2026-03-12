@@ -2949,6 +2949,46 @@ pub fn poll_map_discovery(
 
     let complete = found == total;
 
+    // Deduplicate services by name (case-insensitive). When multiple repos discover
+    // the same service (e.g. a shared database), keep the first and merge repo_id info.
+    {
+        let mut seen: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        let mut deduped_services: Vec<MapService> = Vec::new();
+        // Track old-id -> canonical-id so connections can be remapped.
+        let mut id_remap: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+
+        for svc in all_services.drain(..) {
+            let key = svc.name.to_lowercase();
+            if let Some(&idx) = seen.get(&key) {
+                // Duplicate — remap its id to the canonical service
+                id_remap.insert(svc.id.clone(), deduped_services[idx].id.clone());
+            } else {
+                seen.insert(key, deduped_services.len());
+                deduped_services.push(svc);
+            }
+        }
+
+        // Remap connection endpoints to canonical service ids
+        for conn in &mut all_connections {
+            if let Some(canonical) = id_remap.get(&conn.from_service) {
+                conn.from_service = canonical.clone();
+            }
+            if let Some(canonical) = id_remap.get(&conn.to_service) {
+                conn.to_service = canonical.clone();
+            }
+        }
+
+        // Deduplicate connections (same from+to pair)
+        {
+            let mut seen_conns: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
+            all_connections.retain(|c| {
+                seen_conns.insert((c.from_service.clone(), c.to_service.clone()))
+            });
+        }
+
+        all_services = deduped_services;
+    }
+
     // If all repos are scanned, assemble into the system map
     if complete && found > 0 {
         let mut maps = state.system_maps.lock().unwrap();
