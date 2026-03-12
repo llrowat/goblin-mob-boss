@@ -85,6 +85,110 @@ function nextPosition(services: MapService[]): [number, number] {
   return [200 + col * 250, 150 + row * 200];
 }
 
+// ── Force-directed auto-layout ──
+
+function autoLayout(
+  services: MapService[],
+  connections: MapConnection[],
+): Record<string, [number, number]> {
+  const result: Record<string, [number, number]> = {};
+  if (services.length === 0) return result;
+
+  // Only consider connections between services that exist in this map
+  const ids = new Set(services.map((s) => s.id));
+  const edges = connections.filter(
+    (c) => ids.has(c.from_service) && ids.has(c.to_service),
+  );
+
+  // Initialize positions in a circle
+  const cx = 600, cy = 400;
+  const radius = Math.max(150, services.length * 45);
+  const px: Record<string, number> = {};
+  const py: Record<string, number> = {};
+  const vx: Record<string, number> = {};
+  const vy: Record<string, number> = {};
+
+  services.forEach((s, i) => {
+    const angle = (2 * Math.PI * i) / services.length;
+    px[s.id] = cx + radius * Math.cos(angle);
+    py[s.id] = cy + radius * Math.sin(angle);
+    vx[s.id] = 0;
+    vy[s.id] = 0;
+  });
+
+  const IDEAL_DIST = 200;
+
+  for (let iter = 0; iter < 300; iter++) {
+    const temp = Math.max(0.01, 1 - iter / 300);
+
+    // Repulsion between all pairs
+    for (let i = 0; i < services.length; i++) {
+      for (let j = i + 1; j < services.length; j++) {
+        const a = services[i].id, b = services[j].id;
+        let dx = px[a] - px[b];
+        let dy = py[a] - py[b];
+        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+        const force = (IDEAL_DIST * IDEAL_DIST) / dist;
+        const fx = (dx / dist) * force * temp;
+        const fy = (dy / dist) * force * temp;
+        vx[a] += fx; vy[a] += fy;
+        vx[b] -= fx; vy[b] -= fy;
+      }
+    }
+
+    // Attraction along edges
+    for (const e of edges) {
+      const dx = px[e.to_service] - px[e.from_service];
+      const dy = py[e.to_service] - py[e.from_service];
+      const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+      const force = (dist - IDEAL_DIST) * 0.1 * temp;
+      const fx = (dx / dist) * force;
+      const fy = (dy / dist) * force;
+      vx[e.from_service] += fx; vy[e.from_service] += fy;
+      vx[e.to_service] -= fx; vy[e.to_service] -= fy;
+    }
+
+    // Apply velocities with damping
+    for (const s of services) {
+      vx[s.id] *= 0.85;
+      vy[s.id] *= 0.85;
+      // Clamp velocity to prevent explosions
+      const speed = Math.sqrt(vx[s.id] ** 2 + vy[s.id] ** 2);
+      if (speed > 50) {
+        vx[s.id] = (vx[s.id] / speed) * 50;
+        vy[s.id] = (vy[s.id] / speed) * 50;
+      }
+      px[s.id] += vx[s.id];
+      py[s.id] += vy[s.id];
+    }
+  }
+
+  // Fit into target area (viewBox 1200×800 with padding)
+  const PAD = 80; // padding from edges (enough room for labels)
+  const targetW = 1200 - PAD * 2;
+  const targetH = 800 - PAD * 2;
+
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const s of services) {
+    minX = Math.min(minX, px[s.id]);
+    minY = Math.min(minY, py[s.id]);
+    maxX = Math.max(maxX, px[s.id]);
+    maxY = Math.max(maxY, py[s.id]);
+  }
+
+  const spanX = maxX - minX || 1;
+  const spanY = maxY - minY || 1;
+  const scale = Math.min(targetW / spanX, targetH / spanY, 1); // never upscale
+
+  for (const s of services) {
+    const nx = (px[s.id] - minX) * scale + PAD + (targetW - spanX * scale) / 2;
+    const ny = (py[s.id] - minY) * scale + PAD + (targetH - spanY * scale) / 2;
+    result[s.id] = [Math.round(nx), Math.round(ny)];
+  }
+
+  return result;
+}
+
 export function SystemMapPage() {
   const tauri = useTauri();
 
@@ -188,7 +292,18 @@ export function SystemMapPage() {
   const persistMap = useCallback(
     async (updated: SystemMap) => {
       try {
-        const saved = await tauri.updateSystemMap(updated);
+        // Sanitize: ensure all positions are valid numbers (guards against null/undefined)
+        const sanitized: SystemMap = {
+          ...updated,
+          services: updated.services.map((s) => ({
+            ...s,
+            position: [
+              typeof s.position?.[0] === "number" ? s.position[0] : 0,
+              typeof s.position?.[1] === "number" ? s.position[1] : 0,
+            ] as [number, number],
+          })),
+        };
+        const saved = await tauri.updateSystemMap(sanitized);
         setMaps((prev) => prev.map((m) => (m.id === saved.id ? saved : m)));
       } catch (e) {
         setError(String(e));
@@ -446,6 +561,22 @@ export function SystemMapPage() {
     },
     [isPanning, dragServiceId, viewBox.w, viewBox.h, handleSvgMouseMove],
   );
+
+  // ── Auto Layout ──
+  const handleAutoLayout = useCallback(() => {
+    if (!activeMap || activeMap.services.length < 2) return;
+    const positions = autoLayout(activeMap.services, activeMap.connections);
+    const updated: SystemMap = {
+      ...activeMap,
+      services: activeMap.services.map((s) => ({
+        ...s,
+        position: positions[s.id] ?? s.position ?? [400, 300],
+      })),
+    };
+    setMaps((prev) => prev.map((m) => (m.id === updated.id ? updated : m)));
+    setViewBox({ x: 0, y: 0, w: 1200, h: 800 }); // reset view to fit
+    persistMap(updated);
+  }, [activeMap, persistMap]);
 
   // ── Discovery (Explore) ──
   const handleExplore = async () => {
@@ -1244,6 +1375,13 @@ export function SystemMapPage() {
             disabled={activeMap.services.length < 2}
           >
             Add Connection
+          </button>
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={handleAutoLayout}
+            disabled={!activeMap || activeMap.services.length < 2}
+          >
+            Auto Layout
           </button>
           <button
             className="btn btn-brass btn-sm"
