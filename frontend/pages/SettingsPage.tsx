@@ -3,13 +3,7 @@ import { useTauri } from "../hooks/useTauri";
 import { useToast } from "../hooks/useToast";
 
 
-const SHELL_OPTIONS = [
-  { value: "powershell", label: "PowerShell" },
-  { value: "cmd", label: "Command Prompt (cmd)" },
-  { value: "wt", label: "Windows Terminal" },
-  { value: "bash", label: "Bash" },
-  { value: "zsh", label: "Zsh" },
-];
+// Shell options are auto-detected at runtime via detect_available_shells
 
 const EXEC_MODE_OPTIONS = [
   { value: "", label: "Use recommendation" },
@@ -28,6 +22,7 @@ export function SettingsPage() {
   const tauri = useTauri();
   const { addToast } = useToast();
   const [shell, setShell] = useState("");
+  const [shellOptions, setShellOptions] = useState<{ value: string; label: string }[]>([]);
   const [defaultExecutionMode, setDefaultExecutionMode] = useState("");
   const [defaultModel, setDefaultModel] = useState("");
   const [autoValidate, setAutoValidate] = useState(false);
@@ -40,6 +35,19 @@ export function SettingsPage() {
       setDefaultModel(prefs.default_model || "");
       setAutoValidate(prefs.auto_validate || false);
       setFunctionalTestingEnabled(prefs.functional_testing_enabled || false);
+    });
+    tauri.detectAvailableShells().then((shells) => {
+      setShellOptions([
+        { value: "", label: "Default" },
+        ...shells.map(([value, label]) => ({ value, label })),
+      ]);
+    }).catch(() => {
+      // Fallback if detection fails
+      setShellOptions([
+        { value: "", label: "Default" },
+        { value: "bash", label: "Bash" },
+        { value: "zsh", label: "Zsh" },
+      ]);
     });
   }, []);
 
@@ -74,7 +82,7 @@ export function SettingsPage() {
             onChange={(e) => setShell(e.target.value)}
             style={{ maxWidth: 300 }}
           >
-            {SHELL_OPTIONS.map((opt) => (
+            {shellOptions.map((opt) => (
               <option key={opt.value} value={opt.value}>
                 {opt.label}
               </option>

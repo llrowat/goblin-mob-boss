@@ -1,4 +1,4 @@
-import { render, cleanup } from "@testing-library/react";
+import { render, cleanup, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { Terminal } from "./Terminal";
 
@@ -52,12 +52,14 @@ describe("Terminal", () => {
     expect(mockOpen).toHaveBeenCalled();
   });
 
-  it("sends initial resize to backend", () => {
+  it("sends initial resize to backend after layout delay", async () => {
     render(<Terminal sessionId="test-session" />);
-    expect(invoke).toHaveBeenCalledWith("resize_pty", {
-      sessionId: "test-session",
-      cols: 80,
-      rows: 24,
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("resize_pty", {
+        sessionId: "test-session",
+        cols: 80,
+        rows: 24,
+      });
     });
   });
 

@@ -140,6 +140,8 @@ export function useTauri() {
 
     // Launch Configuration
     checkTmuxInstalled: () => invoke<boolean>("check_tmux_installed"),
+    detectAvailableShells: () =>
+      invoke<[string, string][]>("detect_available_shells"),
 
     configureLaunch: (
       featureId: string,

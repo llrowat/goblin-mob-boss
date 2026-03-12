@@ -12,6 +12,27 @@ const defaultPrefs = {
   functional_testing_enabled: false,
 };
 
+const detectedShells: [string, string][] = [
+  ["bash", "Bash"],
+  ["zsh", "Zsh"],
+  ["tmux", "tmux"],
+];
+
+function mockInvoke(overrides: Record<string, unknown> = {}) {
+  vi.mocked(invoke).mockImplementation((cmd: string) => {
+    if (cmd === "get_preferences") {
+      return Promise.resolve(overrides.get_preferences ?? defaultPrefs);
+    }
+    if (cmd === "detect_available_shells") {
+      return Promise.resolve(overrides.detect_available_shells ?? detectedShells);
+    }
+    if (cmd === "set_preferences") {
+      return Promise.resolve(overrides.set_preferences ?? defaultPrefs);
+    }
+    return Promise.resolve({});
+  });
+}
+
 function renderWithProviders() {
   return render(
     <ToastProvider>
@@ -27,8 +48,7 @@ describe("SettingsPage", () => {
   });
 
   it("renders page header", async () => {
-    vi.mocked(invoke).mockResolvedValue(defaultPrefs);
-
+    mockInvoke();
     renderWithProviders();
 
     expect(screen.getByText("Settings")).toBeInTheDocument();
@@ -40,58 +60,39 @@ describe("SettingsPage", () => {
   });
 
   it("loads and displays current preferences", async () => {
-    vi.mocked(invoke).mockImplementation((cmd: string) => {
-      if (cmd === "get_preferences") {
-        return Promise.resolve({
-          ...defaultPrefs,
-          shell: "zsh",
-          default_execution_mode: "teams",
-          default_model: "claude-opus-4-6",
-          auto_validate: true,
-        });
-      }
-      return Promise.resolve({});
+    mockInvoke({
+      get_preferences: {
+        ...defaultPrefs,
+        shell: "zsh",
+        default_execution_mode: "teams",
+        default_model: "claude-opus-4-6",
+        auto_validate: true,
+      },
     });
 
     renderWithProviders();
 
     await waitFor(() => {
-      const select = screen.getByDisplayValue("Zsh");
-      expect(select).toBeInTheDocument();
+      expect(screen.getByDisplayValue("Zsh")).toBeInTheDocument();
     });
 
     expect(screen.getByDisplayValue("Agent Teams")).toBeInTheDocument();
     expect(screen.getByDisplayValue("Claude Opus 4.6")).toBeInTheDocument();
   });
 
-  it("shows shell options", async () => {
-    vi.mocked(invoke).mockImplementation((cmd: string) => {
-      if (cmd === "get_preferences") {
-        return Promise.resolve(defaultPrefs);
-      }
-      return Promise.resolve({});
-    });
-
+  it("shows auto-detected shell options", async () => {
+    mockInvoke();
     renderWithProviders();
 
     await waitFor(() => {
       expect(screen.getByText("Bash")).toBeInTheDocument();
     });
-    expect(screen.getByText("PowerShell")).toBeInTheDocument();
     expect(screen.getByText("Zsh")).toBeInTheDocument();
+    expect(screen.getByText("tmux")).toBeInTheDocument();
   });
 
   it("saves preferences when Save is clicked", async () => {
-    vi.mocked(invoke).mockImplementation((cmd: string) => {
-      if (cmd === "get_preferences") {
-        return Promise.resolve(defaultPrefs);
-      }
-      if (cmd === "set_preferences") {
-        return Promise.resolve(defaultPrefs);
-      }
-      return Promise.resolve({});
-    });
-
+    mockInvoke();
     renderWithProviders();
 
     await waitFor(() => {
@@ -106,8 +107,7 @@ describe("SettingsPage", () => {
   });
 
   it("renders terminal section", async () => {
-    vi.mocked(invoke).mockResolvedValue(defaultPrefs);
-
+    mockInvoke();
     renderWithProviders();
 
     expect(screen.getByText("Terminal")).toBeInTheDocument();
@@ -117,8 +117,7 @@ describe("SettingsPage", () => {
   });
 
   it("renders execution defaults section", async () => {
-    vi.mocked(invoke).mockResolvedValue(defaultPrefs);
-
+    mockInvoke();
     renderWithProviders();
 
     expect(screen.getByText("Execution Defaults")).toBeInTheDocument();
@@ -129,8 +128,7 @@ describe("SettingsPage", () => {
   });
 
   it("renders auto-validate checkbox", async () => {
-    vi.mocked(invoke).mockResolvedValue(defaultPrefs);
-
+    mockInvoke();
     renderWithProviders();
 
     expect(
@@ -141,8 +139,7 @@ describe("SettingsPage", () => {
   });
 
   it("shows execution mode options", async () => {
-    vi.mocked(invoke).mockResolvedValue(defaultPrefs);
-
+    mockInvoke();
     renderWithProviders();
 
     await waitFor(() => {
@@ -153,21 +150,18 @@ describe("SettingsPage", () => {
   });
 
   it("shows model options", async () => {
-    vi.mocked(invoke).mockResolvedValue(defaultPrefs);
-
+    mockInvoke();
     renderWithProviders();
 
     await waitFor(() => {
-      expect(screen.getByText("Default")).toBeInTheDocument();
+      expect(screen.getByText("Claude Opus 4.6")).toBeInTheDocument();
     });
-    expect(screen.getByText("Claude Opus 4.6")).toBeInTheDocument();
     expect(screen.getByText("Claude Sonnet 4.6")).toBeInTheDocument();
     expect(screen.getByText("Claude Haiku 4.5")).toBeInTheDocument();
   });
 
   it("renders functional testing checkbox", async () => {
-    vi.mocked(invoke).mockResolvedValue(defaultPrefs);
-
+    mockInvoke();
     renderWithProviders();
 
     expect(
@@ -178,14 +172,11 @@ describe("SettingsPage", () => {
   });
 
   it("loads functional_testing_enabled preference", async () => {
-    vi.mocked(invoke).mockImplementation((cmd: string) => {
-      if (cmd === "get_preferences") {
-        return Promise.resolve({
-          ...defaultPrefs,
-          functional_testing_enabled: true,
-        });
-      }
-      return Promise.resolve({});
+    mockInvoke({
+      get_preferences: {
+        ...defaultPrefs,
+        functional_testing_enabled: true,
+      },
     });
 
     renderWithProviders();

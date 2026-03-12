@@ -68,6 +68,7 @@ pub fn run() {
             commands::poll_ideation_result,
             // Launch Configuration
             commands::check_tmux_installed,
+            commands::detect_available_shells,
             commands::configure_launch,
             commands::get_launch_command,
             commands::mark_feature_executing,

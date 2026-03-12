@@ -29,19 +29,30 @@ export function Terminal({ sessionId, onExit }: TerminalProps) {
         "'SF Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace",
       fontSize: 13,
       cursorBlink: true,
+      rescaleOverlappingGlyphs: true,
     });
 
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
     term.open(containerRef.current);
-    fitAddon.fit();
 
-    // Send initial size to backend
-    invoke("resize_pty", {
-      sessionId,
-      cols: term.cols,
-      rows: term.rows,
-    }).catch(() => {});
+    // Delay initial fit to ensure DOM layout is complete before measuring.
+    // This prevents tmux from starting with wrong dimensions.
+    let lastCols = 0;
+    let lastRows = 0;
+    const syncSize = () => {
+      fitAddon.fit();
+      if (term.cols !== lastCols || term.rows !== lastRows) {
+        lastCols = term.cols;
+        lastRows = term.rows;
+        invoke("resize_pty", {
+          sessionId,
+          cols: term.cols,
+          rows: term.rows,
+        }).catch(() => {});
+      }
+    };
+    const initTimer = setTimeout(syncSize, 50);
 
     // User input -> PTY
     const dataDisposable = term.onData((data) => {
@@ -72,20 +83,19 @@ export function Terminal({ sessionId, onExit }: TerminalProps) {
       unlistenExit = fn;
     });
 
-    // Auto-resize on container size change
+    // Debounced resize to avoid flooding tmux with rapid SIGWINCH signals
+    let resizeTimer: ReturnType<typeof setTimeout> | null = null;
     const doResize = () => {
-      fitAddon.fit();
-      invoke("resize_pty", {
-        sessionId,
-        cols: term.cols,
-        rows: term.rows,
-      }).catch(() => {});
+      if (resizeTimer) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(syncSize, 100);
     };
 
     const observer = new ResizeObserver(doResize);
     observer.observe(containerRef.current);
 
     return () => {
+      clearTimeout(initTimer);
+      if (resizeTimer) clearTimeout(resizeTimer);
       observer.disconnect();
       dataDisposable.dispose();
       unlistenOutput?.();

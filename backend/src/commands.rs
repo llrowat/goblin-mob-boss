@@ -791,6 +791,41 @@ pub fn check_tmux_installed() -> bool {
     launch::is_tmux_available()
 }
 
+/// Detect which shells/terminals are available on this system.
+/// Returns a list of (value, label) pairs for shells found on PATH.
+#[tauri::command]
+pub fn detect_available_shells() -> Vec<(String, String)> {
+    let candidates = if cfg!(target_os = "windows") {
+        vec![
+            ("powershell", "PowerShell"),
+            ("cmd", "Command Prompt (cmd)"),
+            ("wt", "Windows Terminal"),
+            ("bash", "Bash"),
+            ("zsh", "Zsh"),
+            ("tmux", "tmux"),
+        ]
+    } else {
+        vec![
+            ("bash", "Bash"),
+            ("zsh", "Zsh"),
+            ("tmux", "tmux"),
+            ("fish", "Fish"),
+        ]
+    };
+    let which_cmd = if cfg!(target_os = "windows") { "where" } else { "which" };
+    candidates
+        .into_iter()
+        .filter(|(cmd, _)| {
+            std::process::Command::new(which_cmd)
+                .arg(cmd)
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+        })
+        .map(|(v, l)| (v.to_string(), l.to_string()))
+        .collect()
+}
+
 /// Get the terminal command to launch execution for a feature.
 #[tauri::command]
 pub fn get_launch_command(state: State<AppState>, feature_id: String) -> Result<String, String> {
@@ -949,6 +984,14 @@ pub fn mark_feature_executing(
 pub fn mark_feature_ready(state: State<AppState>, feature_id: String) -> Result<Feature, String> {
     let mut features = state.features.lock().unwrap();
     let feature = features.get_mut(&feature_id).ok_or("Feature not found")?;
+
+    // Only act if the feature is still executing. If cancel_execution already
+    // moved it to another status, this is a stale PTY exit — skip it.
+    if feature.status != FeatureStatus::Executing {
+        let updated = feature.clone();
+        drop(features);
+        return Ok(updated);
+    }
 
     // Check if all tasks were actually completed by reading progress.json
     let all_tasks_done = {
@@ -3686,6 +3729,18 @@ mod tests {
     fn check_tmux_installed_returns_bool() {
         // Just verify it doesn't panic — result depends on system
         let _ = check_tmux_installed();
+    }
+
+    #[test]
+    fn detect_available_shells_returns_results() {
+        let shells = detect_available_shells();
+        // Should find at least one shell on any system
+        assert!(!shells.is_empty());
+        // Each entry should have a non-empty value and label
+        for (value, label) in &shells {
+            assert!(!value.is_empty());
+            assert!(!label.is_empty());
+        }
     }
 
     // ── generate_multi_repo_context tests ──
