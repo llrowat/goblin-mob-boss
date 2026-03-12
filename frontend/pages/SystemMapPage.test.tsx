@@ -310,6 +310,30 @@ describe("SystemMapPage", () => {
     });
   });
 
+  it("renders a single-node map correctly", async () => {
+    const singleNodeMap = {
+      ...mockMap,
+      services: [mockMap.services[0]],
+      connections: [],
+    };
+    await renderAndSelectMap([singleNodeMap]);
+
+    await waitFor(() => {
+      expect(screen.getByText("Auth Service")).toBeInTheDocument();
+      expect(screen.getByText(/1 service/)).toBeInTheDocument();
+      expect(screen.getByText(/0 connections/)).toBeInTheDocument();
+    });
+
+    // Verify the SVG canvas is rendered (not the empty state)
+    expect(screen.queryByText("No services yet")).not.toBeInTheDocument();
+
+    // Verify the sketch filter is defined in the SVG defs
+    const svg = document.querySelector(".map-svg");
+    expect(svg).toBeTruthy();
+    const sketchFilter = svg!.querySelector("filter#sketch");
+    expect(sketchFilter).toBeTruthy();
+  });
+
   it("navigates back to map list with back button", async () => {
     await renderAndSelectMap();
 
