@@ -948,8 +948,11 @@ pub fn mark_feature_executing(
 pub fn mark_feature_ready(state: State<AppState>, feature_id: String) -> Result<Feature, String> {
     let mut features = state.features.lock().unwrap();
     let feature = features.get_mut(&feature_id).ok_or("Feature not found")?;
+    // Only log if status is actually changing (prevent duplicate entries from concurrent calls)
+    if feature.status != FeatureStatus::Ready {
+        feature.log_activity("Execution finished — ready for review", "success");
+    }
     feature.status = FeatureStatus::Ready;
-    feature.log_activity("Execution finished — ready for review", "success");
     let updated = feature.clone();
     drop(features);
     state.save_features();
@@ -1401,8 +1404,10 @@ pub fn mark_feature_testing(
 ) -> Result<Feature, String> {
     let mut features = state.features.lock().unwrap();
     let feature = features.get_mut(&feature_id).ok_or("Feature not found")?;
+    if feature.status != FeatureStatus::Testing {
+        feature.log_activity("Functional testing started", "info");
+    }
     feature.status = FeatureStatus::Testing;
-    feature.log_activity("Functional testing started", "info");
     let updated = feature.clone();
     drop(features);
     state.save_features();
@@ -1646,11 +1651,12 @@ pub fn get_feature_diff(state: State<AppState>, feature_id: String) -> Result<Di
             String::new()
         };
 
-        for (path, insertions, deletions) in file_diffs {
+        for (path, insertions, deletions, status) in file_diffs {
             all_files.push(FileDiff {
                 path: format!("{}{}", prefix, path),
                 insertions,
                 deletions,
+                status,
             });
         }
     }
@@ -2506,6 +2512,29 @@ pub fn poll_task_progress(
         }
     }
 
+    // Log newly completed tasks to the activity log
+    if let Some(ref p) = progress {
+        let newly_done: Vec<(u32, String)> = p
+            .tasks
+            .iter()
+            .filter(|t| t.status == TaskStatus::Done && !feature.logged_task_completions.contains(&t.task))
+            .map(|t| (t.task, t.title.clone()))
+            .collect();
+        if !newly_done.is_empty() {
+            let mut features = state.features.lock().unwrap();
+            if let Some(f) = features.get_mut(&feature_id) {
+                for (task_num, title) in &newly_done {
+                    if !f.logged_task_completions.contains(task_num) {
+                        f.log_activity(format!("Task {} completed: {}", task_num, title), "success");
+                        f.logged_task_completions.push(*task_num);
+                    }
+                }
+            }
+            drop(features);
+            state.save_features();
+        }
+    }
+
     Ok(progress)
 }
 
@@ -2526,19 +2555,35 @@ pub fn analyze_feature_execution(
     let repos = get_all_repos(&state, &feature)?;
     let mut changed_files: Vec<String> = Vec::new();
     for repo in &repos {
-        let file_diffs = git::diff_stat(&repo.path, &repo.base_branch, &feature.branch)
+        // Use worktree path if available so uncommitted changes are visible
+        let diff_path = feature
+            .worktree_paths
+            .get(&repo.id)
+            .map(|s| s.as_str())
+            .unwrap_or(&repo.path);
+        let file_diffs = git::diff_stat(diff_path, &repo.base_branch, &feature.branch)
             .map_err(|e| e.to_string())?;
         let prefix = if repos.len() > 1 {
             format!("[{}] ", repo.name)
         } else {
             String::new()
         };
-        for (path, _, _) in file_diffs {
+        for (path, _, _, _) in file_diffs {
             changed_files.push(format!("{}{}", prefix, path));
         }
     }
 
-    Ok(analytics::analyze_execution(&feature, &changed_files))
+    // Read actual task progress for accurate completion status
+    let primary_repo = get_primary_repo(&state, &feature)?;
+    let progress_path = Path::new(&primary_repo.path)
+        .join(".gmb")
+        .join("features")
+        .join(&feature.id)
+        .join("tasks")
+        .join("progress.json");
+    let task_progress = read_task_progress(&progress_path);
+
+    Ok(analytics::analyze_execution(&feature, &changed_files, task_progress.as_ref()))
 }
 
 // ── Guidance Commands ──

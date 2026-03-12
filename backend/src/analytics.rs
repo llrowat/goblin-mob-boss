@@ -1,4 +1,4 @@
-use crate::models::{ExecutionMode, Feature, TaskSpec};
+use crate::models::{ExecutionMode, Feature, TaskProgress, TaskSpec, TaskStatus};
 use serde::{Deserialize, Serialize};
 
 /// Post-execution analysis comparing what was planned vs what was built.
@@ -18,6 +18,8 @@ pub struct ExecutionAnalysis {
 pub struct TaskCoverage {
     pub task_title: String,
     pub agent: String,
+    /// Actual completion status from progress.json (done/in_progress/pending/unknown).
+    pub completion_status: String,
     pub likely_files: Vec<String>,
     pub coverage_status: CoverageStatus,
 }
@@ -43,11 +45,13 @@ pub struct ModeAssessment {
 pub fn analyze_execution(
     feature: &Feature,
     changed_files: &[String],
+    task_progress: Option<&TaskProgress>,
 ) -> ExecutionAnalysis {
     let task_coverages: Vec<TaskCoverage> = feature
         .task_specs
         .iter()
-        .map(|task| assess_task_coverage(task, changed_files))
+        .enumerate()
+        .map(|(i, task)| assess_task_coverage(task, changed_files, i, task_progress))
         .collect();
 
     // Files that don't seem to match any task's keywords
@@ -75,7 +79,12 @@ pub fn analyze_execution(
     }
 }
 
-fn assess_task_coverage(task: &TaskSpec, changed_files: &[String]) -> TaskCoverage {
+fn assess_task_coverage(
+    task: &TaskSpec,
+    changed_files: &[String],
+    task_index: usize,
+    task_progress: Option<&TaskProgress>,
+) -> TaskCoverage {
     let keywords = extract_keywords(&task.title, &task.description);
     let likely_files: Vec<String> = changed_files
         .iter()
@@ -83,17 +92,49 @@ fn assess_task_coverage(task: &TaskSpec, changed_files: &[String]) -> TaskCovera
         .cloned()
         .collect();
 
-    let status = if likely_files.is_empty() {
-        CoverageStatus::NoChangesDetected
-    } else if likely_files.len() >= 2 {
-        CoverageStatus::Covered
-    } else {
-        CoverageStatus::Partial
+    // Use actual progress data (1-based task number) as the primary signal
+    let task_num = (task_index + 1) as u32;
+    let progress_entry = task_progress
+        .and_then(|p| p.tasks.iter().find(|t| t.task == task_num));
+
+    let completion_status = match progress_entry {
+        Some(entry) => match entry.status {
+            TaskStatus::Done => "done".to_string(),
+            TaskStatus::InProgress => "in_progress".to_string(),
+            TaskStatus::Pending => "pending".to_string(),
+        },
+        None => "unknown".to_string(),
+    };
+
+    // Coverage status: use progress data if available, fall back to file heuristics
+    let status = match progress_entry {
+        Some(entry) if entry.status == TaskStatus::Done => {
+            if likely_files.is_empty() {
+                // Task reported done but no matching files — might have made changes
+                // we can't detect by keyword, or was a config/coordination task
+                CoverageStatus::Covered
+            } else {
+                CoverageStatus::Covered
+            }
+        }
+        Some(entry) if entry.status == TaskStatus::InProgress => CoverageStatus::Partial,
+        Some(_) => CoverageStatus::NoChangesDetected, // pending
+        None => {
+            // No progress data — fall back to file heuristics
+            if likely_files.is_empty() {
+                CoverageStatus::NoChangesDetected
+            } else if likely_files.len() >= 2 {
+                CoverageStatus::Covered
+            } else {
+                CoverageStatus::Partial
+            }
+        }
     };
 
     TaskCoverage {
         task_title: task.title.clone(),
         agent: task.agent.clone(),
+        completion_status,
         likely_files,
         coverage_status: status,
     }
@@ -248,7 +289,7 @@ fn calculate_file_overlap(tasks: &[TaskSpec], changed_files: &[String]) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::Feature;
+    use crate::models::{Feature, TaskProgressEntry};
 
     fn make_feature_with_tasks() -> Feature {
         let mut f = Feature::new(
@@ -292,10 +333,64 @@ mod tests {
             "src/components/Login.tsx".to_string(),
             "tests/auth.test.ts".to_string(),
         ];
-        let analysis = analyze_execution(&feature, &files);
+        let analysis = analyze_execution(&feature, &files, None);
         assert_eq!(analysis.planned_task_count, 3);
         assert_eq!(analysis.files_changed, 3);
         assert_eq!(analysis.task_file_coverage.len(), 3);
+    }
+
+    #[test]
+    fn analyze_execution_uses_progress_data() {
+        let feature = make_feature_with_tasks();
+        let files = vec!["src/middleware/auth.rs".to_string()];
+        let progress = TaskProgress {
+            tasks: vec![
+                TaskProgressEntry {
+                    task: 1,
+                    title: "Add auth middleware".to_string(),
+                    status: TaskStatus::Done,
+                    acceptance_criteria: vec![],
+                },
+                TaskProgressEntry {
+                    task: 2,
+                    title: "Create login component".to_string(),
+                    status: TaskStatus::Done,
+                    acceptance_criteria: vec![],
+                },
+                TaskProgressEntry {
+                    task: 3,
+                    title: "Write auth tests".to_string(),
+                    status: TaskStatus::Pending,
+                    acceptance_criteria: vec![],
+                },
+            ],
+            completion_detected: false,
+        };
+        let analysis = analyze_execution(&feature, &files, Some(&progress));
+
+        // Task 1: done in progress → Covered
+        assert_eq!(analysis.task_file_coverage[0].completion_status, "done");
+        assert_eq!(analysis.task_file_coverage[0].coverage_status, CoverageStatus::Covered);
+        // Task 2: done in progress, no matching files → still Covered (trusts progress)
+        assert_eq!(analysis.task_file_coverage[1].completion_status, "done");
+        assert_eq!(analysis.task_file_coverage[1].coverage_status, CoverageStatus::Covered);
+        // Task 3: pending → NoChangesDetected
+        assert_eq!(analysis.task_file_coverage[2].completion_status, "pending");
+        assert_eq!(analysis.task_file_coverage[2].coverage_status, CoverageStatus::NoChangesDetected);
+    }
+
+    #[test]
+    fn analyze_execution_falls_back_to_heuristics_without_progress() {
+        let feature = make_feature_with_tasks();
+        let files = vec![
+            "src/middleware/auth.rs".to_string(),
+            "src/middleware/auth_config.rs".to_string(),
+        ];
+        let analysis = analyze_execution(&feature, &files, None);
+
+        // Task 1: 2 matching files, no progress → Covered by heuristic
+        assert_eq!(analysis.task_file_coverage[0].completion_status, "unknown");
+        assert_eq!(analysis.task_file_coverage[0].coverage_status, CoverageStatus::Covered);
     }
 
     #[test]
@@ -306,7 +401,7 @@ mod tests {
             "package.json".to_string(),
             "random-config.yaml".to_string(),
         ];
-        let analysis = analyze_execution(&feature, &files);
+        let analysis = analyze_execution(&feature, &files, None);
         assert!(analysis.unplanned_files.contains(&"package.json".to_string()));
     }
 
@@ -318,7 +413,7 @@ mod tests {
             "desc".to_string(),
             "feature/empty-1234".to_string(),
         );
-        let analysis = analyze_execution(&feature, &["file.rs".to_string()]);
+        let analysis = analyze_execution(&feature, &["file.rs".to_string()], None);
         assert_eq!(analysis.planned_task_count, 0);
         assert!(analysis.mode_assessment.was_appropriate);
     }
@@ -399,7 +494,7 @@ mod tests {
             dependencies: vec![],
             agent: "dev".to_string(),
         };
-        let coverage = assess_task_coverage(&task, &["totally_unrelated.rs".to_string()]);
+        let coverage = assess_task_coverage(&task, &["totally_unrelated.rs".to_string()], 0, None);
         assert_eq!(coverage.coverage_status, CoverageStatus::NoChangesDetected);
     }
 }

@@ -181,22 +181,26 @@ export function FeatureDetailPage() {
   terminalSessionIdRef.current = terminalSession?.sessionId ?? null;
 
   // Load task progress — once for completed features, poll during execution
+  const autoEndedRef = useRef(false);
   useEffect(() => {
     if (!featureId) return;
     const isExecuting = feature?.status === "executing";
     const isComplete = feature?.status === "ready" || feature?.status === "failed"
       || feature?.status === "pushed" || feature?.status === "complete";
     if (!isExecuting && !isComplete) return;
+    if (!isExecuting) {
+      // Feature already finished — don't try to auto-end
+      autoEndedRef.current = true;
+    }
 
     // Number of planned tasks (from ideation/launch config)
     const expectedTaskCount = ideationResult?.tasks?.length ?? 0;
-    let autoEnded = false;
 
     const handleProgress = (p: TaskProgress | null) => {
       if (!p) return;
       setTaskProgress(p);
 
-      if (!isExecuting || autoEnded) return;
+      if (!isExecuting || autoEndedRef.current) return;
 
       // Auto-end execution when we detect completion. Three triggers:
       // 1. Claude wrote the execution-complete signal file (most reliable)
@@ -208,7 +212,7 @@ export function FeatureDetailPage() {
       const countMatches = expectedTaskCount === 0 || p.tasks.length >= expectedTaskCount;
 
       if (completionSignaled || (allDone && countMatches)) {
-        autoEnded = true;
+        autoEndedRef.current = true;
         const sid = terminalSessionIdRef.current;
         // Kill the PTY and clear session directly.
         if (sid) {
@@ -416,6 +420,18 @@ export function FeatureDetailPage() {
     return () => clearInterval(interval);
   }, [status, featureId]);
 
+  // Refresh feature (activity log, etc.) when ideation status changes
+  const prevStatusRef = useRef<IdeationStatus>("idle");
+  useEffect(() => {
+    const prev = prevStatusRef.current;
+    prevStatusRef.current = status;
+    if (!featureId) return;
+    // Re-fetch feature when transitioning to done/questions/error so the activity log updates
+    if (prev === "running" && (status === "done" || status === "questions" || status === "error")) {
+      tauri.getFeature(featureId).then(setFeature).catch(() => {});
+    }
+  }, [status, featureId]);
+
   const handleRevise = async () => {
     if (!featureId || !feedback.trim()) return;
     setStatus("running");
@@ -498,6 +514,7 @@ export function FeatureDetailPage() {
         ideationResult.test_harness,
         ideationResult.functional_test_steps,
       );
+      autoEndedRef.current = false;
       const sessionId = await tauri.startLaunchPty(featureId, 120, 30);
       startSession(featureId, sessionId);
       // Refresh feature state so polling effects detect "executing" status

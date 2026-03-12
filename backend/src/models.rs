@@ -320,6 +320,9 @@ pub struct Feature {
     /// Persisted activity log entries.
     #[serde(default)]
     pub activity_log: Vec<ActivityEntry>,
+    /// Task numbers whose completion has already been logged (prevents duplicates).
+    #[serde(default)]
+    pub logged_task_completions: Vec<u32>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -366,6 +369,7 @@ impl Feature {
                 entry_type: "info".to_string(),
                 timestamp: now,
             }],
+            logged_task_completions: vec![],
             created_at: now,
             updated_at: now,
         }
@@ -714,6 +718,13 @@ pub struct FileDiff {
     pub path: String,
     pub insertions: u32,
     pub deletions: u32,
+    /// "added", "modified", or "deleted"
+    #[serde(default = "default_file_status")]
+    pub status: String,
+}
+
+fn default_file_status() -> String {
+    "modified".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1172,11 +1183,13 @@ Review code for issues."#;
                     path: "src/main.rs".to_string(),
                     insertions: 10,
                     deletions: 2,
+                    status: "modified".to_string(),
                 },
                 FileDiff {
                     path: "README.md".to_string(),
                     insertions: 3,
                     deletions: 0,
+                    status: "added".to_string(),
                 },
             ],
             total_files: 2,

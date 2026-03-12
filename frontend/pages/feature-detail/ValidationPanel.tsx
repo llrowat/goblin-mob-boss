@@ -244,6 +244,15 @@ export function ValidationPanel({
           <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, lineHeight: 1.6 }}>
             {diff.files.map((f) => (
               <div key={f.path} style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <span style={{
+                  fontSize: 9,
+                  fontWeight: 600,
+                  textTransform: "uppercase",
+                  minWidth: 20,
+                  color: f.status === "added" ? "var(--success)" : f.status === "deleted" ? "var(--danger)" : "var(--muted)",
+                }}>
+                  {f.status === "added" ? "A" : f.status === "deleted" ? "D" : "M"}
+                </span>
                 <span style={{ color: "var(--text-secondary)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {f.path}
                 </span>
@@ -258,14 +267,22 @@ export function ValidationPanel({
       {/* Execution analysis */}
       {analysis && (
         <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--border)" }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 4 }}>
             Execution Analysis
+          </div>
+          <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 10, lineHeight: 1.4 }}>
+            How well the execution matched the plan. {analysis.files_changed} file{analysis.files_changed !== 1 ? "s" : ""} changed across {analysis.planned_task_count} planned task{analysis.planned_task_count !== 1 ? "s" : ""}.
+          </div>
+
+          {/* Mode assessment */}
+          <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 4 }}>
+            Execution Mode
           </div>
           <div
             style={{
               padding: "8px 12px",
               borderRadius: 6,
-              marginBottom: 8,
+              marginBottom: 12,
               backgroundColor: analysis.mode_assessment.was_appropriate
                 ? "rgba(107, 158, 107, 0.1)"
                 : "rgba(196, 90, 106, 0.1)",
@@ -278,36 +295,56 @@ export function ValidationPanel({
               marginBottom: 2,
               color: analysis.mode_assessment.was_appropriate ? "var(--success)" : "var(--danger)",
             }}>
-              {analysis.mode_assessment.was_appropriate ? "Good mode choice" : "Mode could be improved"}
+              {analysis.mode_assessment.was_appropriate
+                ? `${analysis.mode_assessment.mode_used ?? "Selected"} mode was a good fit`
+                : `${analysis.mode_assessment.mode_used ?? "Selected"} mode may not have been ideal`}
             </div>
             <div style={{ fontSize: 11, color: "var(--text-secondary)", lineHeight: 1.5 }}>
               {analysis.mode_assessment.reason}
             </div>
             {analysis.mode_assessment.suggestion && (
               <div style={{ fontSize: 11, color: "var(--muted)", fontStyle: "italic", marginTop: 2 }}>
-                Tip: {analysis.mode_assessment.suggestion}
+                Next time: {analysis.mode_assessment.suggestion}
               </div>
             )}
           </div>
-          {analysis.task_file_coverage.map((tc, i) => (
-            <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", padding: "3px 0", borderBottom: "1px solid var(--border)", fontSize: 11 }}>
-              <span style={{
-                color: tc.coverage_status === "covered" ? "var(--success)" : tc.coverage_status === "partial" ? "#c9a84c" : "var(--muted)",
-                fontWeight: 600, minWidth: 55, fontSize: 10, textTransform: "uppercase",
-              }}>
-                {tc.coverage_status === "no_changes_detected" ? "No files" : tc.coverage_status}
-              </span>
-              <span style={{ color: "var(--text-secondary)", flex: 1 }}>{tc.task_title}</span>
-              {tc.likely_files.length > 0 && (
-                <span style={{ color: "var(--muted)", fontFamily: "var(--font-mono)", fontSize: 10 }}>
-                  {tc.likely_files.length} file{tc.likely_files.length !== 1 ? "s" : ""}
-                </span>
-              )}
-            </div>
-          ))}
+
+          {/* Missed tasks — planned but not completed */}
+          {(() => {
+            const missed = analysis.task_file_coverage.filter((tc) =>
+              tc.completion_status === "pending" || tc.completion_status === "in_progress"
+              || (tc.completion_status === "unknown" && tc.coverage_status === "no_changes_detected")
+            );
+            if (missed.length === 0) return null;
+            return (
+              <div style={{ marginBottom: 10 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: "var(--danger)", marginBottom: 4 }}>
+                  Missed Tasks
+                </div>
+                <div style={{ fontSize: 10, color: "var(--muted)", marginBottom: 4 }}>
+                  Planned tasks that weren&apos;t completed during execution.
+                </div>
+                {missed.map((tc, i) => (
+                  <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", padding: "3px 0", borderBottom: "1px solid var(--border)", fontSize: 11 }}>
+                    <span style={{ color: "var(--danger)", fontWeight: 600, fontSize: 10, textTransform: "uppercase", minWidth: 65 }}>
+                      {tc.completion_status === "in_progress" ? "Incomplete" : "Missed"}
+                    </span>
+                    <span style={{ color: "var(--text-secondary)", flex: 1 }}>{tc.task_title}</span>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
+
+          {/* Unplanned files */}
           {analysis.unplanned_files.length > 0 && (
-            <div style={{ marginTop: 6 }}>
-              <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 2 }}>Unplanned changes:</div>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: "#c9a84c", marginBottom: 4 }}>
+                Unplanned Changes
+              </div>
+              <div style={{ fontSize: 10, color: "var(--muted)", marginBottom: 4 }}>
+                Files changed that don&apos;t match any planned task.
+              </div>
               <div style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: "#c9a84c" }}>
                 {analysis.unplanned_files.map((f) => <div key={f}>{f}</div>)}
               </div>

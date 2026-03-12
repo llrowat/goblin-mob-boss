@@ -155,27 +155,75 @@ pub fn is_git_repo(path: &str) -> bool {
 
 /// Get diff stats between two branches.
 /// Returns a list of `(file_path, insertions, deletions)` tuples.
-pub fn diff_stat(repo_path: &str, base: &str, head: &str) -> GitResult<Vec<(String, u32, u32)>> {
-    // Use two-dot diff (base..head) to show all changes between the branches.
-    // Also include uncommitted working tree changes with the HEAD of the feature branch.
-    let committed = run_git(repo_path, &["diff", "--numstat", &format!("{}..{}", base, head)])?;
-    let mut result = parse_numstat(&committed);
+/// Returns `(path, insertions, deletions, status)` where status is "added", "modified", or "deleted".
+pub fn diff_stat(repo_path: &str, base: &str, head: &str) -> GitResult<Vec<(String, u32, u32, String)>> {
+    let diff_range = format!("{}..{}", base, head);
+
+    // Get numstat for insertion/deletion counts
+    let committed = run_git(repo_path, &["diff", "--numstat", &diff_range])?;
+    let numstat = parse_numstat(&committed);
+
+    // Get name-status for add/modify/delete classification
+    let name_status_out = run_git(repo_path, &["diff", "--name-status", &diff_range]).unwrap_or_default();
+    let statuses = parse_name_status(&name_status_out);
+
+    // Merge: numstat provides counts, name-status provides classification
+    let mut result: Vec<(String, u32, u32, String)> = numstat
+        .into_iter()
+        .map(|(path, ins, del)| {
+            let status = statuses
+                .iter()
+                .find(|(p, _)| *p == path)
+                .map(|(_, s)| s.clone())
+                .unwrap_or_else(|| "modified".to_string());
+            (path, ins, del, status)
+        })
+        .collect();
 
     // Include uncommitted changes (staged + unstaged) relative to HEAD
     let uncommitted = run_git(repo_path, &["diff", "--numstat", "HEAD"]).unwrap_or_default();
     let uncommitted_files = parse_numstat(&uncommitted);
+    let uncommitted_status = run_git(repo_path, &["diff", "--name-status", "HEAD"]).unwrap_or_default();
+    let uncommitted_statuses = parse_name_status(&uncommitted_status);
 
-    // Merge uncommitted changes — add to existing entries or append new ones
     for (path, ins, del) in uncommitted_files {
-        if let Some(entry) = result.iter_mut().find(|(p, _, _)| *p == path) {
+        if let Some(entry) = result.iter_mut().find(|(p, _, _, _)| *p == path) {
             entry.1 += ins;
             entry.2 += del;
         } else {
-            result.push((path, ins, del));
+            let status = uncommitted_statuses
+                .iter()
+                .find(|(p, _)| *p == path)
+                .map(|(_, s)| s.clone())
+                .unwrap_or_else(|| "modified".to_string());
+            result.push((path, ins, del, status));
         }
     }
 
     Ok(result)
+}
+
+/// Parse `git diff --name-status` output into `(path, status)` pairs.
+fn parse_name_status(output: &str) -> Vec<(String, String)> {
+    output
+        .lines()
+        .filter_map(|line| {
+            let parts: Vec<&str> = line.split('\t').collect();
+            if parts.len() >= 2 {
+                let status = match parts[0].chars().next() {
+                    Some('A') => "added",
+                    Some('D') => "deleted",
+                    Some('R') => "added", // rename — treat destination as added
+                    _ => "modified",
+                };
+                // For renames, use the destination path (last element)
+                let path = parts.last().unwrap();
+                Some((path.to_string(), status.to_string()))
+            } else {
+                None
+            }
+        })
+        .collect()
 }
 
 /// Parse `git diff --numstat` output into `(file, insertions, deletions)` tuples.

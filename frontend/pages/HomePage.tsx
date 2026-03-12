@@ -103,21 +103,6 @@ export function HomePage() {
     );
   };
 
-  if (repos.length === 0) {
-    return (
-      <div className="empty-state">
-        <h3>No repositories yet</h3>
-        <p>The crew needs a base of operations. Add a repository to get started.</p>
-        <button
-          className="btn btn-primary btn-lg"
-          onClick={() => navigate("/repos")}
-        >
-          Add Repository
-        </button>
-      </div>
-    );
-  }
-
   const statusLabel: Record<string, string> = {
     ideation: "Planning",
     configuring: "Configuring",
@@ -141,131 +126,146 @@ export function HomePage() {
 
   return (
     <div>
-      <div className="page-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-        <div>
-          <h2>Features</h2>
-          <p>
-            Start a new feature to plan and execute with Claude.
-          </p>
+      {repos.length === 0 ? (
+        <div className="empty-state">
+          <h3>No repositories yet</h3>
+          <p>The crew needs a base of operations. Add a repository to get started.</p>
+          <button
+            className="btn btn-primary btn-lg"
+            onClick={() => navigate("/repos")}
+          >
+            Add Repository
+          </button>
         </div>
-        <button
-          className="btn btn-primary"
-          onClick={() => setShowNewFeature(true)}
-        >
-          New Feature
-        </button>
-      </div>
-
-      {/* Active features */}
-      {(() => {
-        const activeFeatures = features.filter((f) => f.status !== "complete");
-        const completedFeatures = features.filter((f) => f.status === "complete");
-
-        const renderFeatureCard = (f: Feature, isCompleted = false) => {
-          const hasWorktree = f.worktree_paths && Object.keys(f.worktree_paths).length > 0;
-          return (
-            <div
-              key={f.id}
-              className="feature-card panel"
-              style={isCompleted ? { opacity: 0.5 } : undefined}
-              onClick={() => navigate(featureRoute(f))}
-            >
-              <div className="feature-card-top">
-                <div className="feature-card-title">{f.name}</div>
-                <span
-                  className={`status-badge ${f.status === "executing" ? "running" : f.status}`}
-                >
-                  <span className="status-dot" />
-                  {statusLabel[f.status] ?? f.status}
-                </span>
-              </div>
-              <div className="feature-card-desc">{f.description}</div>
-              <div className="feature-card-meta">
-                <span className="feature-card-tag" title="Branch">
-                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-                    <path d="M5 3a2 2 0 1 0-4 0 2 2 0 0 0 4 0ZM5 3v5a2 2 0 0 0 2 2h2m0 0a2 2 0 1 0 4 0 2 2 0 0 0-4 0Z" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                  {f.branch}
-                </span>
-                <span className="feature-card-tag" title="Repository">
-                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-                    <path d="M2 4.5C2 3.12 3.12 2 4.5 2h7A1.5 1.5 0 0 1 13 3.5v9a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 3 12.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-                    <path d="M2 4.5A1.5 1.5 0 0 1 3.5 3H13" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-                    <path d="M5 8h4M5 10.5h2.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-                  </svg>
-                  {featureRepoNames(f)}
-                </span>
-                {hasWorktree && (
-                  <span className="feature-card-tag feature-card-tag-wt" title="Running in worktree (isolated copy)">
-                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-                      <path d="M8 2v12M4 6l4-4 4 4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
-                      <path d="M3 10h10" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-                    </svg>
-                    Worktree
-                  </span>
-                )}
-              </div>
-            </div>
-          );
-        };
-
-        return (
-          <>
+      ) : (
+        <>
+          <div className="page-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
             <div>
-              <div
-                className="section-label"
-                style={{
-                  padding: "0 0 8px",
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                }}
-              >
-                <span>Active Features</span>
-                <select
-                  className="form-select"
-                  style={{ width: "auto", fontSize: 12, padding: "2px 8px" }}
-                  value={filterRepoId}
-                  onChange={(e) => setFilterRepoId(e.target.value)}
-                >
-                  <option value="">All Repos</option>
-                  {repos.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              {activeFeatures.length === 0 ? (
-                <div className="empty-state">
-                  <h3>No active features</h3>
-                  <p>The mob is idle. Click &quot;New Feature&quot; to start something new.</p>
-                </div>
-              ) : (
-                [...activeFeatures].sort((a, b) => {
-                  if (a.status === "executing" && b.status !== "executing") return -1;
-                  if (a.status !== "executing" && b.status === "executing") return 1;
-                  return 0;
-                }).map((f) => renderFeatureCard(f))
-              )}
+              <h2>Features</h2>
+              <p>
+                Start a new feature to plan and execute with Claude.
+              </p>
             </div>
+            <button
+              className="btn btn-primary"
+              onClick={() => setShowNewFeature(true)}
+            >
+              New Feature
+            </button>
+          </div>
 
-            {completedFeatures.length > 0 && (
-              <div style={{ marginTop: 24 }}>
+          {/* Active features */}
+          {(() => {
+            const activeFeatures = features.filter((f) => f.status !== "complete");
+            const completedFeatures = features.filter((f) => f.status === "complete");
+
+            const renderFeatureCard = (f: Feature, isCompleted = false) => {
+              const hasWorktree = f.worktree_paths && Object.keys(f.worktree_paths).length > 0;
+              return (
                 <div
-                  className="section-label"
-                  style={{ padding: "0 0 8px" }}
+                  key={f.id}
+                  className="feature-card panel"
+                  style={isCompleted ? { opacity: 0.5 } : undefined}
+                  onClick={() => navigate(featureRoute(f))}
                 >
-                  Completed
+                  <div className="feature-card-top">
+                    <div className="feature-card-title">{f.name}</div>
+                    <span
+                      className={`status-badge ${f.status === "executing" ? "running" : f.status}`}
+                    >
+                      <span className="status-dot" />
+                      {statusLabel[f.status] ?? f.status}
+                    </span>
+                  </div>
+                  <div className="feature-card-desc">{f.description}</div>
+                  <div className="feature-card-meta">
+                    <span className="feature-card-tag" title="Branch">
+                      <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                        <path d="M5 3a2 2 0 1 0-4 0 2 2 0 0 0 4 0ZM5 3v5a2 2 0 0 0 2 2h2m0 0a2 2 0 1 0 4 0 2 2 0 0 0-4 0Z" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                      {f.branch}
+                    </span>
+                    <span className="feature-card-tag" title="Repository">
+                      <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                        <path d="M2 4.5C2 3.12 3.12 2 4.5 2h7A1.5 1.5 0 0 1 13 3.5v9a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 3 12.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+                        <path d="M2 4.5A1.5 1.5 0 0 1 3.5 3H13" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+                        <path d="M5 8h4M5 10.5h2.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+                      </svg>
+                      {featureRepoNames(f)}
+                    </span>
+                    {hasWorktree && (
+                      <span className="feature-card-tag feature-card-tag-wt" title="Running in worktree (isolated copy)">
+                        <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                          <path d="M8 2v12M4 6l4-4 4 4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+                          <path d="M3 10h10" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+                        </svg>
+                        Worktree
+                      </span>
+                    )}
+                  </div>
                 </div>
-                {completedFeatures.map((f) => renderFeatureCard(f, true))}
-              </div>
-            )}
-          </>
-        );
-      })()}
+              );
+            };
 
-      {/* New Feature Modal */}
+            return (
+              <>
+                <div>
+                  <div
+                    className="section-label"
+                    style={{
+                      padding: "0 0 8px",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                    }}
+                  >
+                    <span>Active Features</span>
+                    <select
+                      className="form-select"
+                      style={{ width: "auto", fontSize: 12, padding: "2px 8px" }}
+                      value={filterRepoId}
+                      onChange={(e) => setFilterRepoId(e.target.value)}
+                    >
+                      <option value="">All Repos</option>
+                      {repos.map((r) => (
+                        <option key={r.id} value={r.id}>
+                          {r.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  {activeFeatures.length === 0 ? (
+                    <div className="empty-state">
+                      <h3>No active features</h3>
+                      <p>The mob is idle. Click &quot;New Feature&quot; to start something new.</p>
+                    </div>
+                  ) : (
+                    [...activeFeatures].sort((a, b) => {
+                      if (a.status === "executing" && b.status !== "executing") return -1;
+                      if (a.status !== "executing" && b.status === "executing") return 1;
+                      return 0;
+                    }).map((f) => renderFeatureCard(f))
+                  )}
+                </div>
+
+                {completedFeatures.length > 0 && (
+                  <div style={{ marginTop: 24 }}>
+                    <div
+                      className="section-label"
+                      style={{ padding: "0 0 8px" }}
+                    >
+                      Completed
+                    </div>
+                    {completedFeatures.map((f) => renderFeatureCard(f, true))}
+                  </div>
+                )}
+              </>
+            );
+          })()}
+        </>
+      )}
+
+      {/* New Feature Modal — rendered outside the repos check so it never disappears mid-use */}
       {showNewFeature && (
         <div className="modal-overlay" onClick={handleCloseModal}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>

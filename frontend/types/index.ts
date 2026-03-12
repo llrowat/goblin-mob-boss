@@ -240,6 +240,7 @@ export interface FileDiff {
   path: string;
   insertions: number;
   deletions: number;
+  status: "added" | "modified" | "deleted";
 }
 
 export interface DiffSummary {
@@ -308,6 +309,7 @@ export type CoverageStatus = "covered" | "partial" | "no_changes_detected";
 export interface TaskCoverage {
   task_title: string;
   agent: string;
+  completion_status: string;
   likely_files: string[];
   coverage_status: CoverageStatus;
 }
