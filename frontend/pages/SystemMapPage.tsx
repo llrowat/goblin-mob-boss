@@ -1457,6 +1457,10 @@ export function SystemMapPage() {
                 <pattern id="dot-grid" x="0" y="0" width="40" height="40" patternUnits="userSpaceOnUse">
                   <circle cx="20" cy="20" r="1" fill="var(--border)" opacity="0.4" />
                 </pattern>
+                <filter id="sketch" x="-5%" y="-5%" width="110%" height="110%">
+                  <feTurbulence type="turbulence" baseFrequency="0.03" numOctaves="2" result="noise" seed="1" />
+                  <feDisplacementMap in="SourceGraphic" in2="noise" scale="1.5" xChannelSelector="R" yChannelSelector="G" />
+                </filter>
               </defs>
 
               <rect x={viewBox.x - 2000} y={viewBox.y - 2000} width={viewBox.w + 4000} height={viewBox.h + 4000} fill="var(--bg)" />
