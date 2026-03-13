@@ -3339,7 +3339,8 @@ fn infer_service_type_from_properties(svc: &MapService) -> ServiceType {
 
 /// Wrap a command in the user's preferred shell for PTY execution.
 /// For tmux: runs `tmux new-session -- <cmd> <args...>` so the session runs inside tmux.
-/// For other shells (bash, zsh, fish): runs the command directly — no wrapping needed.
+/// For other shells (bash, zsh, fish): runs `shell -l -c "<cmd> <args...>"` so the
+/// shell's login profile is loaded and the user gets their expected environment.
 fn wrap_in_shell(shell: &str, args: &[String]) -> (String, Vec<String>) {
     if args.is_empty() {
         return (String::new(), Vec::new());
@@ -3351,10 +3352,14 @@ fn wrap_in_shell(shell: &str, args: &[String]) -> (String, Vec<String>) {
             ("tmux".to_string(), tmux_args)
         }
         _ => {
-            // bash, zsh, fish, etc. — run command directly
-            let cmd = args[0].clone();
-            let cmd_args = args[1..].to_vec();
-            (cmd, cmd_args)
+            // bash, zsh, fish, etc. — wrap in a login shell so the user's
+            // profile/rc environment is loaded (PATH, aliases, etc.)
+            let full_cmd = args.iter().map(|a| shell_quote(a)).collect::<Vec<_>>().join(" ");
+            if shell.contains("powershell") {
+                (shell.to_string(), vec!["-Command".to_string(), full_cmd])
+            } else {
+                (shell.to_string(), vec!["-l".to_string(), "-c".to_string(), full_cmd])
+            }
         }
     }
 }
@@ -3963,11 +3968,38 @@ mod tests {
     // ── wrap_in_shell tests ──
 
     #[test]
-    fn wrap_in_shell_default_runs_directly() {
+    fn wrap_in_shell_bash_wraps_in_login_shell() {
         let args = vec!["claude".to_string(), "--help".to_string()];
         let (cmd, cmd_args) = wrap_in_shell("bash", &args);
-        assert_eq!(cmd, "claude");
-        assert_eq!(cmd_args, vec!["--help"]);
+        assert_eq!(cmd, "bash");
+        assert_eq!(cmd_args, vec!["-l", "-c", "claude --help"]);
+    }
+
+    #[test]
+    fn wrap_in_shell_zsh_wraps_in_login_shell() {
+        let args = vec!["claude".to_string(), "--prompt".to_string(), "do stuff".to_string()];
+        let (cmd, cmd_args) = wrap_in_shell("zsh", &args);
+        assert_eq!(cmd, "zsh");
+        assert_eq!(cmd_args[0], "-l");
+        assert_eq!(cmd_args[1], "-c");
+        // args with spaces should be shell-quoted
+        assert!(cmd_args[2].contains("'do stuff'"));
+    }
+
+    #[test]
+    fn wrap_in_shell_fish_wraps_in_login_shell() {
+        let args = vec!["claude".to_string(), "--help".to_string()];
+        let (cmd, cmd_args) = wrap_in_shell("fish", &args);
+        assert_eq!(cmd, "fish");
+        assert_eq!(cmd_args, vec!["-l", "-c", "claude --help"]);
+    }
+
+    #[test]
+    fn wrap_in_shell_powershell_uses_command_flag() {
+        let args = vec!["claude".to_string(), "--help".to_string()];
+        let (cmd, cmd_args) = wrap_in_shell("powershell", &args);
+        assert_eq!(cmd, "powershell");
+        assert_eq!(cmd_args, vec!["-Command", "claude --help"]);
     }
 
     #[test]
