@@ -3099,7 +3099,22 @@ pub fn poll_map_discovery(
         for svc in all_services.drain(..) {
             let key = svc.name.to_lowercase();
             if let Some(&idx) = seen.get(&key) {
-                // Duplicate — remap its id to the canonical service
+                // Duplicate — remap its id to the canonical service.
+                // If the canonical was External but this one isn't, prefer the
+                // non-external type (the other repo knows what this service really is).
+                if deduped_services[idx].service_type == ServiceType::External
+                    && svc.service_type != ServiceType::External
+                {
+                    deduped_services[idx].service_type = svc.service_type.clone();
+                    deduped_services[idx].color = service_type_color(&deduped_services[idx].service_type);
+                    // Also prefer the more specific runtime/framework if available
+                    if !svc.runtime.is_empty() && deduped_services[idx].runtime.is_empty() {
+                        deduped_services[idx].runtime = svc.runtime.clone();
+                    }
+                    if !svc.framework.is_empty() && deduped_services[idx].framework.is_empty() {
+                        deduped_services[idx].framework = svc.framework.clone();
+                    }
+                }
                 id_remap.insert(svc.id.clone(), deduped_services[idx].id.clone());
             } else {
                 seen.insert(key, deduped_services.len());
@@ -3126,6 +3141,25 @@ pub fn poll_map_discovery(
         }
 
         all_services = deduped_services;
+    }
+
+    // Reclassify services that were marked External but belong to scanned repos.
+    // When repo A references repo B's service, it may label it "external" — but since
+    // repo B is also being scanned, it's really an internal service.
+    {
+        let scanned_repo_set: std::collections::HashSet<&String> = repo_ids.iter().collect();
+        for svc in &mut all_services {
+            if svc.service_type == ServiceType::External {
+                if let Some(ref rid) = svc.repo_id {
+                    if scanned_repo_set.contains(rid) {
+                        // This service was discovered from a scanned repo — it's not external.
+                        // Infer a better type from its properties.
+                        svc.service_type = infer_service_type_from_properties(svc);
+                        svc.color = service_type_color(&svc.service_type);
+                    }
+                }
+            }
+        }
     }
 
     // If all repos are scanned, assemble into the system map
@@ -3209,6 +3243,67 @@ fn service_type_color(st: &ServiceType) -> String {
         ServiceType::External => "#6a675f",
     }
     .to_string()
+}
+
+/// Infer a more specific service type for a service that was incorrectly classified
+/// as External. Uses runtime, framework, and name heuristics.
+fn infer_service_type_from_properties(svc: &MapService) -> ServiceType {
+    let name = svc.name.to_lowercase();
+    let runtime = svc.runtime.to_lowercase();
+    let framework = svc.framework.to_lowercase();
+
+    // Database indicators
+    if name.contains("postgres") || name.contains("mysql") || name.contains("mongo")
+        || name.contains("sqlite") || name.contains("dynamo") || name.contains("database")
+        || name.contains("db") || name.contains("cockroach") || name.contains("mariadb")
+    {
+        return ServiceType::Database;
+    }
+
+    // Cache indicators
+    if name.contains("redis") || name.contains("memcache") || name.contains("cache")
+        || name.contains("valkey")
+    {
+        return ServiceType::Cache;
+    }
+
+    // Queue indicators
+    if name.contains("queue") || name.contains("rabbit") || name.contains("kafka")
+        || name.contains("sqs") || name.contains("nats") || name.contains("pulsar")
+    {
+        return ServiceType::Queue;
+    }
+
+    // Gateway indicators
+    if name.contains("gateway") || name.contains("proxy") || name.contains("nginx")
+        || name.contains("envoy") || name.contains("ingress") || name.contains("load balancer")
+    {
+        return ServiceType::Gateway;
+    }
+
+    // Worker indicators
+    if name.contains("worker") || name.contains("cron") || name.contains("job")
+        || name.contains("scheduler") || name.contains("consumer")
+    {
+        return ServiceType::Worker;
+    }
+
+    // Frontend indicators
+    if name.contains("frontend") || name.contains("web app") || name.contains("ui")
+        || name.contains("dashboard") || name.contains("client")
+        || framework.contains("react") || framework.contains("vue") || framework.contains("angular")
+        || framework.contains("next") || framework.contains("nuxt") || framework.contains("svelte")
+    {
+        return ServiceType::Frontend;
+    }
+
+    // If it has a backend-like runtime/framework, call it Backend
+    if !runtime.is_empty() || !framework.is_empty() {
+        return ServiceType::Backend;
+    }
+
+    // Default to Backend for repo-owned services
+    ServiceType::Backend
 }
 
 // ── Helpers ──
@@ -4070,6 +4165,91 @@ mod tests {
         assert_eq!(parsed.tasks[0].title, "Task one");
         assert_eq!(parsed.tasks[0].status, TaskStatus::Pending);
         assert!(!parsed.completion_detected);
+    }
+
+    // ── infer_service_type_from_properties tests ──
+
+    #[test]
+    fn infer_service_type_database_keywords() {
+        let svc = MapService {
+            id: "1".into(), name: "PostgreSQL".into(), service_type: ServiceType::External,
+            repo_id: Some("r1".into()), runtime: "".into(), framework: "".into(),
+            description: "".into(), owns_data: vec![], position: (0.0, 0.0), color: "".into(),
+        };
+        assert_eq!(infer_service_type_from_properties(&svc), ServiceType::Database);
+
+        let svc2 = MapService { name: "user-db".into(), ..svc.clone() };
+        assert_eq!(infer_service_type_from_properties(&svc2), ServiceType::Database);
+    }
+
+    #[test]
+    fn infer_service_type_cache_keywords() {
+        let svc = MapService {
+            id: "1".into(), name: "Redis".into(), service_type: ServiceType::External,
+            repo_id: Some("r1".into()), runtime: "".into(), framework: "".into(),
+            description: "".into(), owns_data: vec![], position: (0.0, 0.0), color: "".into(),
+        };
+        assert_eq!(infer_service_type_from_properties(&svc), ServiceType::Cache);
+    }
+
+    #[test]
+    fn infer_service_type_queue_keywords() {
+        let svc = MapService {
+            id: "1".into(), name: "RabbitMQ".into(), service_type: ServiceType::External,
+            repo_id: Some("r1".into()), runtime: "".into(), framework: "".into(),
+            description: "".into(), owns_data: vec![], position: (0.0, 0.0), color: "".into(),
+        };
+        assert_eq!(infer_service_type_from_properties(&svc), ServiceType::Queue);
+    }
+
+    #[test]
+    fn infer_service_type_gateway_keywords() {
+        let svc = MapService {
+            id: "1".into(), name: "API Gateway".into(), service_type: ServiceType::External,
+            repo_id: Some("r1".into()), runtime: "".into(), framework: "".into(),
+            description: "".into(), owns_data: vec![], position: (0.0, 0.0), color: "".into(),
+        };
+        assert_eq!(infer_service_type_from_properties(&svc), ServiceType::Gateway);
+    }
+
+    #[test]
+    fn infer_service_type_worker_keywords() {
+        let svc = MapService {
+            id: "1".into(), name: "email-worker".into(), service_type: ServiceType::External,
+            repo_id: Some("r1".into()), runtime: "".into(), framework: "".into(),
+            description: "".into(), owns_data: vec![], position: (0.0, 0.0), color: "".into(),
+        };
+        assert_eq!(infer_service_type_from_properties(&svc), ServiceType::Worker);
+    }
+
+    #[test]
+    fn infer_service_type_frontend_by_framework() {
+        let svc = MapService {
+            id: "1".into(), name: "Admin Panel".into(), service_type: ServiceType::External,
+            repo_id: Some("r1".into()), runtime: "node".into(), framework: "React".into(),
+            description: "".into(), owns_data: vec![], position: (0.0, 0.0), color: "".into(),
+        };
+        assert_eq!(infer_service_type_from_properties(&svc), ServiceType::Frontend);
+    }
+
+    #[test]
+    fn infer_service_type_backend_with_runtime() {
+        let svc = MapService {
+            id: "1".into(), name: "auth-service".into(), service_type: ServiceType::External,
+            repo_id: Some("r1".into()), runtime: "node".into(), framework: "express".into(),
+            description: "".into(), owns_data: vec![], position: (0.0, 0.0), color: "".into(),
+        };
+        assert_eq!(infer_service_type_from_properties(&svc), ServiceType::Backend);
+    }
+
+    #[test]
+    fn infer_service_type_defaults_to_backend() {
+        let svc = MapService {
+            id: "1".into(), name: "mystery-service".into(), service_type: ServiceType::External,
+            repo_id: Some("r1".into()), runtime: "".into(), framework: "".into(),
+            description: "".into(), owns_data: vec![], position: (0.0, 0.0), color: "".into(),
+        };
+        assert_eq!(infer_service_type_from_properties(&svc), ServiceType::Backend);
     }
 
 }
