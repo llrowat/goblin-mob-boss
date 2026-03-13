@@ -288,7 +288,7 @@ pub fn start_feature(
     drop(repos_lock);
 
     // Create feature branch in all repos, with rollback on failure
-    let feature_slug = slug::slugify(&name);
+    let feature_slug = git::sanitize_branch_name(&slug::slugify(&name));
     let short_id = &uuid::Uuid::new_v4().to_string()[..4];
     let branch_name = format!("feature/{}-{}", feature_slug, short_id);
 
@@ -1795,11 +1795,19 @@ pub fn push_feature_repo(
 
     let mut outputs = Vec::new();
 
-    // Commit any uncommitted changes
-    match git::commit_all(work_dir, &format!("chore: finalize {}", feature.name)) {
+    // Commit any uncommitted changes with a descriptive message
+    let commit_msg = git::build_commit_message(work_dir, &feature.name);
+    match git::commit_all(work_dir, &commit_msg) {
         Ok(true) => outputs.push(format!("{}: committed changes", repo.name)),
         Ok(false) => {} // nothing to commit
-        Err(e) => outputs.push(format!("{}: commit skipped ({})", repo.name, e)),
+        Err(e) => {
+            let hint = if e.to_string().contains("branch") || e.to_string().contains("ref") {
+                format!(" (hint: check that branch '{}' exists and is valid)", feature.branch)
+            } else {
+                String::new()
+            };
+            outputs.push(format!("{}: commit failed — {}{}", repo.name, e, hint));
+        }
     }
 
     // Push to origin
@@ -1871,10 +1879,18 @@ pub fn push_feature(state: State<AppState>, feature_id: String) -> Result<String
             .get(&repo.id)
             .map(|s| s.as_str())
             .unwrap_or(&repo.path);
-        match git::commit_all(work_dir, &format!("chore: finalize {}", feature.name)) {
+        let commit_msg = git::build_commit_message(work_dir, &feature.name);
+        match git::commit_all(work_dir, &commit_msg) {
             Ok(true) => outputs.push(format!("{}: committed changes", repo.name)),
             Ok(false) => {} // nothing to commit
-            Err(e) => outputs.push(format!("{}: commit skipped ({})", repo.name, e)),
+            Err(e) => {
+                let hint = if e.to_string().contains("branch") || e.to_string().contains("ref") {
+                    format!(" (hint: check that branch '{}' exists and is valid)", feature.branch)
+                } else {
+                    String::new()
+                };
+                outputs.push(format!("{}: commit failed — {}{}", repo.name, e, hint));
+            }
         }
 
         match git::push_branch(work_dir, &feature.branch) {

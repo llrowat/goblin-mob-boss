@@ -77,6 +77,52 @@ fn run_git_with_timeout(repo_path: &str, args: &[&str], timeout: Duration) -> Gi
     }
 }
 
+/// Sanitize a string for use as a git branch name component.
+///
+/// Git branch names must follow `git check-ref-format` rules:
+/// - No double dots (..), ASCII control chars, space, ~, ^, :, ?, *, [, \
+/// - Cannot begin or end with a dot or hyphen
+/// - Cannot end with `.lock`
+/// - Cannot contain `@{`
+/// - Cannot be empty
+pub fn sanitize_branch_name(slug: &str) -> String {
+    let sanitized: String = slug
+        .chars()
+        .map(|c| match c {
+            ' ' | '~' | '^' | ':' | '?' | '*' | '[' | '\\' | '@' => '-',
+            c if c.is_ascii_control() => '-',
+            c => c,
+        })
+        .collect();
+
+    // Collapse consecutive dots and hyphens
+    let mut result = String::with_capacity(sanitized.len());
+    let mut prev = '\0';
+    for c in sanitized.chars() {
+        if (c == '.' && prev == '.') || (c == '-' && prev == '-') {
+            continue;
+        }
+        result.push(c);
+        prev = c;
+    }
+
+    // Trim leading/trailing dots and hyphens
+    let result = result.trim_matches(|c| c == '.' || c == '-').to_string();
+
+    // Strip `.lock` suffix
+    let result = if result.ends_with(".lock") {
+        result[..result.len() - 5].to_string()
+    } else {
+        result
+    };
+
+    if result.is_empty() {
+        "unnamed".to_string()
+    } else {
+        result
+    }
+}
+
 /// Create a branch from a base.
 pub fn create_branch(repo_path: &str, branch: &str, base: &str) -> GitResult<()> {
     run_git(repo_path, &["branch", branch, base])?;
@@ -94,6 +140,90 @@ pub fn commit_all(repo_path: &str, message: &str) -> GitResult<bool> {
     }
     run_git(repo_path, &["commit", "-m", message])?;
     Ok(true)
+}
+
+/// Build a descriptive commit message from the staged changes and feature context.
+///
+/// Format: `chore(feature-slug): finalize <feature_name>\n\n<summary of changes>`
+pub fn build_commit_message(repo_path: &str, feature_name: &str) -> String {
+    let summary = match summarize_staged_changes(repo_path) {
+        Some(s) => format!("\n\n{}", s),
+        None => String::new(),
+    };
+    format!("chore: finalize {}{}", feature_name, summary)
+}
+
+/// Summarize staged/uncommitted changes for use in a commit message body.
+/// Returns None if there are no changes to summarize.
+fn summarize_staged_changes(repo_path: &str) -> Option<String> {
+    let status = run_git(repo_path, &["status", "--porcelain"]).ok()?;
+    if status.is_empty() {
+        return None;
+    }
+
+    let mut added = Vec::new();
+    let mut modified = Vec::new();
+    let mut deleted = Vec::new();
+
+    for line in status.lines() {
+        if line.len() < 3 {
+            continue;
+        }
+        let code = &line[..2];
+        let path = line[3..].trim().to_string();
+        // Strip quotes from paths with special characters
+        let path = path.trim_matches('"').to_string();
+
+        match code.trim() {
+            "A" | "??" => added.push(path),
+            "M" | "MM" | "AM" => modified.push(path),
+            "D" => deleted.push(path),
+            "R" | "RM" => {
+                // Renames show as "old -> new"
+                if let Some(new_path) = path.split(" -> ").last() {
+                    modified.push(new_path.to_string());
+                }
+            }
+            _ => modified.push(path),
+        }
+    }
+
+    let mut parts = Vec::new();
+    if !added.is_empty() {
+        parts.push(format_file_list("Add", &added));
+    }
+    if !modified.is_empty() {
+        parts.push(format_file_list("Update", &modified));
+    }
+    if !deleted.is_empty() {
+        parts.push(format_file_list("Remove", &deleted));
+    }
+
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join("\n"))
+    }
+}
+
+/// Format a list of files into a commit message line, truncating if too many.
+fn format_file_list(verb: &str, files: &[String]) -> String {
+    const MAX_LISTED: usize = 5;
+    let names: Vec<&str> = files
+        .iter()
+        .take(MAX_LISTED)
+        .map(|p| {
+            // Use just the filename for brevity
+            p.rsplit('/').next().unwrap_or(p)
+        })
+        .collect();
+
+    let remainder = files.len().saturating_sub(MAX_LISTED);
+    if remainder > 0 {
+        format!("{} {} (+{} more)", verb, names.join(", "), remainder)
+    } else {
+        format!("{} {}", verb, names.join(", "))
+    }
 }
 
 /// Checkout an existing branch.
@@ -517,5 +647,91 @@ mod tests {
         let repo_path = init_test_repo(&dir);
         let result = run_git_with_timeout(&repo_path, &["status"], Duration::from_secs(10));
         assert!(result.is_ok());
+    }
+
+    // ── sanitize_branch_name tests ──
+
+    #[test]
+    fn sanitize_branch_name_passes_clean_names_through() {
+        assert_eq!(sanitize_branch_name("my-feature"), "my-feature");
+        assert_eq!(sanitize_branch_name("add-login-page"), "add-login-page");
+    }
+
+    #[test]
+    fn sanitize_branch_name_replaces_forbidden_chars() {
+        assert_eq!(sanitize_branch_name("has space"), "has-space");
+        assert_eq!(sanitize_branch_name("with~tilde"), "with-tilde");
+        assert_eq!(sanitize_branch_name("with^caret"), "with-caret");
+        assert_eq!(sanitize_branch_name("with:colon"), "with-colon");
+        assert_eq!(sanitize_branch_name("with?mark"), "with-mark");
+        assert_eq!(sanitize_branch_name("with*star"), "with-star");
+        assert_eq!(sanitize_branch_name("with[bracket"), "with-bracket");
+        assert_eq!(sanitize_branch_name("with\\backslash"), "with-backslash");
+    }
+
+    #[test]
+    fn sanitize_branch_name_collapses_consecutive_dots_and_hyphens() {
+        assert_eq!(sanitize_branch_name("a..b"), "a.b");
+        assert_eq!(sanitize_branch_name("a--b"), "a-b");
+        assert_eq!(sanitize_branch_name("a...b"), "a.b");
+    }
+
+    #[test]
+    fn sanitize_branch_name_trims_leading_trailing_dots_and_hyphens() {
+        assert_eq!(sanitize_branch_name(".leading"), "leading");
+        assert_eq!(sanitize_branch_name("trailing."), "trailing");
+        assert_eq!(sanitize_branch_name("-leading"), "leading");
+        assert_eq!(sanitize_branch_name("trailing-"), "trailing");
+        assert_eq!(sanitize_branch_name("--both--"), "both");
+    }
+
+    #[test]
+    fn sanitize_branch_name_strips_lock_suffix() {
+        assert_eq!(sanitize_branch_name("feature.lock"), "feature");
+    }
+
+    #[test]
+    fn sanitize_branch_name_returns_unnamed_for_empty() {
+        assert_eq!(sanitize_branch_name(""), "unnamed");
+        assert_eq!(sanitize_branch_name("---"), "unnamed");
+        assert_eq!(sanitize_branch_name("..."), "unnamed");
+    }
+
+    // ── build_commit_message / summarize tests ──
+
+    #[test]
+    fn build_commit_message_includes_feature_name() {
+        let dir = TempDir::new().unwrap();
+        let repo_path = init_test_repo(&dir);
+        let msg = build_commit_message(&repo_path, "dark mode toggle");
+        assert!(msg.starts_with("chore: finalize dark mode toggle"));
+    }
+
+    #[test]
+    fn build_commit_message_includes_file_summary_when_changes_exist() {
+        let dir = TempDir::new().unwrap();
+        let repo_path = init_test_repo(&dir);
+
+        // Create a new file so there are uncommitted changes
+        std::fs::write(dir.path().join("new_file.rs"), "fn main() {}").unwrap();
+
+        let msg = build_commit_message(&repo_path, "add feature");
+        assert!(msg.contains("chore: finalize add feature"));
+        assert!(msg.contains("new_file.rs"), "should list changed file: {}", msg);
+    }
+
+    #[test]
+    fn format_file_list_truncates_long_lists() {
+        let files: Vec<String> = (0..8).map(|i| format!("src/file{}.rs", i)).collect();
+        let result = format_file_list("Update", &files);
+        assert!(result.contains("(+3 more)"));
+        assert!(result.starts_with("Update "));
+    }
+
+    #[test]
+    fn format_file_list_shows_all_when_short() {
+        let files = vec!["a.rs".to_string(), "b.rs".to_string()];
+        let result = format_file_list("Add", &files);
+        assert_eq!(result, "Add a.rs, b.rs");
     }
 }
