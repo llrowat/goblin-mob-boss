@@ -43,7 +43,7 @@ pub fn run_validators_with_timeout(
                 .spawn()
         } else {
             Command::new("sh")
-                .args(["-c", cmd])
+                .args(["-l", "-c", cmd])
                 .current_dir(worktree_path)
                 .stdout(std::process::Stdio::piped())
                 .stderr(std::process::Stdio::piped())
@@ -237,6 +237,28 @@ mod tests {
         let result = run_validators(&worktree, &[], 1).unwrap();
         assert!(result.all_passed);
         assert!(result.results.is_empty());
+    }
+
+    #[test]
+    fn run_validators_login_shell_has_profile_path() {
+        // Verify that the login shell flag (-l) gives us access to
+        // profile-defined environment variables.  HOME is always set
+        // in a login shell, so we use it as a smoke-test.
+        let dir = TempDir::new().unwrap();
+        let worktree = dir.path().to_string_lossy().to_string();
+
+        let result = run_validators(
+            &worktree,
+            &["echo $HOME".to_string()],
+            1,
+        )
+        .unwrap();
+
+        assert!(result.all_passed);
+        // HOME should be a non-empty path (e.g. /root, /home/user)
+        let home = result.results[0].stdout.trim();
+        assert!(!home.is_empty(), "HOME should be set in a login shell");
+        assert!(home.starts_with('/'), "HOME should be an absolute path, got: {}", home);
     }
 
     #[test]
