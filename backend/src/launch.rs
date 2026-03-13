@@ -46,8 +46,6 @@ pub fn build_launch_with_repo(
             args.extend([
                 "--permission-mode".to_string(),
                 "auto".to_string(),
-                "--teammate-mode".to_string(),
-                "tmux".to_string(),
                 "--append-system-prompt".to_string(),
                 system_prompt_content.to_string(),
                 prompt.clone(),
@@ -85,7 +83,7 @@ fn build_prompt(feature: &Feature, mode: &ExecutionMode, repo_path: Option<&str>
     match mode {
         ExecutionMode::Teams => {
             format!(
-                r#"You MUST use an agent team to implement this feature. Spawn teammates for each agent and coordinate the work across the team.
+                r#"You MUST use Claude Code's agent teams feature to implement this feature. Create an agent team and spawn a teammate for each agent listed below. Each teammate runs as an independent Claude Code instance with its own context window, coordinating through the shared task list.
 
 ## Feature: {name}
 
@@ -97,12 +95,13 @@ fn build_prompt(feature: &Feature, mode: &ExecutionMode, repo_path: Option<&str>
 
 ## Instructions
 
-- Use an agent team — spawn a teammate for each agent listed above
+- Create an agent team — spawn one teammate per agent listed above, assigning each their tasks
+- Each teammate works independently in parallel on their assigned tasks
 - Work on the feature branch: {branch}
-- Coordinate via the shared task list
-- Each teammate should work on their assigned tasks in parallel
-- If any tasks are assigned to quality/review agents, ensure they run after implementation tasks and verify all changes before signaling completion
-- When all tasks pass, signal completion
+- Use the shared task list for coordination between teammates
+- Avoid file conflicts — ensure teammates own different files where possible
+- If any tasks are assigned to quality/review agents, spawn those teammates after implementation teammates finish, so they can verify all changes
+- When all teammates have completed their tasks, signal completion
 {progress_section}{guidance_note}"#,
                 name = feature.name,
                 description = feature.description,
@@ -301,11 +300,10 @@ mod tests {
         let (args, env, prompt) = build_launch(&feature, "System prompt content here");
 
         assert!(env.iter().any(|(k, _)| k == "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"));
-        assert!(args.contains(&"--teammate-mode".to_string()));
-        assert!(args.contains(&"tmux".to_string()));
+        assert!(!args.contains(&"--teammate-mode".to_string()));
         assert!(args.contains(&"--permission-mode".to_string()));
         assert!(args.contains(&"auto".to_string()));
-        assert!(prompt.contains("MUST use an agent team"));
+        assert!(prompt.contains("MUST use Claude Code's agent teams feature"));
         assert!(prompt.contains("Add theme context"));
         assert!(prompt.contains("frontend-dev"));
     }

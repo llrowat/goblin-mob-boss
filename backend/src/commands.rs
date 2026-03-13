@@ -920,14 +920,15 @@ pub fn start_launch_pty(
 
     let session_id = format!("launch-{}", feature_id);
 
-    // args[0] is "claude", rest are arguments
-    let cmd = &args[0];
-    let cmd_args: Vec<String> = args[1..].to_vec();
+    // Wrap command in user's preferred shell (e.g. tmux)
+    let prefs = state.preferences.lock().unwrap().clone();
+    let shell = if prefs.shell.is_empty() { default_shell() } else { prefs.shell.clone() };
+    let (cmd, cmd_args) = wrap_in_shell(&shell, &args);
 
     pty::spawn_pty_session(
         &app_handle,
         &session_id,
-        cmd,
+        &cmd,
         &cmd_args,
         work_dir,
         cols,
@@ -936,16 +937,21 @@ pub fn start_launch_pty(
         &env,
     )?;
 
-    // Build the full command string for display
+    // Build the full command string for display (reflects actual wrapped command)
     let env_prefix: String = env
         .iter()
         .map(|(k, v)| format!("{}={}", k, v))
         .collect::<Vec<_>>()
         .join(" ");
-    let full_command = if env_prefix.is_empty() {
-        format!("cd {} && {}", work_dir, args.join(" "))
+    let actual_cmd_str = if cmd_args.is_empty() {
+        cmd.clone()
     } else {
-        format!("cd {} && {} {}", work_dir, env_prefix, args.join(" "))
+        format!("{} {}", cmd, cmd_args.join(" "))
+    };
+    let full_command = if env_prefix.is_empty() {
+        format!("cd {} && {}", work_dir, actual_cmd_str)
+    } else {
+        format!("cd {} && {} {}", work_dir, env_prefix, actual_cmd_str)
     };
 
     // Mark feature as executing
@@ -1324,19 +1330,21 @@ pub fn start_functional_testing(
 
     let session_id = format!("qa-{}-{}", feature_id, attempt);
 
-    let cmd_args = vec![
+    let qa_args = vec![
+        "claude".to_string(),
         "--permission-mode".to_string(),
         "auto".to_string(),
         "--append-system-prompt".to_string(),
         "You are qa-tester, a functional testing specialist.".to_string(),
         prompt,
     ];
+    let (qa_cmd, qa_cmd_args) = wrap_in_shell(&shell, &qa_args);
 
     if let Err(e) = pty::spawn_pty_session(
         &app_handle,
         &session_id,
-        "claude",
-        &cmd_args,
+        &qa_cmd,
+        &qa_cmd_args,
         work_dir,
         cols,
         rows,
@@ -1565,13 +1573,14 @@ pub fn relaunch_with_fix_context(
 
     let session_id = format!("fix-{}-{}", feature_id, feature.testing_attempt);
 
-    let cmd = &args[0];
-    let cmd_args: Vec<String> = args[1..].to_vec();
+    let prefs = state.preferences.lock().unwrap().clone();
+    let shell = if prefs.shell.is_empty() { default_shell() } else { prefs.shell.clone() };
+    let (cmd, cmd_args) = wrap_in_shell(&shell, &args);
 
     pty::spawn_pty_session(
         &app_handle,
         &session_id,
-        cmd,
+        &cmd,
         &cmd_args,
         work_dir,
         cols,
@@ -3194,6 +3203,28 @@ fn service_type_color(st: &ServiceType) -> String {
 
 // ── Helpers ──
 
+/// Wrap a command in the user's preferred shell for PTY execution.
+/// For tmux: runs `tmux new-session -- <cmd> <args...>` so the session runs inside tmux.
+/// For other shells (bash, zsh, fish): runs the command directly — no wrapping needed.
+fn wrap_in_shell(shell: &str, args: &[String]) -> (String, Vec<String>) {
+    if args.is_empty() {
+        return (String::new(), Vec::new());
+    }
+    match shell {
+        "tmux" => {
+            let mut tmux_args = vec!["new-session".to_string(), "--".to_string()];
+            tmux_args.extend(args.iter().cloned());
+            ("tmux".to_string(), tmux_args)
+        }
+        _ => {
+            // bash, zsh, fish, etc. — run command directly
+            let cmd = args[0].clone();
+            let cmd_args = args[1..].to_vec();
+            (cmd, cmd_args)
+        }
+    }
+}
+
 /// Shell-quote a string for safe inclusion in shell commands.
 /// Platform-aware default shell when no preference is set.
 fn default_shell() -> String {
@@ -3741,6 +3772,34 @@ mod tests {
             assert!(!value.is_empty());
             assert!(!label.is_empty());
         }
+    }
+
+    // ── wrap_in_shell tests ──
+
+    #[test]
+    fn wrap_in_shell_default_runs_directly() {
+        let args = vec!["claude".to_string(), "--help".to_string()];
+        let (cmd, cmd_args) = wrap_in_shell("bash", &args);
+        assert_eq!(cmd, "claude");
+        assert_eq!(cmd_args, vec!["--help"]);
+    }
+
+    #[test]
+    fn wrap_in_shell_tmux_wraps_in_new_session() {
+        let args = vec!["claude".to_string(), "--prompt".to_string(), "test".to_string()];
+        let (cmd, cmd_args) = wrap_in_shell("tmux", &args);
+        assert_eq!(cmd, "tmux");
+        assert_eq!(cmd_args[0], "new-session");
+        assert_eq!(cmd_args[1], "--");
+        assert_eq!(cmd_args[2], "claude");
+        assert_eq!(cmd_args[3], "--prompt");
+    }
+
+    #[test]
+    fn wrap_in_shell_empty_args_returns_empty() {
+        let (cmd, cmd_args) = wrap_in_shell("tmux", &[]);
+        assert!(cmd.is_empty());
+        assert!(cmd_args.is_empty());
     }
 
     // ── generate_multi_repo_context tests ──
