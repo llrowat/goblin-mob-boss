@@ -87,7 +87,7 @@ function nextPosition(services: MapService[]): [number, number] {
 
 // ── Force-directed auto-layout ──
 
-function autoLayout(
+export function autoLayout(
   services: MapService[],
   connections: MapConnection[],
 ): Record<string, [number, number]> {
@@ -100,33 +100,93 @@ function autoLayout(
     (c) => ids.has(c.from_service) && ids.has(c.to_service),
   );
 
-  // Initialize positions in a circle
+  // ── Topological layering ──
+  // Build adjacency for topological sort (sources → intermediaries → sinks)
+  const inDeg: Record<string, number> = {};
+  const outAdj: Record<string, string[]> = {};
+  for (const s of services) {
+    inDeg[s.id] = 0;
+    outAdj[s.id] = [];
+  }
+  for (const e of edges) {
+    inDeg[e.to_service] = (inDeg[e.to_service] ?? 0) + 1;
+    outAdj[e.from_service] = outAdj[e.from_service] ?? [];
+    outAdj[e.from_service].push(e.to_service);
+  }
+
+  // BFS layering (Kahn's algorithm)
+  const layerOf: Record<string, number> = {};
+  const queue: string[] = [];
+  for (const s of services) {
+    if (inDeg[s.id] === 0) {
+      queue.push(s.id);
+      layerOf[s.id] = 0;
+    }
+  }
+  let head = 0;
+  let maxLayer = 0;
+  while (head < queue.length) {
+    const cur = queue[head++];
+    for (const nb of (outAdj[cur] ?? [])) {
+      inDeg[nb]--;
+      const nextLayer = (layerOf[cur] ?? 0) + 1;
+      layerOf[nb] = Math.max(layerOf[nb] ?? 0, nextLayer);
+      maxLayer = Math.max(maxLayer, layerOf[nb]);
+      if (inDeg[nb] === 0) queue.push(nb);
+    }
+  }
+  // Assign unvisited nodes (cycles) to the last layer + 1
+  for (const s of services) {
+    if (layerOf[s.id] === undefined) {
+      layerOf[s.id] = maxLayer + 1;
+      maxLayer = layerOf[s.id];
+    }
+  }
+
+  // Group services by layer
+  const layers: string[][] = [];
+  for (let i = 0; i <= maxLayer; i++) layers.push([]);
+  for (const s of services) layers[layerOf[s.id]].push(s.id);
+
+  // ── Initialize positions by layer rows ──
   const cx = 600, cy = 400;
-  const radius = Math.max(150, services.length * 45);
   const px: Record<string, number> = {};
   const py: Record<string, number> = {};
   const vx: Record<string, number> = {};
   const vy: Record<string, number> = {};
 
-  services.forEach((s, i) => {
-    const angle = (2 * Math.PI * i) / services.length;
-    px[s.id] = cx + radius * Math.cos(angle);
-    py[s.id] = cy + radius * Math.sin(angle);
-    vx[s.id] = 0;
-    vy[s.id] = 0;
-  });
+  const layerSpacingY = 160;
+  const totalHeight = maxLayer * layerSpacingY;
+  for (let li = 0; li < layers.length; li++) {
+    const layer = layers[li];
+    const rowY = cy - totalHeight / 2 + li * layerSpacingY;
+    const rowWidth = (layer.length - 1) * 180;
+    for (let ni = 0; ni < layer.length; ni++) {
+      const sid = layer[ni];
+      px[sid] = cx - rowWidth / 2 + ni * 180;
+      py[sid] = rowY;
+      vx[sid] = 0;
+      vy[sid] = 0;
+    }
+  }
 
-  const IDEAL_DIST = 200;
+  // ── Force simulation ──
+  const IDEAL_DIST = Math.max(180, 300 - services.length * 8);
+  const iterations = Math.min(500, 300 + services.length * 10);
 
-  for (let iter = 0; iter < 300; iter++) {
-    const temp = Math.max(0.01, 1 - iter / 300);
+  // Build a type-group map for clustering bias
+  const typeOf: Record<string, ServiceType> = {};
+  for (const s of services) typeOf[s.id] = s.service_type;
+
+  for (let iter = 0; iter < iterations; iter++) {
+    const temp = Math.max(0.01, 1 - iter / iterations);
 
     // Repulsion between all pairs
     for (let i = 0; i < services.length; i++) {
       for (let j = i + 1; j < services.length; j++) {
         const a = services[i].id, b = services[j].id;
-        let dx = px[a] - px[b];
-        let dy = py[a] - py[b];
+        const dx = px[a] - px[b];
+        const dy = py[a] - py[b];
         const dist = Math.sqrt(dx * dx + dy * dy) || 1;
         const force = (IDEAL_DIST * IDEAL_DIST) / dist;
         const fx = (dx / dist) * force * temp;
@@ -148,11 +208,38 @@ function autoLayout(
       vx[e.to_service] -= fx; vy[e.to_service] -= fy;
     }
 
+    // Centering force — pull toward center of mass
+    let cmx = 0, cmy = 0;
+    for (const s of services) { cmx += px[s.id]; cmy += py[s.id]; }
+    cmx /= services.length;
+    cmy /= services.length;
+    const centerStrength = 0.05 * temp;
+    for (const s of services) {
+      vx[s.id] += (cx - cmx) * centerStrength;
+      vy[s.id] += (cy - cmy) * centerStrength;
+    }
+
+    // Service type grouping bias — weak clustering force
+    for (let i = 0; i < services.length; i++) {
+      for (let j = i + 1; j < services.length; j++) {
+        const a = services[i].id, b = services[j].id;
+        if (typeOf[a] === typeOf[b]) {
+          const dx = px[b] - px[a];
+          const dy = py[b] - py[a];
+          const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+          const clusterForce = 0.02 * temp;
+          const fx = (dx / dist) * clusterForce * dist;
+          const fy = (dy / dist) * clusterForce * dist;
+          vx[a] += fx; vy[a] += fy;
+          vx[b] -= fx; vy[b] -= fy;
+        }
+      }
+    }
+
     // Apply velocities with damping
     for (const s of services) {
       vx[s.id] *= 0.85;
       vy[s.id] *= 0.85;
-      // Clamp velocity to prevent explosions
       const speed = Math.sqrt(vx[s.id] ** 2 + vy[s.id] ** 2);
       if (speed > 50) {
         vx[s.id] = (vx[s.id] / speed) * 50;
@@ -163,8 +250,75 @@ function autoLayout(
     }
   }
 
-  // Fit into target area (viewBox 1200×800 with padding)
-  const PAD = 80; // padding from edges (enough room for labels)
+  // ── Edge crossing reduction: sweep within layers ──
+  // For each layer, try swapping adjacent nodes and keep swaps that reduce crossings
+  const countCrossings = (): number => {
+    let crossings = 0;
+    for (let i = 0; i < edges.length; i++) {
+      for (let j = i + 1; j < edges.length; j++) {
+        const e1 = edges[i], e2 = edges[j];
+        const x1a = px[e1.from_service], x1b = px[e1.to_service];
+        const x2a = px[e2.from_service], x2b = px[e2.to_service];
+        // Edges cross if their x-orderings are inverted between layers
+        if ((x1a - x2a) * (x1b - x2b) < 0) crossings++;
+      }
+    }
+    return crossings;
+  };
+
+  for (let pass = 0; pass < 3; pass++) {
+    for (const layer of layers) {
+      if (layer.length < 2) continue;
+      // Sort layer nodes by current x position
+      layer.sort((a, b) => px[a] - px[b]);
+      for (let i = 0; i < layer.length - 1; i++) {
+        const before = countCrossings();
+        // Swap x positions
+        const tmpX = px[layer[i]];
+        px[layer[i]] = px[layer[i + 1]];
+        px[layer[i + 1]] = tmpX;
+        const after = countCrossings();
+        if (after >= before) {
+          // Revert swap
+          const revert = px[layer[i]];
+          px[layer[i]] = px[layer[i + 1]];
+          px[layer[i + 1]] = revert;
+        } else {
+          // Keep swap, also swap in the layer array
+          const tmp = layer[i];
+          layer[i] = layer[i + 1];
+          layer[i + 1] = tmp;
+        }
+      }
+    }
+  }
+
+  // ── Collision pass: ensure minimum 120px between node centers ──
+  const MIN_SPACING = 120;
+  for (let pass = 0; pass < 5; pass++) {
+    for (let i = 0; i < services.length; i++) {
+      for (let j = i + 1; j < services.length; j++) {
+        const a = services[i].id, b = services[j].id;
+        const dx = px[a] - px[b];
+        const dy = py[a] - py[b];
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < MIN_SPACING && dist > 0) {
+          const overlap = (MIN_SPACING - dist) / 2;
+          const nx = (dx / dist) * overlap;
+          const ny = (dy / dist) * overlap;
+          px[a] += nx; py[a] += ny;
+          px[b] -= nx; py[b] -= ny;
+        } else if (dist === 0) {
+          // Nudge apart if exactly overlapping
+          px[a] += MIN_SPACING / 2;
+          px[b] -= MIN_SPACING / 2;
+        }
+      }
+    }
+  }
+
+  // ── Fit into target area (viewBox 1200x800 with padding) ──
+  const PAD = 80;
   const targetW = 1200 - PAD * 2;
   const targetH = 800 - PAD * 2;
 
@@ -178,7 +332,7 @@ function autoLayout(
 
   const spanX = maxX - minX || 1;
   const spanY = maxY - minY || 1;
-  const scale = Math.min(targetW / spanX, targetH / spanY, 1); // never upscale
+  const scale = Math.min(targetW / spanX, targetH / spanY, 1);
 
   for (const s of services) {
     const nx = (px[s.id] - minX) * scale + PAD + (targetW - spanX * scale) / 2;
@@ -187,6 +341,66 @@ function autoLayout(
   }
 
   return result;
+}
+
+// ── Fit-to-view calculation (pure, testable) ──
+
+interface ViewBox {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export function calculateFitViewBox(
+  services: MapService[],
+  _currentViewBox: ViewBox,
+): ViewBox | null {
+  if (services.length === 0) return null;
+
+  if (services.length === 1) {
+    const [sx, sy] = services[0].position;
+    // Center with 600x400 default, clamped to bounds
+    const w = Math.max(200, Math.min(4800, 600));
+    const h = Math.max(133, Math.min(3200, 400));
+    return { x: sx - w / 2, y: sy - h / 2, w, h };
+  }
+
+  // Calculate bounding box of all services
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const s of services) {
+    const [sx, sy] = s.position;
+    minX = Math.min(minX, sx);
+    minY = Math.min(minY, sy);
+    maxX = Math.max(maxX, sx);
+    maxY = Math.max(maxY, sy);
+  }
+
+  const PAD = 80;
+  let w = maxX - minX + PAD * 2;
+  let h = maxY - minY + PAD * 2;
+
+  // Clamp to zoom bounds
+  w = Math.max(200, Math.min(4800, w));
+  h = Math.max(133, Math.min(3200, h));
+
+  // Maintain aspect ratio 3:2 (1200:800) — expand to fit
+  const targetAspect = 3 / 2;
+  const currentAspect = w / h;
+  if (currentAspect > targetAspect) {
+    h = w / targetAspect;
+  } else {
+    w = h * targetAspect;
+  }
+
+  // Re-clamp after aspect ratio adjustment
+  w = Math.max(200, Math.min(4800, w));
+  h = Math.max(133, Math.min(3200, h));
+
+  const centerX = (minX + maxX) / 2;
+  const centerY = (minY + maxY) / 2;
+
+  return { x: centerX - w / 2, y: centerY - h / 2, w, h };
 }
 
 export function SystemMapPage() {
@@ -231,6 +445,7 @@ export function SystemMapPage() {
   const [viewBox, setViewBox] = useState({ x: 0, y: 0, w: 1200, h: 800 });
   const [isPanning, setIsPanning] = useState(false);
   const panStart = useRef({ x: 0, y: 0, vx: 0, vy: 0 });
+  const fitAnimRef = useRef<number | null>(null);
 
   // Service form state
   const [svcName, setSvcName] = useState("");
@@ -250,10 +465,11 @@ export function SystemMapPage() {
 
   const activeMap = maps.find((m) => m.id === activeMapId) ?? null;
 
-  // ── Cleanup discovery polling on unmount ──
+  // ── Cleanup discovery polling and fit animation on unmount ──
   useEffect(() => {
     return () => {
       if (pollRef.current) clearTimeout(pollRef.current);
+      if (fitAnimRef.current !== null) cancelAnimationFrame(fitAnimRef.current);
     };
   }, []);
 
@@ -562,21 +778,64 @@ export function SystemMapPage() {
     [isPanning, dragServiceId, viewBox.w, viewBox.h, handleSvgMouseMove],
   );
 
+  // ── Fit to View ──
+  const fitToView = useCallback((servicesForFit?: MapService[]) => {
+    const svcs = servicesForFit ?? activeMap?.services ?? [];
+    if (svcs.length === 0) return;
+
+    const target = calculateFitViewBox(svcs, viewBox);
+    if (!target) return;
+
+    // Cancel any running animation
+    if (fitAnimRef.current !== null) {
+      cancelAnimationFrame(fitAnimRef.current);
+      fitAnimRef.current = null;
+    }
+
+    // Capture the current viewBox at animation start
+    const startVB = { ...viewBox };
+    const duration = 300; // ms
+    const startTime = performance.now();
+
+    const animate = (now: number) => {
+      const elapsed = now - startTime;
+      const t = Math.min(1, elapsed / duration);
+      // Ease-out quad
+      const ease = 1 - (1 - t) * (1 - t);
+
+      setViewBox({
+        x: startVB.x + (target.x - startVB.x) * ease,
+        y: startVB.y + (target.y - startVB.y) * ease,
+        w: startVB.w + (target.w - startVB.w) * ease,
+        h: startVB.h + (target.h - startVB.h) * ease,
+      });
+
+      if (t < 1) {
+        fitAnimRef.current = requestAnimationFrame(animate);
+      } else {
+        fitAnimRef.current = null;
+      }
+    };
+
+    fitAnimRef.current = requestAnimationFrame(animate);
+  }, [activeMap, viewBox]);
+
   // ── Auto Layout ──
   const handleAutoLayout = useCallback(() => {
     if (!activeMap || activeMap.services.length < 2) return;
     const positions = autoLayout(activeMap.services, activeMap.connections);
+    const updatedServices = activeMap.services.map((s) => ({
+      ...s,
+      position: positions[s.id] ?? s.position ?? [400, 300],
+    }));
     const updated: SystemMap = {
       ...activeMap,
-      services: activeMap.services.map((s) => ({
-        ...s,
-        position: positions[s.id] ?? s.position ?? [400, 300],
-      })),
+      services: updatedServices,
     };
     setMaps((prev) => prev.map((m) => (m.id === updated.id ? updated : m)));
-    setViewBox({ x: 0, y: 0, w: 1200, h: 800 }); // reset view to fit
+    fitToView(updatedServices);
     persistMap(updated);
-  }, [activeMap, persistMap]);
+  }, [activeMap, persistMap, fitToView]);
 
   // ── Discovery (Explore) ──
   const handleExplore = async () => {
@@ -1382,6 +1641,13 @@ export function SystemMapPage() {
             disabled={!activeMap || activeMap.services.length < 2}
           >
             Auto Layout
+          </button>
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={() => fitToView()}
+            disabled={!activeMap || activeMap.services.length === 0}
+          >
+            Fit View
           </button>
           <button
             className="btn btn-brass btn-sm"
