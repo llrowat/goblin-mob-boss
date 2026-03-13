@@ -166,6 +166,7 @@ Skip any section where there's nothing project-specific to say. Aim for under 80
         .map_err(|e| format!("Failed to clone log file handle: {}", e))?;
 
     let mut cmd = std::process::Command::new("claude");
+    apply_user_path(&mut cmd);
     cmd.arg("--print")
         .arg("--permission-mode")
         .arg("bypassPermissions")
@@ -935,6 +936,7 @@ pub fn start_launch_pty(
         rows,
         &pty_sessions,
         &env,
+        resolve_user_path().as_deref(),
     )?;
 
     // Build the full command string for display (reflects actual wrapped command)
@@ -1350,6 +1352,7 @@ pub fn start_functional_testing(
         rows,
         &pty_sessions,
         &[],
+        resolve_user_path().as_deref(),
     ) {
         // PTY spawn failed — stop the harness to prevent orphaned processes
         harness::stop_harness(&harness_mgr, &feature_id);
@@ -1587,6 +1590,7 @@ pub fn relaunch_with_fix_context(
         rows,
         &pty_sessions,
         &env,
+        resolve_user_path().as_deref(),
     )?;
 
     let mut features = state.features.lock().unwrap();
@@ -2119,6 +2123,7 @@ fn spawn_ideation_process(
     );
 
     let mut cmd = std::process::Command::new("claude");
+    apply_user_path(&mut cmd);
     cmd.arg("--print")
         .arg("--permission-mode").arg("bypassPermissions")
         .arg("--allowedTools").arg("Read,Glob,Grep,Write")
@@ -2949,6 +2954,7 @@ fn spawn_discovery_process(
     use std::io::Write as IoWrite;
 
     let mut cmd = std::process::Command::new("claude");
+    apply_user_path(&mut cmd);
     cmd.arg("--print")
         .arg("--permission-mode").arg("bypassPermissions")
         .arg("--allowedTools").arg("Read,Glob,Grep,Write")
@@ -3232,6 +3238,58 @@ fn default_shell() -> String {
         "powershell".to_string()
     } else {
         "bash".to_string()
+    }
+}
+
+/// Resolve the user's full PATH by running a login shell.
+///
+/// On macOS, GUI apps launched from Finder/Spotlight inherit a minimal PATH
+/// (typically just `/usr/bin:/bin:/usr/sbin:/sbin`) that doesn't include
+/// paths where Claude Code is installed (e.g. via npm/nvm). This function
+/// runs a login shell to capture the user's complete PATH, then caches the
+/// result for the lifetime of the process.
+fn resolve_user_path() -> Option<String> {
+    use std::sync::OnceLock;
+    static USER_PATH: OnceLock<Option<String>> = OnceLock::new();
+
+    USER_PATH
+        .get_or_init(|| {
+            // Only needed on macOS — Linux desktop launchers and Windows
+            // generally propagate PATH correctly.
+            if !cfg!(target_os = "macos") {
+                return None;
+            }
+
+            // Determine which shell to query — prefer the user's login shell
+            let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
+
+            // Run a login shell to print PATH
+            let output = std::process::Command::new(&shell)
+                .args(["-l", "-c", "echo $PATH"])
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::null())
+                .output()
+                .ok()?;
+
+            if !output.status.success() {
+                return None;
+            }
+
+            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if path.is_empty() {
+                None
+            } else {
+                Some(path)
+            }
+        })
+        .clone()
+}
+
+/// Apply the resolved user PATH to a `std::process::Command`.
+/// No-op on non-macOS or if PATH resolution failed.
+fn apply_user_path(cmd: &mut std::process::Command) {
+    if let Some(path) = resolve_user_path() {
+        cmd.env("PATH", path);
     }
 }
 
@@ -3957,6 +4015,39 @@ mod tests {
         assert_eq!(tasks[0]["acceptance_criteria"][0]["done"], false);
         assert_eq!(tasks[1]["task"], 2);
         assert_eq!(tasks[1]["acceptance_criteria"].as_array().unwrap().len(), 0);
+    }
+
+    // ── resolve_user_path / apply_user_path tests ──
+
+    #[test]
+    fn resolve_user_path_returns_consistent_results() {
+        // OnceLock caching: calling twice should return the same value
+        let first = resolve_user_path();
+        let second = resolve_user_path();
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn resolve_user_path_non_empty_on_unix() {
+        // On any Unix system (including macOS), the login shell should produce a PATH
+        if !cfg!(target_os = "windows") {
+            let path = resolve_user_path();
+            // On non-macOS we expect None (the function only activates on macOS),
+            // on macOS we expect Some with a non-empty string.
+            if cfg!(target_os = "macos") {
+                assert!(path.is_some(), "Should resolve PATH on macOS");
+                assert!(!path.unwrap().is_empty());
+            }
+            // On Linux this is expected to be None (no-op)
+        }
+    }
+
+    #[test]
+    fn apply_user_path_does_not_panic() {
+        // Smoke test: apply_user_path should not panic regardless of platform
+        let mut cmd = std::process::Command::new("echo");
+        apply_user_path(&mut cmd);
+        // No assertion needed — just verifying it doesn't panic
     }
 
     #[test]
