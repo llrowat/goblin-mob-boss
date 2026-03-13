@@ -1721,17 +1721,50 @@ body {
 /* ── Toolbar ── */
 .map-toolbar {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: space-between;
-  gap: 12px;
+  gap: 16px;
   padding: 8px 0;
   margin-bottom: 8px;
+}
+
+.map-toolbar-left {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.map-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.map-toolbar-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.map-toolbar-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
 }
 
 .map-toolbar-group {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.map-toolbar-divider {
+  width: 1px;
+  height: 28px;
+  background: var(--border);
+  flex-shrink: 0;
 }
 
 .map-toolbar-stats {

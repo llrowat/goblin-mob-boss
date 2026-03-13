@@ -170,53 +170,77 @@ export function autoLayout(
     }
   }
 
-  // ── Force simulation ──
-  const IDEAL_DIST = Math.max(180, 300 - services.length * 8);
-  const iterations = Math.min(500, 300 + services.length * 10);
+  // ── Force simulation (Fruchterman-Reingold) ──
+  const k = Math.max(120, 180 - services.length * 4); // ideal spacing
+  const iterations = 200;
 
   // Build a type-group map for clustering bias
   const typeOf: Record<string, ServiceType> = {};
   for (const s of services) typeOf[s.id] = s.service_type;
 
-  for (let iter = 0; iter < iterations; iter++) {
-    const temp = Math.max(0.01, 1 - iter / iterations);
+  // Track which nodes have edges for gravity scaling
+  const edgeCount: Record<string, number> = {};
+  for (const s of services) edgeCount[s.id] = 0;
+  for (const e of edges) {
+    edgeCount[e.from_service] = (edgeCount[e.from_service] ?? 0) + 1;
+    edgeCount[e.to_service] = (edgeCount[e.to_service] ?? 0) + 1;
+  }
 
-    // Repulsion between all pairs
+  for (let iter = 0; iter < iterations; iter++) {
+    // Temperature controls max displacement per iteration, decays over time
+    const temp = k * (1 - iter / iterations);
+
+    // Accumulate displacement (not velocity — no momentum to cause runaway)
+    const dispX: Record<string, number> = {};
+    const dispY: Record<string, number> = {};
+    for (const s of services) { dispX[s.id] = 0; dispY[s.id] = 0; }
+
+    // Repulsion: F_rep = k² / dist (standard F-R)
     for (let i = 0; i < services.length; i++) {
       for (let j = i + 1; j < services.length; j++) {
         const a = services[i].id, b = services[j].id;
         const dx = px[a] - px[b];
         const dy = py[a] - py[b];
-        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-        const force = (IDEAL_DIST * IDEAL_DIST) / dist;
-        const fx = (dx / dist) * force * temp;
-        const fy = (dy / dist) * force * temp;
-        vx[a] += fx; vy[a] += fy;
-        vx[b] -= fx; vy[b] -= fy;
+        const dist = Math.max(1, Math.sqrt(dx * dx + dy * dy));
+        const force = (k * k) / dist;
+        const fx = (dx / dist) * force;
+        const fy = (dy / dist) * force;
+        dispX[a] += fx; dispY[a] += fy;
+        dispX[b] -= fx; dispY[b] -= fy;
       }
     }
 
-    // Attraction along edges
+    // Attraction along edges: F_att = dist² / k (standard F-R)
     for (const e of edges) {
       const dx = px[e.to_service] - px[e.from_service];
       const dy = py[e.to_service] - py[e.from_service];
-      const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-      const force = (dist - IDEAL_DIST) * 0.1 * temp;
+      const dist = Math.max(1, Math.sqrt(dx * dx + dy * dy));
+      const force = (dist * dist) / k;
       const fx = (dx / dist) * force;
       const fy = (dy / dist) * force;
-      vx[e.from_service] += fx; vy[e.from_service] += fy;
-      vx[e.to_service] -= fx; vy[e.to_service] -= fy;
+      dispX[e.from_service] += fx; dispY[e.from_service] += fy;
+      dispX[e.to_service] -= fx; dispY[e.to_service] -= fy;
     }
 
-    // Centering force — pull toward center of mass
+    // Gravity — pull all nodes toward center of mass
     let cmx = 0, cmy = 0;
     for (const s of services) { cmx += px[s.id]; cmy += py[s.id]; }
     cmx /= services.length;
     cmy /= services.length;
-    const centerStrength = 0.05 * temp;
     for (const s of services) {
-      vx[s.id] += (cx - cmx) * centerStrength;
-      vy[s.id] += (cy - cmy) * centerStrength;
+      const dx = cmx - px[s.id];
+      const dy = cmy - py[s.id];
+      const dist = Math.max(1, Math.sqrt(dx * dx + dy * dy));
+      if (edgeCount[s.id] === 0) {
+        // Disconnected nodes: treat as if they have an edge to center of mass
+        const force = (dist * dist) / k;
+        dispX[s.id] += (dx / dist) * force;
+        dispY[s.id] += (dy / dist) * force;
+      } else {
+        // Connected nodes: mild gravity to keep layout centered
+        dispX[s.id] += dx * 0.1;
+        dispY[s.id] += dy * 0.1;
+      }
     }
 
     // Service type grouping bias — weak clustering force
@@ -226,27 +250,24 @@ export function autoLayout(
         if (typeOf[a] === typeOf[b]) {
           const dx = px[b] - px[a];
           const dy = py[b] - py[a];
-          const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-          const clusterForce = 0.02 * temp;
-          const fx = (dx / dist) * clusterForce * dist;
-          const fy = (dy / dist) * clusterForce * dist;
-          vx[a] += fx; vy[a] += fy;
-          vx[b] -= fx; vy[b] -= fy;
+          const dist = Math.max(1, Math.sqrt(dx * dx + dy * dy));
+          const force = dist * 0.02;
+          const fx = (dx / dist) * force;
+          const fy = (dy / dist) * force;
+          dispX[a] += fx; dispY[a] += fy;
+          dispX[b] -= fx; dispY[b] -= fy;
         }
       }
     }
 
-    // Apply velocities with damping
+    // Apply displacement, clamped to temperature
     for (const s of services) {
-      vx[s.id] *= 0.85;
-      vy[s.id] *= 0.85;
-      const speed = Math.sqrt(vx[s.id] ** 2 + vy[s.id] ** 2);
-      if (speed > 50) {
-        vx[s.id] = (vx[s.id] / speed) * 50;
-        vy[s.id] = (vy[s.id] / speed) * 50;
-      }
-      px[s.id] += vx[s.id];
-      py[s.id] += vy[s.id];
+      const dx = dispX[s.id];
+      const dy = dispY[s.id];
+      const disp = Math.max(1, Math.sqrt(dx * dx + dy * dy));
+      const clamped = Math.min(disp, temp);
+      px[s.id] += (dx / disp) * clamped;
+      py[s.id] += (dy / disp) * clamped;
     }
   }
 
@@ -295,7 +316,7 @@ export function autoLayout(
 
   // ── Collision pass: ensure minimum 120px between node centers ──
   const MIN_SPACING = 120;
-  for (let pass = 0; pass < 5; pass++) {
+  for (let pass = 0; pass < 10; pass++) {
     for (let i = 0; i < services.length; i++) {
       for (let j = i + 1; j < services.length; j++) {
         const a = services[i].id, b = services[j].id;
@@ -833,9 +854,60 @@ export function SystemMapPage() {
       services: updatedServices,
     };
     setMaps((prev) => prev.map((m) => (m.id === updated.id ? updated : m)));
-    fitToView(updatedServices);
+
+    // Keep the current zoom level but re-center on the new layout.
+    // Only expand zoom if the new layout doesn't fit in the current viewBox.
+    const fitTarget = calculateFitViewBox(updatedServices, viewBox);
+    if (fitTarget) {
+      const needsExpand = fitTarget.w > viewBox.w || fitTarget.h > viewBox.h;
+      if (needsExpand) {
+        fitToView(updatedServices);
+      } else {
+        // Re-center at current zoom
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const s of updatedServices) {
+          const [sx, sy] = s.position;
+          minX = Math.min(minX, sx);
+          minY = Math.min(minY, sy);
+          maxX = Math.max(maxX, sx);
+          maxY = Math.max(maxY, sy);
+        }
+        const centerX = (minX + maxX) / 2;
+        const centerY = (minY + maxY) / 2;
+
+        // Cancel any running animation
+        if (fitAnimRef.current !== null) {
+          cancelAnimationFrame(fitAnimRef.current);
+          fitAnimRef.current = null;
+        }
+
+        const startVB = { ...viewBox };
+        const target = { x: centerX - viewBox.w / 2, y: centerY - viewBox.h / 2, w: viewBox.w, h: viewBox.h };
+        const duration = 300;
+        const startTime = performance.now();
+
+        const animate = (now: number) => {
+          const elapsed = now - startTime;
+          const t = Math.min(1, elapsed / duration);
+          const ease = 1 - (1 - t) * (1 - t);
+          setViewBox({
+            x: startVB.x + (target.x - startVB.x) * ease,
+            y: startVB.y + (target.y - startVB.y) * ease,
+            w: startVB.w,
+            h: startVB.h,
+          });
+          if (t < 1) {
+            fitAnimRef.current = requestAnimationFrame(animate);
+          } else {
+            fitAnimRef.current = null;
+          }
+        };
+        fitAnimRef.current = requestAnimationFrame(animate);
+      }
+    }
+
     persistMap(updated);
-  }, [activeMap, persistMap, fitToView]);
+  }, [activeMap, persistMap, fitToView, viewBox]);
 
   // ── Discovery (Explore) ──
   const handleExplore = async () => {
@@ -1624,45 +1696,56 @@ export function SystemMapPage() {
 
       {/* Toolbar */}
       <div className="map-toolbar">
-        <div className="map-toolbar-group">
-          <button className="btn btn-brass btn-sm" onClick={openAddService}>
-            Add Service
-          </button>
-          <button
-            className="btn btn-secondary btn-sm"
-            onClick={openAddConnection}
-            disabled={activeMap.services.length < 2}
-          >
-            Add Connection
-          </button>
-          <button
-            className="btn btn-secondary btn-sm"
-            onClick={handleAutoLayout}
-            disabled={!activeMap || activeMap.services.length < 2}
-          >
-            Auto Layout
-          </button>
-          <button
-            className="btn btn-secondary btn-sm"
-            onClick={() => fitToView()}
-            disabled={!activeMap || activeMap.services.length === 0}
-          >
-            Fit View
-          </button>
-          <button
-            className="btn btn-brass btn-sm"
-            onClick={() => setShowExploreModal(true)}
-            disabled={exploring || repos.length === 0}
-          >
-            {exploring ? "Exploring..." : "Explore"}
-          </button>
+        <div className="map-toolbar-left">
+          <div className="map-toolbar-section">
+            <span className="map-toolbar-label">Build</span>
+            <div className="map-toolbar-group">
+              <button className="btn btn-brass btn-sm" onClick={openAddService}>
+                Add Service
+              </button>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={openAddConnection}
+                disabled={activeMap.services.length < 2}
+              >
+                Add Connection
+              </button>
+              <button
+                className="btn btn-brass btn-sm"
+                onClick={() => setShowExploreModal(true)}
+                disabled={exploring || repos.length === 0}
+              >
+                {exploring ? "Exploring..." : "Explore"}
+              </button>
+            </div>
+          </div>
+          <div className="map-toolbar-divider" />
+          <div className="map-toolbar-section">
+            <span className="map-toolbar-label">View</span>
+            <div className="map-toolbar-group">
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={handleAutoLayout}
+                disabled={!activeMap || activeMap.services.length < 2}
+              >
+                Auto Layout
+              </button>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={() => fitToView()}
+                disabled={!activeMap || activeMap.services.length === 0}
+              >
+                Fit View
+              </button>
+            </div>
+          </div>
         </div>
-        <span className="map-toolbar-stats">
-          {activeMap.services.length} service{activeMap.services.length !== 1 ? "s" : ""}
-          {" \u00B7 "}
-          {activeMap.connections.length} connection{activeMap.connections.length !== 1 ? "s" : ""}
-        </span>
-        <div className="map-toolbar-group">
+        <div className="map-toolbar-right">
+          <span className="map-toolbar-stats">
+            {activeMap.services.length} service{activeMap.services.length !== 1 ? "s" : ""}
+            {" \u00B7 "}
+            {activeMap.connections.length} connection{activeMap.connections.length !== 1 ? "s" : ""}
+          </span>
           {confirmDeleteMap ? (
             <div className="map-delete-confirm">
               <span className="map-delete-prompt">Delete this map?</span>
