@@ -61,6 +61,7 @@ export function AddRepoModal({ onClose, onAdded }: Props) {
       setBaseBranch(info.base_branch);
       setHasClaudeMd(info.has_claude_md);
       setIsRepoEmpty(info.is_empty ?? false);
+      setCommitPattern(info.commit_pattern ?? "");
       setDetected(true);
     } catch (e) {
       setError(String(e));

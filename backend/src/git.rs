@@ -245,6 +245,97 @@ pub fn validate_commit_message(message: &str, pattern: Option<&str>) -> GitResul
     Ok(())
 }
 
+/// Try to detect a commit message convention from a repository.
+/// Checks config files first, then falls back to analyzing recent commit history.
+pub fn detect_commit_pattern(repo_path: &str) -> Option<String> {
+    let root = Path::new(repo_path);
+
+    // 1. Check for commitlint config files (indicates conventional commits)
+    let commitlint_files = [
+        "commitlint.config.js",
+        "commitlint.config.cjs",
+        "commitlint.config.mjs",
+        "commitlint.config.ts",
+        ".commitlintrc",
+        ".commitlintrc.js",
+        ".commitlintrc.json",
+        ".commitlintrc.yml",
+        ".commitlintrc.yaml",
+    ];
+    for file in &commitlint_files {
+        if root.join(file).exists() {
+            // commitlint with conventional config is the most common setup
+            return Some(r"^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\(.+\))?!?: .+".to_string());
+        }
+    }
+
+    // Also check package.json for commitlint in devDependencies
+    let pkg_json_path = root.join("package.json");
+    if pkg_json_path.exists() {
+        if let Ok(content) = std::fs::read_to_string(&pkg_json_path) {
+            if content.contains("commitlint") || content.contains("@commitlint") {
+                return Some(r"^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\(.+\))?!?: .+".to_string());
+            }
+        }
+    }
+
+    // 2. Analyze recent commit messages to infer a pattern
+    infer_commit_pattern_from_history(repo_path)
+}
+
+/// Analyze recent git log messages to detect if a conventional-style pattern is used.
+fn infer_commit_pattern_from_history(repo_path: &str) -> Option<String> {
+    let log_output = run_git(repo_path, &["log", "--oneline", "--no-merges", "-50"]).ok()?;
+    let lines: Vec<&str> = log_output.lines().collect();
+    if lines.len() < 5 {
+        return None; // Not enough history to infer
+    }
+
+    // Strip the short hash prefix from each line (e.g. "abc1234 feat: do thing" -> "feat: do thing")
+    let subjects: Vec<&str> = lines
+        .iter()
+        .filter_map(|line| line.split_once(' ').map(|(_, msg)| msg))
+        .collect();
+
+    if subjects.is_empty() {
+        return None;
+    }
+
+    // Check for conventional commits pattern: type(scope)?: description
+    let conventional_re = regex::Regex::new(
+        r"^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\(.+\))?!?: .+"
+    ).ok()?;
+    let conventional_matches = subjects.iter().filter(|s| conventional_re.is_match(s)).count();
+    let ratio = conventional_matches as f64 / subjects.len() as f64;
+
+    if ratio >= 0.6 {
+        // Majority of commits follow conventional commits
+        return Some(r"^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\(.+\))?!?: .+".to_string());
+    }
+
+    // Check for simpler "type: description" pattern (e.g. "fix: thing", "add: thing")
+    let simple_type_re = regex::Regex::new(r"^[a-z]+: .+").ok()?;
+    let simple_matches = subjects.iter().filter(|s| simple_type_re.is_match(s)).count();
+    let simple_ratio = simple_matches as f64 / subjects.len() as f64;
+
+    if simple_ratio >= 0.6 {
+        // Collect the actual types used
+        let type_re = regex::Regex::new(r"^([a-z]+): ").ok()?;
+        let mut types: Vec<String> = subjects
+            .iter()
+            .filter_map(|s| type_re.captures(s).map(|c| c[1].to_string()))
+            .collect();
+        types.sort();
+        types.dedup();
+        if !types.is_empty() {
+            let types_pattern = types.join("|");
+            return Some(format!("^({}): .+", types_pattern));
+        }
+    }
+
+    None
+}
+
 /// Checkout an existing branch.
 pub fn checkout_branch(repo_path: &str, branch: &str) -> GitResult<()> {
     run_git(repo_path, &["checkout", branch])?;
@@ -753,6 +844,117 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("Invalid commit pattern regex"));
+    }
+
+    // ── detect_commit_pattern tests ──
+
+    #[test]
+    fn detect_commit_pattern_returns_none_for_empty_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        // Initialize a git repo with no commits and no config files
+        Command::new("git")
+            .args(["init"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+        let result = detect_commit_pattern(dir.path().to_str().unwrap());
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn detect_commit_pattern_from_commitlint_config() {
+        let dir = tempfile::tempdir().unwrap();
+        Command::new("git")
+            .args(["init"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+        // Create a commitlint config file
+        std::fs::write(
+            dir.path().join("commitlint.config.js"),
+            "module.exports = { extends: ['@commitlint/config-conventional'] };",
+        ).unwrap();
+        let result = detect_commit_pattern(dir.path().to_str().unwrap());
+        assert!(result.is_some());
+        let pattern = result.unwrap();
+        assert!(pattern.contains("feat"));
+        assert!(pattern.contains("fix"));
+    }
+
+    #[test]
+    fn detect_commit_pattern_from_package_json_commitlint() {
+        let dir = tempfile::tempdir().unwrap();
+        Command::new("git")
+            .args(["init"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+        std::fs::write(
+            dir.path().join("package.json"),
+            r#"{"devDependencies": {"@commitlint/cli": "^17.0.0"}}"#,
+        ).unwrap();
+        let result = detect_commit_pattern(dir.path().to_str().unwrap());
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn detect_commit_pattern_from_conventional_history() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().to_str().unwrap();
+        Command::new("git").args(["init"]).current_dir(dir.path()).output().unwrap();
+        Command::new("git").args(["config", "user.email", "test@test.com"]).current_dir(dir.path()).output().unwrap();
+        Command::new("git").args(["config", "user.name", "Test"]).current_dir(dir.path()).output().unwrap();
+
+        // Create 10 conventional commits
+        for i in 0..10 {
+            let filename = format!("file{}.txt", i);
+            std::fs::write(dir.path().join(&filename), format!("content {}", i)).unwrap();
+            Command::new("git").args(["add", &filename]).current_dir(dir.path()).output().unwrap();
+            let msg = if i % 2 == 0 {
+                format!("feat: add feature {}", i)
+            } else {
+                format!("fix: fix bug {}", i)
+            };
+            Command::new("git").args(["commit", "-m", &msg]).current_dir(dir.path()).output().unwrap();
+        }
+
+        let result = detect_commit_pattern(path);
+        assert!(result.is_some());
+        let pattern = result.unwrap();
+        assert!(pattern.contains("feat"));
+        assert!(pattern.contains("fix"));
+    }
+
+    #[test]
+    fn detect_commit_pattern_returns_none_for_random_messages() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().to_str().unwrap();
+        Command::new("git").args(["init"]).current_dir(dir.path()).output().unwrap();
+        Command::new("git").args(["config", "user.email", "test@test.com"]).current_dir(dir.path()).output().unwrap();
+        Command::new("git").args(["config", "user.name", "Test"]).current_dir(dir.path()).output().unwrap();
+
+        // Create commits with random messages (no pattern)
+        let messages = [
+            "Initial commit",
+            "Update readme",
+            "Add some stuff",
+            "WIP",
+            "More changes",
+            "Fix typo",
+            "Cleanup",
+            "Final version",
+            "Done",
+            "Ready for review",
+        ];
+        for (i, msg) in messages.iter().enumerate() {
+            let filename = format!("file{}.txt", i);
+            std::fs::write(dir.path().join(&filename), format!("content {}", i)).unwrap();
+            Command::new("git").args(["add", &filename]).current_dir(dir.path()).output().unwrap();
+            Command::new("git").args(["commit", "-m", msg]).current_dir(dir.path()).output().unwrap();
+        }
+
+        let result = detect_commit_pattern(path);
+        assert!(result.is_none());
     }
 
     // ── build_commit_message / summarize tests ──

@@ -234,6 +234,31 @@ describe("AddRepoModal", () => {
     });
   });
 
+  it("pre-fills commit pattern when detected from repo", async () => {
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "list_repositories") return Promise.resolve([]);
+      if (cmd === "detect_repo_info")
+        return Promise.resolve({
+          name: "my-project",
+          base_branch: "main",
+          has_claude_md: true,
+          commit_pattern: "^(feat|fix): .+",
+        });
+      return Promise.resolve(undefined);
+    });
+
+    render(<AddRepoModal onClose={onClose} onAdded={onAdded} />);
+
+    fireEvent.change(screen.getByPlaceholderText("/home/user/my-project"), {
+      target: { value: "/some/path" },
+    });
+    fireEvent.click(screen.getByText("Detect"));
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("^(feat|fix): .+")).toBeInTheDocument();
+    });
+  });
+
   it("shows similar repos checkboxes after detection when repos exist", async () => {
     vi.mocked(invoke).mockImplementation((cmd: string) => {
       if (cmd === "list_repositories")

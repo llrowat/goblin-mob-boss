@@ -123,7 +123,8 @@ pub fn detect_repo_info(path: String) -> Result<serde_json::Value, String> {
         .unwrap_or_else(|| "unknown".to_string());
     let has_claude_md = has_claude_md_file(&path);
     let is_empty = git::is_repo_empty(&path);
-    Ok(serde_json::json!({ "name": name, "base_branch": base_branch, "has_claude_md": has_claude_md, "is_empty": is_empty }))
+    let commit_pattern = git::detect_commit_pattern(&path);
+    Ok(serde_json::json!({ "name": name, "base_branch": base_branch, "has_claude_md": has_claude_md, "is_empty": is_empty, "commit_pattern": commit_pattern }))
 }
 
 /// Check whether a CLAUDE.md file exists at the repo root.
