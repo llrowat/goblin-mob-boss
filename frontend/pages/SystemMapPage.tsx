@@ -155,15 +155,18 @@ export function autoLayout(
   const vx: Record<string, number> = {};
   const vy: Record<string, number> = {};
 
-  const layerSpacingY = 160;
+  // Scale spacing based on node count so larger graphs spread out
+  const n = services.length;
+  const layerSpacingY = n > 20 ? 220 : n > 10 ? 190 : 160;
+  const nodeSpacingX = n > 20 ? 240 : n > 10 ? 210 : 180;
   const totalHeight = maxLayer * layerSpacingY;
   for (let li = 0; li < layers.length; li++) {
     const layer = layers[li];
     const rowY = cy - totalHeight / 2 + li * layerSpacingY;
-    const rowWidth = (layer.length - 1) * 180;
+    const rowWidth = (layer.length - 1) * nodeSpacingX;
     for (let ni = 0; ni < layer.length; ni++) {
       const sid = layer[ni];
-      px[sid] = cx - rowWidth / 2 + ni * 180;
+      px[sid] = cx - rowWidth / 2 + ni * nodeSpacingX;
       py[sid] = rowY;
       vx[sid] = 0;
       vy[sid] = 0;
@@ -171,7 +174,8 @@ export function autoLayout(
   }
 
   // ── Force simulation (Fruchterman-Reingold) ──
-  const k = Math.max(120, 180 - services.length * 4); // ideal spacing
+  // Scale ideal spacing up for larger graphs to prevent cramping
+  const k = n > 20 ? Math.max(180, 260 - n * 3) : Math.max(120, 180 - n * 4);
   const iterations = 200;
 
   // Build a type-group map for clustering bias
@@ -314,8 +318,9 @@ export function autoLayout(
     }
   }
 
-  // ── Collision pass: ensure minimum 120px between node centers ──
-  const MIN_SPACING = 120;
+  // ── Collision pass: ensure minimum spacing between node centers ──
+  // Scale up for larger graphs so nodes don't pile on top of each other
+  const MIN_SPACING = n > 20 ? 160 : n > 10 ? 140 : 120;
   for (let pass = 0; pass < 10; pass++) {
     for (let i = 0; i < services.length; i++) {
       for (let j = i + 1; j < services.length; j++) {
@@ -338,10 +343,13 @@ export function autoLayout(
     }
   }
 
-  // ── Fit into target area (viewBox 1200x800 with padding) ──
+  // ── Fit into target area (scaled by node count, with padding) ──
   const PAD = 80;
-  const targetW = 1200 - PAD * 2;
-  const targetH = 800 - PAD * 2;
+  // Grow canvas for larger graphs so nodes have room to breathe
+  const baseW = n > 20 ? 1600 + (n - 20) * 30 : n > 10 ? 1400 : 1200;
+  const baseH = Math.round(baseW / 1.5); // maintain 3:2 aspect ratio
+  const targetW = baseW - PAD * 2;
+  const targetH = baseH - PAD * 2;
 
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const s of services) {
@@ -970,7 +978,66 @@ export function SystemMapPage() {
 
   // ── Render helpers ──
 
-  const renderConnectionPath = (conn: MapConnection) => {
+  // Compute label positions for all connections with overlap avoidance
+  const connectionLabelPositions = useCallback((): Record<string, { x: number; y: number }> => {
+    if (!activeMap) return {};
+    const positions: Record<string, { x: number; y: number }> = {};
+    const placed: { x: number; y: number; id: string }[] = [];
+    const LABEL_AVOID_DIST = 30;
+
+    for (const conn of activeMap.connections) {
+      const from = activeMap.services.find((s) => s.id === conn.from_service);
+      const to = activeMap.services.find((s) => s.id === conn.to_service);
+      if (!from || !to || !conn.label) continue;
+
+      const [x1, y1] = from.position;
+      const [x2, y2] = to.position;
+      let labelX = (x1 + x2) / 2;
+      let labelY = (y1 + y2) / 2 - 10;
+
+      // Check for overlap with already-placed labels and nudge along the edge
+      const edgeDx = x2 - x1;
+      const edgeDy = y2 - y1;
+      const edgeLen = Math.max(1, Math.sqrt(edgeDx * edgeDx + edgeDy * edgeDy));
+      // Unit vector along edge
+      const ux = edgeDx / edgeLen;
+      const uy = edgeDy / edgeLen;
+      // Normal (perpendicular) to edge
+      const nx = -uy;
+      const ny = ux;
+
+      let nudgeAttempts = 0;
+      while (nudgeAttempts < 6) {
+        let overlaps = false;
+        for (const p of placed) {
+          const dx = labelX - p.x;
+          const dy = labelY - p.y;
+          if (Math.sqrt(dx * dx + dy * dy) < LABEL_AVOID_DIST) {
+            overlaps = true;
+            break;
+          }
+        }
+        if (!overlaps) break;
+        nudgeAttempts++;
+        // Alternate: slide along edge, then offset perpendicular
+        if (nudgeAttempts % 2 === 1) {
+          const shift = Math.ceil(nudgeAttempts / 2) * 25;
+          labelX = (x1 + x2) / 2 + ux * shift;
+          labelY = (y1 + y2) / 2 - 10 + uy * shift;
+        } else {
+          const shift = Math.ceil(nudgeAttempts / 2) * 15;
+          labelX = (x1 + x2) / 2 + nx * shift;
+          labelY = (y1 + y2) / 2 - 10 + ny * shift;
+        }
+      }
+
+      positions[conn.id] = { x: labelX, y: labelY };
+      placed.push({ x: labelX, y: labelY, id: conn.id });
+    }
+    return positions;
+  }, [activeMap]);
+
+  const renderConnectionPath = (conn: MapConnection, labelPos?: { x: number; y: number }) => {
     if (!activeMap) return null;
     const from = activeMap.services.find((s) => s.id === conn.from_service);
     const to = activeMap.services.find((s) => s.id === conn.to_service);
@@ -983,6 +1050,8 @@ export function SystemMapPage() {
     const midY = (y1 + y2) / 2;
 
     const style = CONNECTION_STYLES[conn.connection_type];
+    const lx = labelPos?.x ?? midX;
+    const ly = labelPos?.y ?? (midY - 10);
 
     return (
       <g key={conn.id} className="map-connection-group">
@@ -1006,23 +1075,35 @@ export function SystemMapPage() {
         />
         {/* Small dot at midpoint */}
         <circle cx={midX} cy={midY} r={3} fill={style.color} opacity={0.7} />
-        {/* Label */}
+        {/* Label with background for readability */}
         {conn.label && (
-          <text
-            x={midX}
-            y={midY - 10}
-            textAnchor="middle"
-            className="map-connection-label"
-            fill={style.color}
-          >
-            {conn.label}
-          </text>
+          <>
+            <rect
+              x={lx - conn.label.length * 3.2 - 3}
+              y={ly - 9}
+              width={conn.label.length * 6.4 + 6}
+              height={14}
+              rx={3}
+              fill="var(--bg)"
+              opacity={0.85}
+              className="map-label-bg"
+            />
+            <text
+              x={lx}
+              y={ly}
+              textAnchor="middle"
+              className="map-connection-label"
+              fill={style.color}
+            >
+              {conn.label}
+            </text>
+          </>
         )}
         {/* Async indicator */}
         {!conn.sync && (
           <text
-            x={midX + 8}
-            y={midY + 5}
+            x={lx + (conn.label ? conn.label.length * 3.2 + 8 : 8)}
+            y={ly + (conn.label ? 0 : 15)}
             className="map-async-badge"
             fill={style.color}
           >
@@ -1815,7 +1896,12 @@ export function SystemMapPage() {
               <rect x={viewBox.x - 2000} y={viewBox.y - 2000} width={viewBox.w + 4000} height={viewBox.h + 4000} fill="var(--bg)" />
               <rect x={viewBox.x - 2000} y={viewBox.y - 2000} width={viewBox.w + 4000} height={viewBox.h + 4000} fill="url(#dot-grid)" />
 
-              {activeMap.connections.map(renderConnectionPath)}
+              {(() => {
+                const labelPositions = connectionLabelPositions();
+                return activeMap.connections.map((conn) =>
+                  renderConnectionPath(conn, labelPositions[conn.id])
+                );
+              })()}
               {activeMap.services.map(renderServiceNode)}
             </svg>
           )}

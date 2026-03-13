@@ -662,3 +662,69 @@ describe("calculateFitViewBox", () => {
     expect(aspect).toBeCloseTo(1.5, 1);
   });
 });
+
+// ── autoLayout scaling tests for large graphs ──
+
+describe("autoLayout — large graph scaling", () => {
+  it("spreads 25+ nodes with no overlapping positions", () => {
+    const svcs = Array.from({ length: 25 }, (_, i) => makeSvc(`n${i}`));
+    const conns = Array.from({ length: 24 }, (_, i) => makeConn(`n${i}`, `n${i + 1}`));
+    const result = autoLayout(svcs, conns);
+    const ids = Object.keys(result);
+    expect(ids).toHaveLength(25);
+
+    // After fit-to-canvas, positions are scaled — verify no two nodes share a position
+    // and all are spread apart (node radius is 32px, so >0 distance is the baseline)
+    for (let i = 0; i < ids.length; i++) {
+      for (let j = i + 1; j < ids.length; j++) {
+        const dist = Math.sqrt(
+          (result[ids[i]][0] - result[ids[j]][0]) ** 2 +
+          (result[ids[i]][1] - result[ids[j]][1]) ** 2,
+        );
+        expect(dist).toBeGreaterThan(0);
+      }
+    }
+
+    // All positions should be finite
+    for (const id of ids) {
+      expect(Number.isFinite(result[id][0])).toBe(true);
+      expect(Number.isFinite(result[id][1])).toBe(true);
+    }
+  });
+
+  it("produces a larger bounding box for 30 nodes than for 5 nodes", () => {
+    const small = Array.from({ length: 5 }, (_, i) => makeSvc(`s${i}`));
+    const large = Array.from({ length: 30 }, (_, i) => makeSvc(`l${i}`));
+
+    const rSmall = autoLayout(small, []);
+    const rLarge = autoLayout(large, []);
+
+    // Compute bounding boxes
+    const bbox = (r: Record<string, [number, number]>) => {
+      const xs = Object.values(r).map(([x]) => x);
+      const ys = Object.values(r).map(([, y]) => y);
+      return {
+        w: Math.max(...xs) - Math.min(...xs),
+        h: Math.max(...ys) - Math.min(...ys),
+      };
+    };
+
+    const smallBox = bbox(rSmall);
+    const largeBox = bbox(rLarge);
+
+    // Larger graph should occupy more space
+    expect(largeBox.w + largeBox.h).toBeGreaterThan(smallBox.w + smallBox.h);
+  });
+
+  it("produces finite positions for a highly connected 20-node graph", () => {
+    const svcs = Array.from({ length: 20 }, (_, i) => makeSvc(`n${i}`));
+    // Star topology: all nodes connect to node 0
+    const conns = Array.from({ length: 19 }, (_, i) => makeConn("n0", `n${i + 1}`));
+    const result = autoLayout(svcs, conns);
+    expect(Object.keys(result)).toHaveLength(20);
+    for (const id of Object.keys(result)) {
+      expect(Number.isFinite(result[id][0])).toBe(true);
+      expect(Number.isFinite(result[id][1])).toBe(true);
+    }
+  });
+});

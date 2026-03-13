@@ -1856,6 +1856,10 @@ body {
   stroke-width: 3.5;
 }
 
+.map-label-bg {
+  pointer-events: none;
+}
+
 .map-connection-label {
   font-size: 10px;
   font-family: var(--font-mono);
