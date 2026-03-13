@@ -20,20 +20,21 @@ pub fn build_launch(
     feature: &Feature,
     system_prompt_content: &str,
 ) -> (Vec<String>, Vec<(String, String)>, String) {
-    build_launch_with_repo(feature, system_prompt_content, None)
+    build_launch_with_repo(feature, system_prompt_content, None, None)
 }
 
 pub fn build_launch_with_repo(
     feature: &Feature,
     system_prompt_content: &str,
     repo_path: Option<&str>,
+    commit_pattern: Option<&str>,
 ) -> (Vec<String>, Vec<(String, String)>, String) {
     let mode = feature
         .execution_mode
         .as_ref()
         .unwrap_or(&ExecutionMode::Subagents);
 
-    let prompt = build_prompt(feature, mode, repo_path);
+    let prompt = build_prompt(feature, mode, repo_path, commit_pattern);
     let mut env = Vec::new();
     let mut args = vec!["claude".to_string()];
 
@@ -65,7 +66,7 @@ pub fn build_launch_with_repo(
     (args, env, prompt)
 }
 
-fn build_prompt(feature: &Feature, mode: &ExecutionMode, repo_path: Option<&str>) -> String {
+fn build_prompt(feature: &Feature, mode: &ExecutionMode, repo_path: Option<&str>, commit_pattern: Option<&str>) -> String {
     let tasks_section = build_tasks_section(&feature.task_specs);
     let agents_section = build_agents_section(&feature.selected_agents);
     let attachments_section = build_attachments_section(&feature.attachments);
@@ -79,6 +80,13 @@ fn build_prompt(feature: &Feature, mode: &ExecutionMode, repo_path: Option<&str>
                 gf
             )
         })
+        .unwrap_or_default();
+
+    let commit_note = commit_pattern
+        .map(|pat| format!(
+            "\n- All commit messages MUST match this regex pattern: `{}`\n",
+            pat
+        ))
         .unwrap_or_default();
 
     match mode {
@@ -103,7 +111,7 @@ fn build_prompt(feature: &Feature, mode: &ExecutionMode, repo_path: Option<&str>
 - Avoid file conflicts — ensure teammates own different files where possible
 - If any tasks are assigned to quality/review agents, spawn those teammates after implementation teammates finish, so they can verify all changes
 - When all teammates have completed their tasks, signal completion
-{progress_section}{guidance_note}"#,
+{progress_section}{guidance_note}{commit_note}"#,
                 name = feature.name,
                 description = feature.description,
                 attachments_section = attachments_section,
@@ -112,6 +120,7 @@ fn build_prompt(feature: &Feature, mode: &ExecutionMode, repo_path: Option<&str>
                 branch = feature.branch,
                 progress_section = progress_section,
                 guidance_note = guidance_note,
+                commit_note = commit_note,
             )
         }
         ExecutionMode::Subagents => {
@@ -133,7 +142,7 @@ fn build_prompt(feature: &Feature, mode: &ExecutionMode, repo_path: Option<&str>
 - The task list above is a suggestion — you may reorganize as needed
 - If any tasks are assigned to quality/review agents, ensure they run after implementation tasks and verify all changes
 - When all tasks are complete, ensure everything works together
-{progress_section}{guidance_note}"#,
+{progress_section}{guidance_note}{commit_note}"#,
                 name = feature.name,
                 description = feature.description,
                 attachments_section = attachments_section,
@@ -142,6 +151,7 @@ fn build_prompt(feature: &Feature, mode: &ExecutionMode, repo_path: Option<&str>
                 branch = feature.branch,
                 progress_section = progress_section,
                 guidance_note = guidance_note,
+                commit_note = commit_note,
             )
         }
     }
@@ -427,9 +437,29 @@ mod tests {
     #[test]
     fn prompt_includes_progress_tracking_with_repo() {
         let feature = make_feature(ExecutionMode::Subagents);
-        let (_, _, prompt) = build_launch_with_repo(&feature, "System prompt", Some("/tmp/repo"));
+        let (_, _, prompt) = build_launch_with_repo(&feature, "System prompt", Some("/tmp/repo"), None);
         assert!(prompt.contains("CRITICAL"));
         assert!(prompt.contains("execution-complete"));
+    }
+
+    #[test]
+    fn prompt_includes_commit_pattern_when_provided() {
+        let feature = make_feature(ExecutionMode::Subagents);
+        let (_, _, prompt) = build_launch_with_repo(
+            &feature,
+            "System prompt",
+            Some("/tmp/repo"),
+            Some(r"^(feat|fix): .+"),
+        );
+        assert!(prompt.contains("commit messages MUST match"));
+        assert!(prompt.contains("^(feat|fix): .+"));
+    }
+
+    #[test]
+    fn prompt_omits_commit_pattern_when_none() {
+        let feature = make_feature(ExecutionMode::Subagents);
+        let (_, _, prompt) = build_launch_with_repo(&feature, "System prompt", Some("/tmp/repo"), None);
+        assert!(!prompt.contains("commit messages MUST match"));
     }
 
     #[test]

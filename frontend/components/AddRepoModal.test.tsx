@@ -205,6 +205,60 @@ describe("AddRepoModal", () => {
     });
   });
 
+  it("shows commit pattern input after detection", async () => {
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "list_repositories") return Promise.resolve([]);
+      if (cmd === "detect_repo_info")
+        return Promise.resolve({
+          name: "my-project",
+          base_branch: "main",
+          has_claude_md: true,
+        });
+      return Promise.resolve(undefined);
+    });
+
+    render(<AddRepoModal onClose={onClose} onAdded={onAdded} />);
+
+    fireEvent.change(screen.getByPlaceholderText("/home/user/my-project"), {
+      target: { value: "/some/path" },
+    });
+    fireEvent.click(screen.getByText("Detect"));
+
+    await waitFor(() => {
+      expect(
+        screen.getByPlaceholderText("^(feat|fix|chore|docs|refactor|test)(\\(.+\\))?: .+"),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText("Regex that commit messages must match (optional)"),
+      ).toBeInTheDocument();
+    });
+  });
+
+  it("pre-fills commit pattern when detected from repo", async () => {
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "list_repositories") return Promise.resolve([]);
+      if (cmd === "detect_repo_info")
+        return Promise.resolve({
+          name: "my-project",
+          base_branch: "main",
+          has_claude_md: true,
+          commit_pattern: "^(feat|fix): .+",
+        });
+      return Promise.resolve(undefined);
+    });
+
+    render(<AddRepoModal onClose={onClose} onAdded={onAdded} />);
+
+    fireEvent.change(screen.getByPlaceholderText("/home/user/my-project"), {
+      target: { value: "/some/path" },
+    });
+    fireEvent.click(screen.getByText("Detect"));
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("^(feat|fix): .+")).toBeInTheDocument();
+    });
+  });
+
   it("shows similar repos checkboxes after detection when repos exist", async () => {
     vi.mocked(invoke).mockImplementation((cmd: string) => {
       if (cmd === "list_repositories")
@@ -218,6 +272,7 @@ describe("AddRepoModal", () => {
             validators: [],
             pr_command: null,
             similar_repo_ids: [],
+            commit_pattern: null,
             created_at: "2025-01-01T00:00:00Z",
           },
         ]);

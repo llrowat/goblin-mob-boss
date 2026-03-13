@@ -1267,6 +1267,7 @@ dependencies = [
  "chrono",
  "log",
  "portable-pty",
+ "regex",
  "serde",
  "serde_json",
  "slug",

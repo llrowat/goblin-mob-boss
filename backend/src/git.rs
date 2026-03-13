@@ -77,6 +77,52 @@ fn run_git_with_timeout(repo_path: &str, args: &[&str], timeout: Duration) -> Gi
     }
 }
 
+/// Sanitize a string for use as a git branch name component.
+///
+/// Git branch names must follow `git check-ref-format` rules:
+/// - No double dots (..), ASCII control chars, space, ~, ^, :, ?, *, [, \
+/// - Cannot begin or end with a dot or hyphen
+/// - Cannot end with `.lock`
+/// - Cannot contain `@{`
+/// - Cannot be empty
+pub fn sanitize_branch_name(slug: &str) -> String {
+    let sanitized: String = slug
+        .chars()
+        .map(|c| match c {
+            ' ' | '~' | '^' | ':' | '?' | '*' | '[' | '\\' | '@' => '-',
+            c if c.is_ascii_control() => '-',
+            c => c,
+        })
+        .collect();
+
+    // Collapse consecutive dots and hyphens
+    let mut result = String::with_capacity(sanitized.len());
+    let mut prev = '\0';
+    for c in sanitized.chars() {
+        if (c == '.' && prev == '.') || (c == '-' && prev == '-') {
+            continue;
+        }
+        result.push(c);
+        prev = c;
+    }
+
+    // Trim leading/trailing dots and hyphens
+    let result = result.trim_matches(|c| c == '.' || c == '-').to_string();
+
+    // Strip `.lock` suffix
+    let result = if result.ends_with(".lock") {
+        result[..result.len() - 5].to_string()
+    } else {
+        result
+    };
+
+    if result.is_empty() {
+        "unnamed".to_string()
+    } else {
+        result
+    }
+}
+
 /// Create a branch from a base.
 pub fn create_branch(repo_path: &str, branch: &str, base: &str) -> GitResult<()> {
     run_git(repo_path, &["branch", branch, base])?;
@@ -94,6 +140,200 @@ pub fn commit_all(repo_path: &str, message: &str) -> GitResult<bool> {
     }
     run_git(repo_path, &["commit", "-m", message])?;
     Ok(true)
+}
+
+/// Build a descriptive commit message from the staged changes and feature context.
+///
+/// Format: `chore(feature-slug): finalize <feature_name>\n\n<summary of changes>`
+pub fn build_commit_message(repo_path: &str, feature_name: &str) -> String {
+    let summary = match summarize_staged_changes(repo_path) {
+        Some(s) => format!("\n\n{}", s),
+        None => String::new(),
+    };
+    format!("chore: finalize {}{}", feature_name, summary)
+}
+
+/// Summarize staged/uncommitted changes for use in a commit message body.
+/// Returns None if there are no changes to summarize.
+fn summarize_staged_changes(repo_path: &str) -> Option<String> {
+    let status = run_git(repo_path, &["status", "--porcelain"]).ok()?;
+    if status.is_empty() {
+        return None;
+    }
+
+    let mut added = Vec::new();
+    let mut modified = Vec::new();
+    let mut deleted = Vec::new();
+
+    for line in status.lines() {
+        if line.len() < 3 {
+            continue;
+        }
+        let code = &line[..2];
+        let path = line[3..].trim().to_string();
+        // Strip quotes from paths with special characters
+        let path = path.trim_matches('"').to_string();
+
+        match code.trim() {
+            "A" | "??" => added.push(path),
+            "M" | "MM" | "AM" => modified.push(path),
+            "D" => deleted.push(path),
+            "R" | "RM" => {
+                // Renames show as "old -> new"
+                if let Some(new_path) = path.split(" -> ").last() {
+                    modified.push(new_path.to_string());
+                }
+            }
+            _ => modified.push(path),
+        }
+    }
+
+    let mut parts = Vec::new();
+    if !added.is_empty() {
+        parts.push(format_file_list("Add", &added));
+    }
+    if !modified.is_empty() {
+        parts.push(format_file_list("Update", &modified));
+    }
+    if !deleted.is_empty() {
+        parts.push(format_file_list("Remove", &deleted));
+    }
+
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join("\n"))
+    }
+}
+
+/// Format a list of files into a commit message line, truncating if too many.
+fn format_file_list(verb: &str, files: &[String]) -> String {
+    const MAX_LISTED: usize = 5;
+    let names: Vec<&str> = files
+        .iter()
+        .take(MAX_LISTED)
+        .map(|p| {
+            // Use just the filename for brevity
+            p.rsplit('/').next().unwrap_or(p)
+        })
+        .collect();
+
+    let remainder = files.len().saturating_sub(MAX_LISTED);
+    if remainder > 0 {
+        format!("{} {} (+{} more)", verb, names.join(", "), remainder)
+    } else {
+        format!("{} {}", verb, names.join(", "))
+    }
+}
+
+/// Validate that a commit message matches a regex pattern.
+/// Returns Ok(()) if the pattern is None or the message matches.
+/// Returns Err with a descriptive message if the message doesn't match.
+pub fn validate_commit_message(message: &str, pattern: Option<&str>) -> GitResult<()> {
+    if let Some(pat) = pattern {
+        let re = regex::Regex::new(pat)
+            .map_err(|e| GitError(format!("Invalid commit pattern regex: {}", e)))?;
+        // Test against just the first line (subject) of the commit message
+        let subject = message.lines().next().unwrap_or(message);
+        if !re.is_match(subject) {
+            return Err(GitError(format!(
+                "Commit message does not match required pattern `{}`:\n  {}",
+                pat, subject
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Try to detect a commit message convention from a repository.
+/// Checks config files first, then falls back to analyzing recent commit history.
+pub fn detect_commit_pattern(repo_path: &str) -> Option<String> {
+    let root = Path::new(repo_path);
+
+    // 1. Check for commitlint config files (indicates conventional commits)
+    let commitlint_files = [
+        "commitlint.config.js",
+        "commitlint.config.cjs",
+        "commitlint.config.mjs",
+        "commitlint.config.ts",
+        ".commitlintrc",
+        ".commitlintrc.js",
+        ".commitlintrc.json",
+        ".commitlintrc.yml",
+        ".commitlintrc.yaml",
+    ];
+    for file in &commitlint_files {
+        if root.join(file).exists() {
+            // commitlint with conventional config is the most common setup
+            return Some(r"^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\(.+\))?!?: .+".to_string());
+        }
+    }
+
+    // Also check package.json for commitlint in devDependencies
+    let pkg_json_path = root.join("package.json");
+    if pkg_json_path.exists() {
+        if let Ok(content) = std::fs::read_to_string(&pkg_json_path) {
+            if content.contains("commitlint") || content.contains("@commitlint") {
+                return Some(r"^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\(.+\))?!?: .+".to_string());
+            }
+        }
+    }
+
+    // 2. Analyze recent commit messages to infer a pattern
+    infer_commit_pattern_from_history(repo_path)
+}
+
+/// Analyze recent git log messages to detect if a conventional-style pattern is used.
+fn infer_commit_pattern_from_history(repo_path: &str) -> Option<String> {
+    let log_output = run_git(repo_path, &["log", "--oneline", "--no-merges", "-50"]).ok()?;
+    let lines: Vec<&str> = log_output.lines().collect();
+    if lines.len() < 5 {
+        return None; // Not enough history to infer
+    }
+
+    // Strip the short hash prefix from each line (e.g. "abc1234 feat: do thing" -> "feat: do thing")
+    let subjects: Vec<&str> = lines
+        .iter()
+        .filter_map(|line| line.split_once(' ').map(|(_, msg)| msg))
+        .collect();
+
+    if subjects.is_empty() {
+        return None;
+    }
+
+    // Check for conventional commits pattern: type(scope)?: description
+    let conventional_re = regex::Regex::new(
+        r"^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\(.+\))?!?: .+"
+    ).ok()?;
+    let conventional_matches = subjects.iter().filter(|s| conventional_re.is_match(s)).count();
+    let ratio = conventional_matches as f64 / subjects.len() as f64;
+
+    if ratio >= 0.6 {
+        // Majority of commits follow conventional commits
+        return Some(r"^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\(.+\))?!?: .+".to_string());
+    }
+
+    // Check for simpler "type: description" pattern (e.g. "fix: thing", "add: thing")
+    let simple_type_re = regex::Regex::new(r"^[a-z]+: .+").ok()?;
+    let simple_matches = subjects.iter().filter(|s| simple_type_re.is_match(s)).count();
+    let simple_ratio = simple_matches as f64 / subjects.len() as f64;
+
+    if simple_ratio >= 0.6 {
+        // Collect the actual types used
+        let type_re = regex::Regex::new(r"^([a-z]+): ").ok()?;
+        let mut types: Vec<String> = subjects
+            .iter()
+            .filter_map(|s| type_re.captures(s).map(|c| c[1].to_string()))
+            .collect();
+        types.sort();
+        types.dedup();
+        if !types.is_empty() {
+            let types_pattern = types.join("|");
+            return Some(format!("^({}): .+", types_pattern));
+        }
+    }
+
+    None
 }
 
 /// Checkout an existing branch.
@@ -517,5 +757,241 @@ mod tests {
         let repo_path = init_test_repo(&dir);
         let result = run_git_with_timeout(&repo_path, &["status"], Duration::from_secs(10));
         assert!(result.is_ok());
+    }
+
+    // ── sanitize_branch_name tests ──
+
+    #[test]
+    fn sanitize_branch_name_passes_clean_names_through() {
+        assert_eq!(sanitize_branch_name("my-feature"), "my-feature");
+        assert_eq!(sanitize_branch_name("add-login-page"), "add-login-page");
+    }
+
+    #[test]
+    fn sanitize_branch_name_replaces_forbidden_chars() {
+        assert_eq!(sanitize_branch_name("has space"), "has-space");
+        assert_eq!(sanitize_branch_name("with~tilde"), "with-tilde");
+        assert_eq!(sanitize_branch_name("with^caret"), "with-caret");
+        assert_eq!(sanitize_branch_name("with:colon"), "with-colon");
+        assert_eq!(sanitize_branch_name("with?mark"), "with-mark");
+        assert_eq!(sanitize_branch_name("with*star"), "with-star");
+        assert_eq!(sanitize_branch_name("with[bracket"), "with-bracket");
+        assert_eq!(sanitize_branch_name("with\\backslash"), "with-backslash");
+    }
+
+    #[test]
+    fn sanitize_branch_name_collapses_consecutive_dots_and_hyphens() {
+        assert_eq!(sanitize_branch_name("a..b"), "a.b");
+        assert_eq!(sanitize_branch_name("a--b"), "a-b");
+        assert_eq!(sanitize_branch_name("a...b"), "a.b");
+    }
+
+    #[test]
+    fn sanitize_branch_name_trims_leading_trailing_dots_and_hyphens() {
+        assert_eq!(sanitize_branch_name(".leading"), "leading");
+        assert_eq!(sanitize_branch_name("trailing."), "trailing");
+        assert_eq!(sanitize_branch_name("-leading"), "leading");
+        assert_eq!(sanitize_branch_name("trailing-"), "trailing");
+        assert_eq!(sanitize_branch_name("--both--"), "both");
+    }
+
+    #[test]
+    fn sanitize_branch_name_strips_lock_suffix() {
+        assert_eq!(sanitize_branch_name("feature.lock"), "feature");
+    }
+
+    #[test]
+    fn sanitize_branch_name_returns_unnamed_for_empty() {
+        assert_eq!(sanitize_branch_name(""), "unnamed");
+        assert_eq!(sanitize_branch_name("---"), "unnamed");
+        assert_eq!(sanitize_branch_name("..."), "unnamed");
+    }
+
+    // ── validate_commit_message tests ──
+
+    #[test]
+    fn validate_commit_message_passes_when_no_pattern() {
+        assert!(validate_commit_message("any message", None).is_ok());
+    }
+
+    #[test]
+    fn validate_commit_message_passes_matching_pattern() {
+        let pattern = r"^(feat|fix|chore)\(.+\): .+";
+        assert!(validate_commit_message("feat(auth): add login", Some(pattern)).is_ok());
+        assert!(validate_commit_message("fix(ui): button color", Some(pattern)).is_ok());
+    }
+
+    #[test]
+    fn validate_commit_message_fails_non_matching_pattern() {
+        let pattern = r"^(feat|fix|chore)\(.+\): .+";
+        let result = validate_commit_message("random message", Some(pattern));
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("does not match"));
+    }
+
+    #[test]
+    fn validate_commit_message_checks_only_subject_line() {
+        let pattern = r"^feat: .+";
+        // Subject matches, body doesn't — should pass
+        let msg = "feat: add feature\n\nThis body doesn't match the pattern";
+        assert!(validate_commit_message(msg, Some(pattern)).is_ok());
+    }
+
+    #[test]
+    fn validate_commit_message_rejects_invalid_regex() {
+        let result = validate_commit_message("test", Some("[invalid"));
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Invalid commit pattern regex"));
+    }
+
+    // ── detect_commit_pattern tests ──
+
+    #[test]
+    fn detect_commit_pattern_returns_none_for_empty_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        // Initialize a git repo with no commits and no config files
+        Command::new("git")
+            .args(["init"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+        let result = detect_commit_pattern(dir.path().to_str().unwrap());
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn detect_commit_pattern_from_commitlint_config() {
+        let dir = tempfile::tempdir().unwrap();
+        Command::new("git")
+            .args(["init"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+        // Create a commitlint config file
+        std::fs::write(
+            dir.path().join("commitlint.config.js"),
+            "module.exports = { extends: ['@commitlint/config-conventional'] };",
+        ).unwrap();
+        let result = detect_commit_pattern(dir.path().to_str().unwrap());
+        assert!(result.is_some());
+        let pattern = result.unwrap();
+        assert!(pattern.contains("feat"));
+        assert!(pattern.contains("fix"));
+    }
+
+    #[test]
+    fn detect_commit_pattern_from_package_json_commitlint() {
+        let dir = tempfile::tempdir().unwrap();
+        Command::new("git")
+            .args(["init"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+        std::fs::write(
+            dir.path().join("package.json"),
+            r#"{"devDependencies": {"@commitlint/cli": "^17.0.0"}}"#,
+        ).unwrap();
+        let result = detect_commit_pattern(dir.path().to_str().unwrap());
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn detect_commit_pattern_from_conventional_history() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().to_str().unwrap();
+        Command::new("git").args(["init"]).current_dir(dir.path()).output().unwrap();
+        Command::new("git").args(["config", "user.email", "test@test.com"]).current_dir(dir.path()).output().unwrap();
+        Command::new("git").args(["config", "user.name", "Test"]).current_dir(dir.path()).output().unwrap();
+
+        // Create 10 conventional commits
+        for i in 0..10 {
+            let filename = format!("file{}.txt", i);
+            std::fs::write(dir.path().join(&filename), format!("content {}", i)).unwrap();
+            Command::new("git").args(["add", &filename]).current_dir(dir.path()).output().unwrap();
+            let msg = if i % 2 == 0 {
+                format!("feat: add feature {}", i)
+            } else {
+                format!("fix: fix bug {}", i)
+            };
+            Command::new("git").args(["commit", "-m", &msg]).current_dir(dir.path()).output().unwrap();
+        }
+
+        let result = detect_commit_pattern(path);
+        assert!(result.is_some());
+        let pattern = result.unwrap();
+        assert!(pattern.contains("feat"));
+        assert!(pattern.contains("fix"));
+    }
+
+    #[test]
+    fn detect_commit_pattern_returns_none_for_random_messages() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().to_str().unwrap();
+        Command::new("git").args(["init"]).current_dir(dir.path()).output().unwrap();
+        Command::new("git").args(["config", "user.email", "test@test.com"]).current_dir(dir.path()).output().unwrap();
+        Command::new("git").args(["config", "user.name", "Test"]).current_dir(dir.path()).output().unwrap();
+
+        // Create commits with random messages (no pattern)
+        let messages = [
+            "Initial commit",
+            "Update readme",
+            "Add some stuff",
+            "WIP",
+            "More changes",
+            "Fix typo",
+            "Cleanup",
+            "Final version",
+            "Done",
+            "Ready for review",
+        ];
+        for (i, msg) in messages.iter().enumerate() {
+            let filename = format!("file{}.txt", i);
+            std::fs::write(dir.path().join(&filename), format!("content {}", i)).unwrap();
+            Command::new("git").args(["add", &filename]).current_dir(dir.path()).output().unwrap();
+            Command::new("git").args(["commit", "-m", msg]).current_dir(dir.path()).output().unwrap();
+        }
+
+        let result = detect_commit_pattern(path);
+        assert!(result.is_none());
+    }
+
+    // ── build_commit_message / summarize tests ──
+
+    #[test]
+    fn build_commit_message_includes_feature_name() {
+        let dir = TempDir::new().unwrap();
+        let repo_path = init_test_repo(&dir);
+        let msg = build_commit_message(&repo_path, "dark mode toggle");
+        assert!(msg.starts_with("chore: finalize dark mode toggle"));
+    }
+
+    #[test]
+    fn build_commit_message_includes_file_summary_when_changes_exist() {
+        let dir = TempDir::new().unwrap();
+        let repo_path = init_test_repo(&dir);
+
+        // Create a new file so there are uncommitted changes
+        std::fs::write(dir.path().join("new_file.rs"), "fn main() {}").unwrap();
+
+        let msg = build_commit_message(&repo_path, "add feature");
+        assert!(msg.contains("chore: finalize add feature"));
+        assert!(msg.contains("new_file.rs"), "should list changed file: {}", msg);
+    }
+
+    #[test]
+    fn format_file_list_truncates_long_lists() {
+        let files: Vec<String> = (0..8).map(|i| format!("src/file{}.rs", i)).collect();
+        let result = format_file_list("Update", &files);
+        assert!(result.contains("(+3 more)"));
+        assert!(result.starts_with("Update "));
+    }
+
+    #[test]
+    fn format_file_list_shows_all_when_short() {
+        let files = vec!["a.rs".to_string(), "b.rs".to_string()];
+        let result = format_file_list("Add", &files);
+        assert_eq!(result, "Add a.rs, b.rs");
     }
 }

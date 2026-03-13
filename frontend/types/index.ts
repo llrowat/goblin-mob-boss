@@ -8,6 +8,8 @@ export interface Repository {
   pr_command: string | null;
   /** IDs of other repositories that implement similar patterns and can serve as hints. */
   similar_repo_ids: string[];
+  /** Optional regex pattern that commit messages in this repo must match. */
+  commit_pattern: string | null;
   created_at: string;
 }
 

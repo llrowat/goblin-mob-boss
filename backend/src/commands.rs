@@ -39,12 +39,17 @@ pub fn add_repository(
     validators: Vec<String>,
     pr_command: Option<String>,
     similar_repo_ids: Option<Vec<String>>,
+    commit_pattern: Option<String>,
 ) -> Result<Repository, String> {
     if !Path::new(&path).exists() {
         return Err("Path does not exist".to_string());
     }
     if !git::is_git_repo(&path) {
         return Err("Path is not a git repository".to_string());
+    }
+    // Validate the regex if provided
+    if let Some(ref pat) = commit_pattern {
+        regex::Regex::new(pat).map_err(|e| format!("Invalid commit pattern regex: {}", e))?;
     }
     let repo = Repository::new(
         name,
@@ -54,6 +59,7 @@ pub fn add_repository(
         validators,
         pr_command,
         similar_repo_ids.unwrap_or_default(),
+        commit_pattern,
     );
     let mut repos = state.repositories.lock().unwrap();
     repos.insert(repo.id.clone(), repo.clone());
@@ -72,7 +78,12 @@ pub fn update_repository(
     validators: Vec<String>,
     pr_command: Option<String>,
     similar_repo_ids: Option<Vec<String>>,
+    commit_pattern: Option<String>,
 ) -> Result<Repository, String> {
+    // Validate the regex if provided
+    if let Some(ref pat) = commit_pattern {
+        regex::Regex::new(pat).map_err(|e| format!("Invalid commit pattern regex: {}", e))?;
+    }
     let mut repos = state.repositories.lock().unwrap();
     let repo = repos.get_mut(&id).ok_or("Repository not found")?;
     repo.name = name;
@@ -81,6 +92,7 @@ pub fn update_repository(
     repo.validators = validators;
     repo.pr_command = pr_command;
     repo.similar_repo_ids = similar_repo_ids.unwrap_or_default();
+    repo.commit_pattern = commit_pattern;
     let updated = repo.clone();
     drop(repos);
     state.save_repos();
@@ -111,7 +123,8 @@ pub fn detect_repo_info(path: String) -> Result<serde_json::Value, String> {
         .unwrap_or_else(|| "unknown".to_string());
     let has_claude_md = has_claude_md_file(&path);
     let is_empty = git::is_repo_empty(&path);
-    Ok(serde_json::json!({ "name": name, "base_branch": base_branch, "has_claude_md": has_claude_md, "is_empty": is_empty }))
+    let commit_pattern = git::detect_commit_pattern(&path);
+    Ok(serde_json::json!({ "name": name, "base_branch": base_branch, "has_claude_md": has_claude_md, "is_empty": is_empty, "commit_pattern": commit_pattern }))
 }
 
 /// Check whether a CLAUDE.md file exists at the repo root.
@@ -288,7 +301,7 @@ pub fn start_feature(
     drop(repos_lock);
 
     // Create feature branch in all repos, with rollback on failure
-    let feature_slug = slug::slugify(&name);
+    let feature_slug = git::sanitize_branch_name(&slug::slugify(&name));
     let short_id = &uuid::Uuid::new_v4().to_string()[..4];
     let branch_name = format!("feature/{}-{}", feature_slug, short_id);
 
@@ -857,7 +870,7 @@ pub fn get_launch_command(state: State<AppState>, feature_id: String) -> Result<
         .unwrap_or(&repo.path);
 
     let (args, env, _prompt) =
-        launch::build_launch_with_repo(&feature, &system_prompt_content, Some(&repo.path));
+        launch::build_launch_with_repo(&feature, &system_prompt_content, Some(&repo.path), repo.commit_pattern.as_deref());
 
     // Build the full command string
     let env_prefix: String = env
@@ -910,7 +923,7 @@ pub fn start_launch_pty(
         .unwrap_or(&repo.path);
 
     let (args, env, _prompt) =
-        launch::build_launch_with_repo(&feature, &system_prompt_content, Some(&repo.path));
+        launch::build_launch_with_repo(&feature, &system_prompt_content, Some(&repo.path), repo.commit_pattern.as_deref());
 
     // Pre-seed the progress file so Claude has a concrete file to update
     // and the UI immediately sees the task list. This dramatically improves
@@ -1574,7 +1587,7 @@ pub fn relaunch_with_fix_context(
     }
 
     let (args, env, _prompt) =
-        launch::build_launch_with_repo(&feature, &system_prompt, Some(&repo.path));
+        launch::build_launch_with_repo(&feature, &system_prompt, Some(&repo.path), repo.commit_pattern.as_deref());
 
     let session_id = format!("fix-{}-{}", feature_id, feature.testing_attempt);
 
@@ -1795,11 +1808,19 @@ pub fn push_feature_repo(
 
     let mut outputs = Vec::new();
 
-    // Commit any uncommitted changes
-    match git::commit_all(work_dir, &format!("chore: finalize {}", feature.name)) {
+    // Commit any uncommitted changes with a descriptive message
+    let commit_msg = git::build_commit_message(work_dir, &feature.name);
+    match git::commit_all(work_dir, &commit_msg) {
         Ok(true) => outputs.push(format!("{}: committed changes", repo.name)),
         Ok(false) => {} // nothing to commit
-        Err(e) => outputs.push(format!("{}: commit skipped ({})", repo.name, e)),
+        Err(e) => {
+            let hint = if e.to_string().contains("branch") || e.to_string().contains("ref") {
+                format!(" (hint: check that branch '{}' exists and is valid)", feature.branch)
+            } else {
+                String::new()
+            };
+            outputs.push(format!("{}: commit failed — {}{}", repo.name, e, hint));
+        }
     }
 
     // Push to origin
@@ -1871,10 +1892,18 @@ pub fn push_feature(state: State<AppState>, feature_id: String) -> Result<String
             .get(&repo.id)
             .map(|s| s.as_str())
             .unwrap_or(&repo.path);
-        match git::commit_all(work_dir, &format!("chore: finalize {}", feature.name)) {
+        let commit_msg = git::build_commit_message(work_dir, &feature.name);
+        match git::commit_all(work_dir, &commit_msg) {
             Ok(true) => outputs.push(format!("{}: committed changes", repo.name)),
             Ok(false) => {} // nothing to commit
-            Err(e) => outputs.push(format!("{}: commit skipped ({})", repo.name, e)),
+            Err(e) => {
+                let hint = if e.to_string().contains("branch") || e.to_string().contains("ref") {
+                    format!(" (hint: check that branch '{}' exists and is valid)", feature.branch)
+                } else {
+                    String::new()
+                };
+                outputs.push(format!("{}: commit failed — {}{}", repo.name, e, hint));
+            }
         }
 
         match git::push_branch(work_dir, &feature.branch) {
