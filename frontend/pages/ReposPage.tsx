@@ -14,6 +14,7 @@ export function ReposPage() {
   const [editBranch, setEditBranch] = useState("");
   const [editValidators, setEditValidators] = useState("");
 
+  const [editCommitPattern, setEditCommitPattern] = useState("");
   const [editSimilarRepoIds, setEditSimilarRepoIds] = useState<string[]>([]);
   const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
 
@@ -29,7 +30,7 @@ export function ReposPage() {
     setEditDescription(repo.description || "");
     setEditBranch(repo.base_branch);
     setEditValidators(repo.validators.join("\n"));
-
+    setEditCommitPattern(repo.commit_pattern || "");
     setEditSimilarRepoIds(repo.similar_repo_ids || []);
   };
 
@@ -46,6 +47,7 @@ export function ReposPage() {
         .filter(Boolean),
       prCommand: null,
       similarRepoIds: editSimilarRepoIds.length > 0 ? editSimilarRepoIds : undefined,
+      commitPattern: editCommitPattern.trim() || null,
     });
     setEditingId(null);
     loadRepos();
@@ -112,6 +114,19 @@ export function ReposPage() {
                     onChange={(e) => setEditValidators(e.target.value)}
                     placeholder="npm test"
                   />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Commit Pattern</label>
+                  <input
+                    className="form-input"
+                    value={editCommitPattern}
+                    onChange={(e) => setEditCommitPattern(e.target.value)}
+                    placeholder="^(feat|fix|chore|docs|refactor|test)(\(.+\))?: .+"
+                    style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}
+                  />
+                  <div className="form-help">
+                    Regex that commit messages must match (optional)
+                  </div>
                 </div>
                 {repos.filter((r) => r.id !== editingId).length > 0 && (
                   <div className="form-group">
@@ -234,6 +249,11 @@ export function ReposPage() {
                   {repo.validators.length > 0 && (
                     <span style={{ marginLeft: 16 }}>
                       Validators: {repo.validators.length}
+                    </span>
+                  )}
+                  {repo.commit_pattern && (
+                    <span style={{ marginLeft: 16 }}>
+                      Commit: <code style={{ fontSize: 11 }}>{repo.commit_pattern}</code>
                     </span>
                   )}
                   {repo.similar_repo_ids && repo.similar_repo_ids.length > 0 && (

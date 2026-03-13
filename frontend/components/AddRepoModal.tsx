@@ -16,6 +16,7 @@ export function AddRepoModal({ onClose, onAdded }: Props) {
   const [baseBranch, setBaseBranch] = useState("main");
   const [validators, setValidators] = useState("");
   const [description, setDescription] = useState("");
+  const [commitPattern, setCommitPattern] = useState("");
 
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -114,6 +115,7 @@ export function AddRepoModal({ onClose, onAdded }: Props) {
         validators: validatorList,
         prCommand: null,
         similarRepoIds: similarRepoIds.length > 0 ? similarRepoIds : undefined,
+        commitPattern: commitPattern.trim() || null,
       });
       onAdded();
     } catch (e) {
@@ -301,6 +303,20 @@ export function AddRepoModal({ onClose, onAdded }: Props) {
                 placeholder={"npm test\nnpm run lint"}
               />
               <div className="form-help">One command per line (optional)</div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Commit Pattern</label>
+              <input
+                className="form-input"
+                value={commitPattern}
+                onChange={(e) => setCommitPattern(e.target.value)}
+                placeholder="^(feat|fix|chore|docs|refactor|test)(\(.+\))?: .+"
+                style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}
+              />
+              <div className="form-help">
+                Regex that commit messages must match (optional)
+              </div>
             </div>
 
             {existingRepos.length > 0 && (

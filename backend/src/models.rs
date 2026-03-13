@@ -16,6 +16,9 @@ pub struct Repository {
     /// IDs of other repositories that implement similar patterns and can serve as hints.
     #[serde(default)]
     pub similar_repo_ids: Vec<String>,
+    /// Optional regex pattern that commit messages in this repo must match.
+    #[serde(default)]
+    pub commit_pattern: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -28,6 +31,7 @@ impl Repository {
         validators: Vec<String>,
         pr_command: Option<String>,
         similar_repo_ids: Vec<String>,
+        commit_pattern: Option<String>,
     ) -> Self {
         Self {
             id: uuid::Uuid::new_v4().to_string(),
@@ -38,6 +42,7 @@ impl Repository {
             validators,
             pr_command,
             similar_repo_ids,
+            commit_pattern,
             created_at: Utc::now(),
         }
     }

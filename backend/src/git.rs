@@ -226,6 +226,25 @@ fn format_file_list(verb: &str, files: &[String]) -> String {
     }
 }
 
+/// Validate that a commit message matches a regex pattern.
+/// Returns Ok(()) if the pattern is None or the message matches.
+/// Returns Err with a descriptive message if the message doesn't match.
+pub fn validate_commit_message(message: &str, pattern: Option<&str>) -> GitResult<()> {
+    if let Some(pat) = pattern {
+        let re = regex::Regex::new(pat)
+            .map_err(|e| GitError(format!("Invalid commit pattern regex: {}", e)))?;
+        // Test against just the first line (subject) of the commit message
+        let subject = message.lines().next().unwrap_or(message);
+        if !re.is_match(subject) {
+            return Err(GitError(format!(
+                "Commit message does not match required pattern `{}`:\n  {}",
+                pat, subject
+            )));
+        }
+    }
+    Ok(())
+}
+
 /// Checkout an existing branch.
 pub fn checkout_branch(repo_path: &str, branch: &str) -> GitResult<()> {
     run_git(repo_path, &["checkout", branch])?;
@@ -695,6 +714,45 @@ mod tests {
         assert_eq!(sanitize_branch_name(""), "unnamed");
         assert_eq!(sanitize_branch_name("---"), "unnamed");
         assert_eq!(sanitize_branch_name("..."), "unnamed");
+    }
+
+    // ── validate_commit_message tests ──
+
+    #[test]
+    fn validate_commit_message_passes_when_no_pattern() {
+        assert!(validate_commit_message("any message", None).is_ok());
+    }
+
+    #[test]
+    fn validate_commit_message_passes_matching_pattern() {
+        let pattern = r"^(feat|fix|chore)\(.+\): .+";
+        assert!(validate_commit_message("feat(auth): add login", Some(pattern)).is_ok());
+        assert!(validate_commit_message("fix(ui): button color", Some(pattern)).is_ok());
+    }
+
+    #[test]
+    fn validate_commit_message_fails_non_matching_pattern() {
+        let pattern = r"^(feat|fix|chore)\(.+\): .+";
+        let result = validate_commit_message("random message", Some(pattern));
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("does not match"));
+    }
+
+    #[test]
+    fn validate_commit_message_checks_only_subject_line() {
+        let pattern = r"^feat: .+";
+        // Subject matches, body doesn't — should pass
+        let msg = "feat: add feature\n\nThis body doesn't match the pattern";
+        assert!(validate_commit_message(msg, Some(pattern)).is_ok());
+    }
+
+    #[test]
+    fn validate_commit_message_rejects_invalid_regex() {
+        let result = validate_commit_message("test", Some("[invalid"));
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Invalid commit pattern regex"));
     }
 
     // ── build_commit_message / summarize tests ──

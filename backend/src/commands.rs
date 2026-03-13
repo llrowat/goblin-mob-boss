@@ -39,12 +39,17 @@ pub fn add_repository(
     validators: Vec<String>,
     pr_command: Option<String>,
     similar_repo_ids: Option<Vec<String>>,
+    commit_pattern: Option<String>,
 ) -> Result<Repository, String> {
     if !Path::new(&path).exists() {
         return Err("Path does not exist".to_string());
     }
     if !git::is_git_repo(&path) {
         return Err("Path is not a git repository".to_string());
+    }
+    // Validate the regex if provided
+    if let Some(ref pat) = commit_pattern {
+        regex::Regex::new(pat).map_err(|e| format!("Invalid commit pattern regex: {}", e))?;
     }
     let repo = Repository::new(
         name,
@@ -54,6 +59,7 @@ pub fn add_repository(
         validators,
         pr_command,
         similar_repo_ids.unwrap_or_default(),
+        commit_pattern,
     );
     let mut repos = state.repositories.lock().unwrap();
     repos.insert(repo.id.clone(), repo.clone());
@@ -72,7 +78,12 @@ pub fn update_repository(
     validators: Vec<String>,
     pr_command: Option<String>,
     similar_repo_ids: Option<Vec<String>>,
+    commit_pattern: Option<String>,
 ) -> Result<Repository, String> {
+    // Validate the regex if provided
+    if let Some(ref pat) = commit_pattern {
+        regex::Regex::new(pat).map_err(|e| format!("Invalid commit pattern regex: {}", e))?;
+    }
     let mut repos = state.repositories.lock().unwrap();
     let repo = repos.get_mut(&id).ok_or("Repository not found")?;
     repo.name = name;
@@ -81,6 +92,7 @@ pub fn update_repository(
     repo.validators = validators;
     repo.pr_command = pr_command;
     repo.similar_repo_ids = similar_repo_ids.unwrap_or_default();
+    repo.commit_pattern = commit_pattern;
     let updated = repo.clone();
     drop(repos);
     state.save_repos();
@@ -857,7 +869,7 @@ pub fn get_launch_command(state: State<AppState>, feature_id: String) -> Result<
         .unwrap_or(&repo.path);
 
     let (args, env, _prompt) =
-        launch::build_launch_with_repo(&feature, &system_prompt_content, Some(&repo.path));
+        launch::build_launch_with_repo(&feature, &system_prompt_content, Some(&repo.path), repo.commit_pattern.as_deref());
 
     // Build the full command string
     let env_prefix: String = env
@@ -910,7 +922,7 @@ pub fn start_launch_pty(
         .unwrap_or(&repo.path);
 
     let (args, env, _prompt) =
-        launch::build_launch_with_repo(&feature, &system_prompt_content, Some(&repo.path));
+        launch::build_launch_with_repo(&feature, &system_prompt_content, Some(&repo.path), repo.commit_pattern.as_deref());
 
     // Pre-seed the progress file so Claude has a concrete file to update
     // and the UI immediately sees the task list. This dramatically improves
@@ -1574,7 +1586,7 @@ pub fn relaunch_with_fix_context(
     }
 
     let (args, env, _prompt) =
-        launch::build_launch_with_repo(&feature, &system_prompt, Some(&repo.path));
+        launch::build_launch_with_repo(&feature, &system_prompt, Some(&repo.path), repo.commit_pattern.as_deref());
 
     let session_id = format!("fix-{}-{}", feature_id, feature.testing_attempt);
 

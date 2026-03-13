@@ -26,6 +26,7 @@ describe("ReposPage", () => {
       validators: ["npm test", "npm run lint"],
       pr_command: "gh pr create",
       similar_repo_ids: ["repo-2"],
+      commit_pattern: "^(feat|fix|chore): .+",
       created_at: "2026-01-15T10:00:00Z",
     },
     {
@@ -37,6 +38,7 @@ describe("ReposPage", () => {
       validators: ["cargo test"],
       pr_command: null,
       similar_repo_ids: [],
+      commit_pattern: null,
       created_at: "2026-01-16T10:00:00Z",
     },
   ];
@@ -212,6 +214,7 @@ describe("ReposPage", () => {
         validators: ["npm test", "npm run lint"],
         prCommand: null,
         similarRepoIds: ["repo-2"],
+        commitPattern: "^(feat|fix|chore): .+",
       });
     });
   });
@@ -284,6 +287,55 @@ describe("ReposPage", () => {
       expect(screen.queryByText("Confirm")).not.toBeInTheDocument();
     });
     expect(screen.getAllByText("Remove")).toHaveLength(2);
+  });
+
+  it("shows commit pattern when configured", async () => {
+    mockInvokeForRepos();
+
+    render(<ReposPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("frontend-app")).toBeInTheDocument();
+    });
+
+    expect(screen.getByText("^(feat|fix|chore): .+")).toBeInTheDocument();
+  });
+
+  it("populates commit pattern in edit mode", async () => {
+    mockInvokeForRepos();
+
+    render(<ReposPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("frontend-app")).toBeInTheDocument();
+    });
+
+    const editButtons = screen.getAllByText("Edit");
+    fireEvent.click(editButtons[0]);
+
+    expect(screen.getByDisplayValue("^(feat|fix|chore): .+")).toBeInTheDocument();
+    expect(screen.getByText("Regex that commit messages must match (optional)")).toBeInTheDocument();
+  });
+
+  it("sends commitPattern on Save", async () => {
+    mockInvokeForRepos();
+
+    render(<ReposPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("frontend-app")).toBeInTheDocument();
+    });
+
+    const editButtons = screen.getAllByText("Edit");
+    fireEvent.click(editButtons[0]);
+
+    fireEvent.click(screen.getByText("Save"));
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("update_repository", expect.objectContaining({
+        commitPattern: "^(feat|fix|chore): .+",
+      }));
+    });
   });
 
   it("shows Similar Repositories checkboxes in edit mode when multiple repos exist", async () => {

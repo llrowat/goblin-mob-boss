@@ -60,6 +60,7 @@ describe("useTauri", () => {
       validators: ["npm test"],
       prCommand: null,
       similarRepoIds: null,
+      commitPattern: null,
     });
   });
 
@@ -82,6 +83,7 @@ describe("useTauri", () => {
       validators: [],
       prCommand: null,
       similarRepoIds: ["repo-1", "repo-2"],
+      commitPattern: null,
     });
   });
 
