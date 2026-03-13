@@ -60,27 +60,40 @@ export function Terminal({ sessionId, onExit }: TerminalProps) {
     });
 
     // PTY output -> terminal
+    // Use a disposed flag to handle the race between async listen() setup
+    // and synchronous effect cleanup (e.g. React StrictMode double-mount).
+    // Without this, cleanup can run before .then() assigns the unlisten fn,
+    // leaving orphaned listeners that cause duplicate writes.
+    let disposed = false;
     let unlistenOutput: (() => void) | null = null;
     let unlistenExit: (() => void) | null = null;
 
     listen<{ session_id: string; data: string }>("pty-output", (event) => {
-      if (event.payload.session_id === sessionId) {
+      if (!disposed && event.payload.session_id === sessionId) {
         term.write(event.payload.data);
       }
     }).then((fn) => {
-      unlistenOutput = fn;
+      if (disposed) {
+        fn();
+      } else {
+        unlistenOutput = fn;
+      }
     });
 
     listen<{ session_id: string; exit_code: number | null }>(
       "pty-exit",
       (event) => {
-        if (event.payload.session_id === sessionId) {
+        if (!disposed && event.payload.session_id === sessionId) {
           term.write("\r\n\x1b[90m[Process exited]\x1b[0m\r\n");
           onExitRef.current?.();
         }
       },
     ).then((fn) => {
-      unlistenExit = fn;
+      if (disposed) {
+        fn();
+      } else {
+        unlistenExit = fn;
+      }
     });
 
     // Debounced resize to avoid flooding tmux with rapid SIGWINCH signals
@@ -94,6 +107,7 @@ export function Terminal({ sessionId, onExit }: TerminalProps) {
     observer.observe(containerRef.current);
 
     return () => {
+      disposed = true;
       clearTimeout(initTimer);
       if (resizeTimer) clearTimeout(resizeTimer);
       observer.disconnect();

@@ -1,5 +1,6 @@
 import { render, cleanup, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { Terminal } from "./Terminal";
 
 // Mock xterm.js with proper class constructors
@@ -72,5 +73,51 @@ describe("Terminal", () => {
     const { unmount } = render(<Terminal sessionId="test-session" />);
     unmount();
     expect(mockDispose).toHaveBeenCalled();
+  });
+
+  it("unregisters listeners that resolve after unmount (StrictMode double-mount)", async () => {
+    // Simulate the race: listen() resolves AFTER the effect cleanup runs
+    const unlistenOutput = vi.fn();
+    const unlistenExit = vi.fn();
+    let resolveOutput!: (fn: () => void) => void;
+    let resolveExit!: (fn: () => void) => void;
+
+    const mockListen = listen as ReturnType<typeof vi.fn>;
+    mockListen
+      .mockImplementationOnce(
+        () => new Promise<() => void>((r) => (resolveOutput = r)),
+      )
+      .mockImplementationOnce(
+        () => new Promise<() => void>((r) => (resolveExit = r)),
+      );
+
+    const { unmount } = render(<Terminal sessionId="test-session" />);
+    // Unmount before listen promises resolve
+    unmount();
+
+    // Now resolve the listen promises — the unlisten fns should be called immediately
+    resolveOutput(unlistenOutput);
+    resolveExit(unlistenExit);
+    await waitFor(() => {
+      expect(unlistenOutput).toHaveBeenCalled();
+      expect(unlistenExit).toHaveBeenCalled();
+    });
+  });
+
+  it("ignores pty-output events after unmount", async () => {
+    let outputHandler!: (event: { payload: { session_id: string; data: string } }) => void;
+    const mockListen = listen as ReturnType<typeof vi.fn>;
+    mockListen.mockImplementationOnce((_event: string, handler: typeof outputHandler) => {
+      outputHandler = handler;
+      return Promise.resolve(() => {});
+    }).mockImplementationOnce(() => Promise.resolve(() => {}));
+
+    const { unmount } = render(<Terminal sessionId="test-session" />);
+    unmount();
+
+    // Fire event after unmount — write should not be called
+    mockWrite.mockClear();
+    outputHandler({ payload: { session_id: "test-session", data: "late data" } });
+    expect(mockWrite).not.toHaveBeenCalled();
   });
 });
