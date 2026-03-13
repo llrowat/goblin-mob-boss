@@ -104,6 +104,7 @@ describe("useTauri", () => {
       name: "Auth",
       description: "Add auth",
       mapId: null,
+      attachments: null,
     });
   });
 

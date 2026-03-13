@@ -67,6 +67,19 @@ pub fn ideation_user_prompt_with_testing(
     quality_agents: &str,
     functional_testing_enabled: bool,
 ) -> String {
+    ideation_user_prompt_full(
+        description, tasks_dir, available_agents, quality_agents, functional_testing_enabled, &[],
+    )
+}
+
+pub fn ideation_user_prompt_full(
+    description: &str,
+    tasks_dir: &str,
+    available_agents: &str,
+    quality_agents: &str,
+    functional_testing_enabled: bool,
+    attachments: &[crate::models::DocumentAttachment],
+) -> String {
     let quality_section = if quality_agents.is_empty() {
         String::new()
     } else {
@@ -130,11 +143,24 @@ Rules for functional testing:
         String::new()
     };
 
+    let attachments_section = if attachments.is_empty() {
+        String::new()
+    } else {
+        let mut section = String::from("\n## Attached Documents\n\nThe user has attached the following documents as additional context. Read them carefully — they may contain requirements, design specs, API schemas, or other important information.\n\n");
+        for attachment in attachments {
+            section.push_str(&format!(
+                "### {}\n\n{}\n\n",
+                attachment.name, attachment.content
+            ));
+        }
+        section
+    };
+
     format!(
         r#"I want to build the following feature:
 
 {description}
-
+{attachments_section}
 ---
 
 You are in PLANNING MODE running non-interactively. There is NO human to respond to you. You cannot wait for input.
@@ -221,6 +247,7 @@ After defining tasks, recommend an execution mode:
 - Do NOT edit any existing files.
 - After writing plan.json or questions.json, stop."#,
         description = description,
+        attachments_section = attachments_section,
         tasks_dir = tasks_dir,
         available_agents = available_agents,
         quality_section = quality_section,
@@ -250,8 +277,22 @@ pub fn ideation_user_prompt_with_answers_and_testing(
     answers: &[crate::models::PlanningAnswer],
     functional_testing_enabled: bool,
 ) -> String {
-    let base = ideation_user_prompt_with_testing(
-        description, tasks_dir, available_agents, quality_agents, functional_testing_enabled,
+    ideation_user_prompt_with_answers_full(
+        description, tasks_dir, available_agents, quality_agents, answers, functional_testing_enabled, &[],
+    )
+}
+
+pub fn ideation_user_prompt_with_answers_full(
+    description: &str,
+    tasks_dir: &str,
+    available_agents: &str,
+    quality_agents: &str,
+    answers: &[crate::models::PlanningAnswer],
+    functional_testing_enabled: bool,
+    attachments: &[crate::models::DocumentAttachment],
+) -> String {
+    let base = ideation_user_prompt_full(
+        description, tasks_dir, available_agents, quality_agents, functional_testing_enabled, attachments,
     );
 
     let mut answers_section = String::from("\n\n---\n\n## User's Answers to Your Questions\n\n");
@@ -513,6 +554,53 @@ mod tests {
         }];
         let prompt = ideation_user_prompt_with_answers("desc", "/tasks", "agents", quality, &answers);
         assert!(prompt.contains("Code Quality Verification"));
+        assert!(prompt.contains("User's Answers to Your Questions"));
+    }
+
+    // ── Attachment Tests ──
+
+    #[test]
+    fn user_prompt_includes_attachments_when_present() {
+        let attachments = vec![
+            crate::models::DocumentAttachment {
+                name: "design-spec.md".to_string(),
+                content: "# Design Spec\n\nThe widget should be blue.".to_string(),
+            },
+            crate::models::DocumentAttachment {
+                name: "api-schema.json".to_string(),
+                content: r#"{"endpoint": "/api/v1/widgets"}"#.to_string(),
+            },
+        ];
+        let prompt = ideation_user_prompt_full("desc", "/tasks", "agents", "", false, &attachments);
+        assert!(prompt.contains("Attached Documents"));
+        assert!(prompt.contains("### design-spec.md"));
+        assert!(prompt.contains("The widget should be blue."));
+        assert!(prompt.contains("### api-schema.json"));
+        assert!(prompt.contains("/api/v1/widgets"));
+    }
+
+    #[test]
+    fn user_prompt_omits_attachments_section_when_empty() {
+        let prompt = ideation_user_prompt_full("desc", "/tasks", "agents", "", false, &[]);
+        assert!(!prompt.contains("Attached Documents"));
+    }
+
+    #[test]
+    fn user_prompt_with_answers_includes_attachments() {
+        let attachments = vec![crate::models::DocumentAttachment {
+            name: "spec.md".to_string(),
+            content: "Important spec content".to_string(),
+        }];
+        let answers = vec![crate::models::PlanningAnswer {
+            id: "q1".to_string(),
+            question: "Q?".to_string(),
+            answer: "A".to_string(),
+        }];
+        let prompt = ideation_user_prompt_with_answers_full(
+            "desc", "/tasks", "agents", "", &answers, false, &attachments,
+        );
+        assert!(prompt.contains("Attached Documents"));
+        assert!(prompt.contains("Important spec content"));
         assert!(prompt.contains("User's Answers to Your Questions"));
     }
 }

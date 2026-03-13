@@ -265,6 +265,9 @@ pub struct Feature {
     pub name: String,
     pub description: String,
     pub branch: String,
+    /// Documents attached at feature creation time, fed as context to Claude during ideation and execution.
+    #[serde(default)]
+    pub attachments: Vec<DocumentAttachment>,
     pub status: FeatureStatus,
     #[serde(default)]
     pub execution_mode: Option<ExecutionMode>,
@@ -336,7 +339,13 @@ fn default_testing_timeout_secs() -> u64 {
 }
 
 impl Feature {
-    pub fn new(repo_ids: Vec<String>, name: String, description: String, branch: String) -> Self {
+    pub fn new(
+        repo_ids: Vec<String>,
+        name: String,
+        description: String,
+        branch: String,
+        attachments: Vec<DocumentAttachment>,
+    ) -> Self {
         let now = Utc::now();
         Self {
             id: uuid::Uuid::new_v4().to_string(),
@@ -345,6 +354,7 @@ impl Feature {
             name,
             description,
             branch,
+            attachments,
             status: FeatureStatus::Ideation,
             execution_mode: None,
             execution_rationale: None,
@@ -422,6 +432,17 @@ impl Feature {
             None
         }
     }
+}
+
+// ── Document Attachment ──
+// A document attached to a feature for context. Content is read at creation time and stored inline.
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DocumentAttachment {
+    /// Original file name (e.g. "design-spec.md").
+    pub name: String,
+    /// The full text content of the document.
+    pub content: String,
 }
 
 // ── Task Spec ──
@@ -931,6 +952,7 @@ mod tests {
             "Auth".to_string(),
             "Add auth".to_string(),
             "feature/auth-ab12".to_string(),
+            vec![],
         );
         assert_eq!(feature.repo_ids, vec!["repo-1"]);
         assert_eq!(feature.effective_repo_ids(), vec!["repo-1"]);
@@ -949,6 +971,7 @@ mod tests {
             "Cross-repo".to_string(),
             "Spans two repos".to_string(),
             "feature/cross-ab12".to_string(),
+            vec![],
         );
         assert_eq!(feature.repo_ids, vec!["repo-1", "repo-2"]);
         assert_eq!(feature.effective_repo_ids(), vec!["repo-1", "repo-2"]);
@@ -962,6 +985,7 @@ mod tests {
             "X".to_string(),
             "desc".to_string(),
             "feature/x-1234".to_string(),
+            vec![],
         );
         feature.execution_mode = Some(ExecutionMode::Teams);
         feature.execution_rationale = Some("High parallelism".to_string());
@@ -1011,6 +1035,7 @@ mod tests {
             "X".to_string(),
             "desc".to_string(),
             "feature/x-1234".to_string(),
+            vec![],
         );
         let json = serde_json::to_string(&feature).unwrap();
         assert!(!json.contains("\"repo_id\""));
@@ -1040,6 +1065,7 @@ mod tests {
             "X".to_string(),
             "desc".to_string(),
             "feature/x-1234".to_string(),
+            vec![],
         );
         feature.launched_command = Some("cd /tmp && claude --append-system-prompt 'hello'".to_string());
         let json = serde_json::to_string(&feature).unwrap();
@@ -1841,6 +1867,7 @@ You are enabled by default."#;
             "Multi".to_string(),
             "desc".to_string(),
             "feature/multi-1234".to_string(),
+            vec![],
         );
         feature
             .repo_push_status
@@ -1868,6 +1895,7 @@ You are enabled by default."#;
             "Test".to_string(),
             "desc".to_string(),
             "feature/test-1234".to_string(),
+            vec![],
         );
         assert!(feature.repo_push_status.is_empty());
     }
@@ -1879,6 +1907,7 @@ You are enabled by default."#;
             "Test".to_string(),
             "desc".to_string(),
             "feature/test-1234".to_string(),
+            vec![],
         );
         assert!(feature.plan_history.is_empty());
     }
@@ -1935,6 +1964,7 @@ You are enabled by default."#;
             "Test".to_string(),
             "desc".to_string(),
             "feature/test-1234".to_string(),
+            vec![],
         );
         feature.plan_history.push(PlanSnapshot {
             trigger: "revision".to_string(),
@@ -2006,6 +2036,7 @@ You are enabled by default."#;
             "Test".into(),
             "A test feature".into(),
             "feat/test".into(),
+            vec![],
         );
         assert_eq!(feature.activity_log.len(), 1);
         assert_eq!(feature.activity_log[0].message, "Feature created");
@@ -2019,6 +2050,7 @@ You are enabled by default."#;
             "Test".into(),
             "desc".into(),
             "feat/test".into(),
+            vec![],
         );
         let before = feature.updated_at;
         feature.log_activity("Execution started", "info");
@@ -2035,6 +2067,7 @@ You are enabled by default."#;
             "Test".into(),
             "Desc".into(),
             "feat/test".into(),
+            vec![],
         );
         assert_eq!(feature.activity_log.len(), 1); // "Feature created"
 
@@ -2052,6 +2085,7 @@ You are enabled by default."#;
             "Test".into(),
             "Desc".into(),
             "feat/test".into(),
+            vec![],
         );
 
         assert!(feature.log_plan_created_once());
@@ -2074,6 +2108,7 @@ You are enabled by default."#;
             "Test".into(),
             "Desc".into(),
             "feat/test".into(),
+            vec![],
         );
 
         // First plan created
@@ -2108,5 +2143,71 @@ You are enabled by default."#;
         }"#;
         let feature: Feature = serde_json::from_str(json).unwrap();
         assert!(feature.activity_log.is_empty());
+    }
+
+    // ── Document Attachment Tests ──
+
+    #[test]
+    fn feature_new_with_attachments() {
+        let attachments = vec![
+            DocumentAttachment {
+                name: "spec.md".to_string(),
+                content: "# Spec\nDetails here".to_string(),
+            },
+            DocumentAttachment {
+                name: "schema.json".to_string(),
+                content: r#"{"type": "object"}"#.to_string(),
+            },
+        ];
+        let feature = Feature::new(
+            vec!["r1".into()],
+            "Test".into(),
+            "desc".into(),
+            "feat/test".into(),
+            attachments,
+        );
+        assert_eq!(feature.attachments.len(), 2);
+        assert_eq!(feature.attachments[0].name, "spec.md");
+        assert_eq!(feature.attachments[1].name, "schema.json");
+    }
+
+    #[test]
+    fn feature_attachments_roundtrip_serialization() {
+        let mut feature = Feature::new(
+            vec!["r1".into()],
+            "Test".into(),
+            "desc".into(),
+            "feat/test".into(),
+            vec![DocumentAttachment {
+                name: "design.md".to_string(),
+                content: "Blue widgets".to_string(),
+            }],
+        );
+        feature.execution_mode = Some(ExecutionMode::Subagents);
+        let json = serde_json::to_string(&feature).unwrap();
+        assert!(json.contains("\"attachments\""));
+        assert!(json.contains("design.md"));
+        assert!(json.contains("Blue widgets"));
+
+        let parsed: Feature = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.attachments.len(), 1);
+        assert_eq!(parsed.attachments[0].name, "design.md");
+        assert_eq!(parsed.attachments[0].content, "Blue widgets");
+    }
+
+    #[test]
+    fn feature_attachments_defaults_empty_for_old_features() {
+        let json = r#"{
+            "id": "feat-old",
+            "repo_ids": ["r1"],
+            "name": "Old",
+            "description": "Old feature without attachments",
+            "branch": "feat/old",
+            "status": "ideation",
+            "created_at": "2025-01-01T00:00:00Z",
+            "updated_at": "2025-01-01T00:00:00Z"
+        }"#;
+        let feature: Feature = serde_json::from_str(json).unwrap();
+        assert!(feature.attachments.is_empty());
     }
 }

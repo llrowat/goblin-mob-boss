@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTauri } from "../hooks/useTauri";
 import { useBackgroundPlanning } from "../hooks/useBackgroundPlanning";
-import type { Repository, Feature, SystemMap } from "../types";
+import type { Repository, Feature, SystemMap, DocumentAttachment } from "../types";
 
 
 export function HomePage() {
@@ -20,6 +20,7 @@ export function HomePage() {
   const [showNewFeature, setShowNewFeature] = useState(false);
   const [maps, setMaps] = useState<SystemMap[]>([]);
   const [selectedMapId, setSelectedMapId] = useState<string | null>(null);
+  const [attachments, setAttachments] = useState<DocumentAttachment[]>([]);
 
   useEffect(() => {
     tauri.listRepositories().then((r) => {
@@ -66,6 +67,7 @@ export function HomePage() {
         name.trim(),
         description.trim(),
         selectedMapId,
+        attachments.length > 0 ? attachments : undefined,
       );
       // Start planning immediately in the background
       addPlanning(feature.id);
@@ -73,6 +75,7 @@ export function HomePage() {
       setShowNewFeature(false);
       setName("");
       setDescription("");
+      setAttachments([]);
       navigate(`/feature/${feature.id}/detail`);
     } catch (e) {
       setError(String(e));
@@ -86,6 +89,7 @@ export function HomePage() {
     setName("");
     setDescription("");
     setError("");
+    setAttachments([]);
   };
 
   const repoNameById = (id: string) =>
@@ -339,6 +343,86 @@ export function HomePage() {
               <div className="form-help">
                 Be specific. Claude will plan the work interactively with
                 you.
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">
+                Attachments
+                {attachments.length > 0 && (
+                  <span style={{ fontSize: 12, fontWeight: 400, color: "var(--muted)", marginLeft: 8 }}>
+                    ({attachments.length} file{attachments.length !== 1 ? "s" : ""})
+                  </span>
+                )}
+              </label>
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 6,
+                }}
+              >
+                {attachments.map((att, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      fontSize: 13,
+                      padding: "4px 8px",
+                      background: "var(--surface)",
+                      borderRadius: 4,
+                    }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                      <path d="M9 1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V5L9 1Z" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+                      <path d="M9 1v4h4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                    <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {att.name}
+                    </span>
+                    <span style={{ fontSize: 11, color: "var(--muted)" }}>
+                      {Math.ceil(att.content.length / 1024)}KB
+                    </span>
+                    <button
+                      className="btn btn-secondary"
+                      style={{ padding: "2px 6px", fontSize: 11, lineHeight: 1 }}
+                      onClick={() => setAttachments((prev) => prev.filter((_, j) => j !== i))}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+                <label
+                  className="btn btn-secondary"
+                  style={{ display: "inline-flex", alignItems: "center", gap: 6, width: "fit-content", cursor: "pointer" }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                    <path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+                  </svg>
+                  Add Files
+                  <input
+                    type="file"
+                    multiple
+                    accept=".txt,.md,.json,.yaml,.yml,.toml,.csv,.xml,.html,.css,.js,.ts,.tsx,.jsx,.py,.rs,.go,.java,.c,.cpp,.h,.hpp,.sh,.sql,.graphql,.proto,.env.example,.cfg,.ini,.conf,.log"
+                    style={{ display: "none" }}
+                    onChange={async (e) => {
+                      const files = e.target.files;
+                      if (!files) return;
+                      const newAttachments: DocumentAttachment[] = [];
+                      for (const file of Array.from(files)) {
+                        const content = await file.text();
+                        newAttachments.push({ name: file.name, content });
+                      }
+                      setAttachments((prev) => [...prev, ...newAttachments]);
+                      e.target.value = "";
+                    }}
+                  />
+                </label>
+              </div>
+              <div className="form-help">
+                Attach design docs, specs, or reference files to give Claude extra context.
               </div>
             </div>
 

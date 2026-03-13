@@ -24,6 +24,7 @@ import type {
   ModeRecommendation,
   SystemMap,
   DiscoveryStatus,
+  DocumentAttachment,
 } from "../types";
 
 export function useTauri() {
@@ -107,8 +108,8 @@ export function useTauri() {
       invoke<void>("delete_global_agent", { filename }),
 
     // Features
-    startFeature: (repoIds: string[], name: string, description: string, mapId?: string | null) =>
-      invoke<Feature>("start_feature", { repoIds, name, description, mapId: mapId ?? null }),
+    startFeature: (repoIds: string[], name: string, description: string, mapId?: string | null, attachments?: DocumentAttachment[]) =>
+      invoke<Feature>("start_feature", { repoIds, name, description, mapId: mapId ?? null, attachments: attachments ?? null }),
 
     listFeatures: (repoId?: string) =>
       invoke<Feature[]>("list_features", { repoId: repoId ?? null }),

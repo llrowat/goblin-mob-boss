@@ -1,5 +1,5 @@
 use crate::guidance;
-use crate::models::{ExecutionMode, Feature, TaskSpec};
+use crate::models::{DocumentAttachment, ExecutionMode, Feature, TaskSpec};
 use std::process::Command;
 
 /// Check whether tmux is installed and available on PATH.
@@ -68,6 +68,7 @@ pub fn build_launch_with_repo(
 fn build_prompt(feature: &Feature, mode: &ExecutionMode, repo_path: Option<&str>) -> String {
     let tasks_section = build_tasks_section(&feature.task_specs);
     let agents_section = build_agents_section(&feature.selected_agents);
+    let attachments_section = build_attachments_section(&feature.attachments);
     let progress_section = build_progress_section(repo_path, &feature.id, &feature.task_specs);
 
     let guidance_note = repo_path
@@ -88,7 +89,7 @@ fn build_prompt(feature: &Feature, mode: &ExecutionMode, repo_path: Option<&str>
 ## Feature: {name}
 
 {description}
-
+{attachments_section}
 {tasks_section}
 
 {agents_section}
@@ -105,6 +106,7 @@ fn build_prompt(feature: &Feature, mode: &ExecutionMode, repo_path: Option<&str>
 {progress_section}{guidance_note}"#,
                 name = feature.name,
                 description = feature.description,
+                attachments_section = attachments_section,
                 tasks_section = tasks_section,
                 agents_section = agents_section,
                 branch = feature.branch,
@@ -119,7 +121,7 @@ fn build_prompt(feature: &Feature, mode: &ExecutionMode, repo_path: Option<&str>
 ## Feature: {name}
 
 {description}
-
+{attachments_section}
 {tasks_section}
 
 {agents_section}
@@ -134,6 +136,7 @@ fn build_prompt(feature: &Feature, mode: &ExecutionMode, repo_path: Option<&str>
 {progress_section}{guidance_note}"#,
                 name = feature.name,
                 description = feature.description,
+                attachments_section = attachments_section,
                 tasks_section = tasks_section,
                 agents_section = agents_section,
                 branch = feature.branch,
@@ -142,6 +145,17 @@ fn build_prompt(feature: &Feature, mode: &ExecutionMode, repo_path: Option<&str>
             )
         }
     }
+}
+
+fn build_attachments_section(attachments: &[DocumentAttachment]) -> String {
+    if attachments.is_empty() {
+        return String::new();
+    }
+    let mut section = String::from("## Attached Documents\n\n");
+    for attachment in attachments {
+        section.push_str(&format!("### {}\n\n{}\n\n", attachment.name, attachment.content));
+    }
+    section
 }
 
 fn build_progress_section(repo_path: Option<&str>, feature_id: &str, specs: &[TaskSpec]) -> String {
@@ -269,6 +283,7 @@ mod tests {
             "Dark Mode".to_string(),
             "Add dark mode toggle to the app".to_string(),
             "feature/dark-mode-ab12".to_string(),
+            vec![],
         );
         f.execution_mode = Some(mode);
         f.selected_agents = vec![
@@ -415,5 +430,38 @@ mod tests {
         let (_, _, prompt) = build_launch_with_repo(&feature, "System prompt", Some("/tmp/repo"));
         assert!(prompt.contains("CRITICAL"));
         assert!(prompt.contains("execution-complete"));
+    }
+
+    #[test]
+    fn prompt_includes_attachments_in_teams_mode() {
+        let mut feature = make_feature(ExecutionMode::Teams);
+        feature.attachments = vec![DocumentAttachment {
+            name: "design.md".to_string(),
+            content: "Widget must be blue".to_string(),
+        }];
+        let (_, _, prompt) = build_launch(&feature, "System prompt");
+        assert!(prompt.contains("Attached Documents"));
+        assert!(prompt.contains("### design.md"));
+        assert!(prompt.contains("Widget must be blue"));
+    }
+
+    #[test]
+    fn prompt_includes_attachments_in_subagents_mode() {
+        let mut feature = make_feature(ExecutionMode::Subagents);
+        feature.attachments = vec![DocumentAttachment {
+            name: "api-spec.json".to_string(),
+            content: r#"{"endpoint": "/widgets"}"#.to_string(),
+        }];
+        let (_, _, prompt) = build_launch(&feature, "System prompt");
+        assert!(prompt.contains("Attached Documents"));
+        assert!(prompt.contains("### api-spec.json"));
+        assert!(prompt.contains("/widgets"));
+    }
+
+    #[test]
+    fn prompt_omits_attachments_section_when_empty() {
+        let feature = make_feature(ExecutionMode::Subagents);
+        let (_, _, prompt) = build_launch(&feature, "System prompt");
+        assert!(!prompt.contains("Attached Documents"));
     }
 }
