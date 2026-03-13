@@ -43,6 +43,7 @@ pub fn spawn_pty_session(
     rows: u16,
     sessions: &PtySessions,
     env_vars: &[(String, String)],
+    resolved_user_path: Option<&str>,
 ) -> Result<(), String> {
     let pty_system = NativePtySystem::default();
     let pair = pty_system
@@ -62,6 +63,12 @@ pub fn spawn_pty_session(
     // Set terminal type so tmux and other TUI programs render correctly in xterm.js
     command.env("TERM", "xterm-256color");
     command.env("COLORTERM", "truecolor");
+    // On macOS, GUI apps inherit a minimal PATH that may not include paths
+    // where Claude Code is installed (e.g. via npm/nvm). Propagate the
+    // user's full login-shell PATH so the PTY process can find `claude`.
+    if let Some(path) = resolved_user_path {
+        command.env("PATH", path);
+    }
     for (key, val) in env_vars {
         command.env(key, val);
     }
