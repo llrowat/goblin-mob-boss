@@ -468,6 +468,7 @@ mod tests {
             "Test Feature".to_string(),
             "A test feature".to_string(),
             "feature/test-1234".to_string(),
+            vec![],
         );
         let feature_id = feature.id.clone();
 

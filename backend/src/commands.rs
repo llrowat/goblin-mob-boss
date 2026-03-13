@@ -267,6 +267,7 @@ pub fn start_feature(
     name: String,
     description: String,
     map_id: Option<String>,
+    attachments: Option<Vec<DocumentAttachment>>,
 ) -> Result<Feature, String> {
     if repo_ids.is_empty() {
         return Err("At least one repository must be selected".to_string());
@@ -310,7 +311,7 @@ pub fn start_feature(
         }
     }
 
-    let mut feature = Feature::new(repo_ids, name, description, branch_name);
+    let mut feature = Feature::new(repo_ids, name, description, branch_name, attachments.unwrap_or_default());
 
     // Create worktrees for each repo so features can run in parallel
     for repo in &resolved_repos {
@@ -408,12 +409,13 @@ pub fn start_feature(
         .map_err(|e| format!("Failed to write system prompt: {}", e))?;
 
     let ft_enabled = state.preferences.lock().unwrap().functional_testing_enabled;
-    let user_prompt = prompts::ideation_user_prompt_with_testing(
+    let user_prompt = prompts::ideation_user_prompt_full(
         &feature.description,
         &tasks_dir.to_string_lossy(),
         &agent_list,
         &quality_agent_list,
         ft_enabled,
+        &feature.attachments,
     );
     std::fs::write(ideation_dir.join("user-prompt.md"), &user_prompt)
         .map_err(|e| format!("Failed to write user prompt: {}", e))?;
@@ -1987,12 +1989,13 @@ fn ensure_ideation_prompts(
         }
         if !user_prompt_path.exists() {
             let ft_enabled = state.preferences.lock().unwrap().functional_testing_enabled;
-            let user_prompt = prompts::ideation_user_prompt_with_testing(
+            let user_prompt = prompts::ideation_user_prompt_full(
                 &feature.description,
                 &tasks_dir.to_string_lossy(),
                 &agent_list,
                 &quality_agent_list,
                 ft_enabled,
+                &feature.attachments,
             );
             std::fs::write(&user_prompt_path, &user_prompt)
                 .map_err(|e| format!("Failed to write user prompt: {}", e))?;
@@ -2390,13 +2393,14 @@ pub fn submit_planning_answers(
     let (agent_list, quality_agent_list) = build_agent_lists(&all_repos);
 
     let ft_enabled = state.preferences.lock().unwrap().functional_testing_enabled;
-    let user_prompt = prompts::ideation_user_prompt_with_answers_and_testing(
+    let user_prompt = prompts::ideation_user_prompt_with_answers_full(
         &feature.description,
         &tasks_dir.to_string_lossy(),
         &agent_list,
         &quality_agent_list,
         &all_answers,
         ft_enabled,
+        &feature.attachments,
     );
 
     let work_dir = feature

@@ -835,6 +835,15 @@ export function FeatureDetailPage() {
                 {feature.branch}
               </span>
             )}
+            {feature.attachments && feature.attachments.length > 0 && (
+              <span title={feature.attachments.map(a => a.name).join(", ")} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <path d="M9 1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V5L9 1Z" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M9 1v4h4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                {feature.attachments.length} doc{feature.attachments.length !== 1 ? "s" : ""} attached
+              </span>
+            )}
           </div>
           </div>
         </div>

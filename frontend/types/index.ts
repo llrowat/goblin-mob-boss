@@ -106,6 +106,11 @@ export interface TestingStatus {
   max_attempts: number;
 }
 
+export interface DocumentAttachment {
+  name: string;
+  content: string;
+}
+
 export interface Feature {
   id: string;
   /** @deprecated Use repo_ids instead. Present for backward compat with old features. */
@@ -115,6 +120,8 @@ export interface Feature {
   name: string;
   description: string;
   branch: string;
+  /** Documents attached at creation time, fed as context to Claude. */
+  attachments: DocumentAttachment[];
   status: FeatureStatus;
   execution_mode: ExecutionMode | null;
   execution_rationale: string | null;

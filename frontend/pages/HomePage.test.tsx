@@ -421,4 +421,98 @@ describe("HomePage", () => {
     fireEvent.click(screen.getByText("Cancel"));
     expect(screen.queryByPlaceholderText("User Authentication")).not.toBeInTheDocument();
   });
+
+  it("shows attachment controls in new feature modal", async () => {
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "list_repositories") return Promise.resolve([mockRepo]);
+      return Promise.resolve([]);
+    });
+
+    render(
+      <MemoryRouter>
+        <HomePage />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("New Feature")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText("New Feature"));
+
+    expect(screen.getByText("Attachments")).toBeInTheDocument();
+    expect(screen.getByText("Add Files")).toBeInTheDocument();
+    expect(screen.getByText(/Attach design docs/)).toBeInTheDocument();
+  });
+
+  it("passes attachments to start_feature when files are attached", async () => {
+    const createdFeature = {
+      id: "f-att",
+      repo_ids: ["r1"],
+      name: "With Docs",
+      description: "Feature with attached docs",
+      branch: "feature/with-docs-abc1",
+      status: "ideation",
+      execution_mode: null,
+      execution_rationale: null,
+      selected_agents: [],
+      task_specs: [],
+      pty_session_id: null,
+      launched_command: null,
+      worktree_paths: {},
+      attachments: [{ name: "spec.md", content: "# Spec" }],
+      created_at: "2025-01-01T00:00:00Z",
+      updated_at: "2025-01-01T00:00:00Z",
+    };
+
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "list_repositories") return Promise.resolve([mockRepo]);
+      if (cmd === "list_features") return Promise.resolve([]);
+      if (cmd === "start_feature") return Promise.resolve(createdFeature);
+      if (cmd === "run_ideation") return Promise.resolve();
+      return Promise.resolve([]);
+    });
+
+    render(
+      <MemoryRouter>
+        <HomePage />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("New Feature")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText("New Feature"));
+
+    // Fill in form
+    fireEvent.change(screen.getByPlaceholderText("User Authentication"), {
+      target: { value: "With Docs" },
+    });
+    fireEvent.change(
+      screen.getByPlaceholderText(/Add user authentication/),
+      { target: { value: "Feature with attached docs" } },
+    );
+
+    // Simulate file attachment via the hidden input
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    expect(fileInput).toBeTruthy();
+
+    const file = new File(["# Spec"], "spec.md", { type: "text/markdown" });
+    Object.defineProperty(fileInput, "files", { value: [file] });
+    fireEvent.change(fileInput);
+
+    // Wait for file to be read
+    await waitFor(() => {
+      expect(screen.getByText("spec.md")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText("Start Feature"));
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("start_feature", expect.objectContaining({
+        attachments: [{ name: "spec.md", content: "# Spec" }],
+      }));
+    });
+  });
 });

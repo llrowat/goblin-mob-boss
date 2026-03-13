@@ -297,6 +297,7 @@ mod tests {
             "Test Feature".to_string(),
             "Test description".to_string(),
             "feature/test-1234".to_string(),
+            vec![],
         );
         f.execution_mode = Some(ExecutionMode::Teams);
         f.task_specs = vec![
@@ -412,6 +413,7 @@ mod tests {
             "Empty".to_string(),
             "desc".to_string(),
             "feature/empty-1234".to_string(),
+            vec![],
         );
         let analysis = analyze_execution(&feature, &["file.rs".to_string()], None);
         assert_eq!(analysis.planned_task_count, 0);
