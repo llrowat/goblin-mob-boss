@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { BrowserRouter, Routes, Route, NavLink, Navigate, useLocation } from "react-router-dom";
+import { useState, useEffect, useRef } from "react";
+import { BrowserRouter, Routes, Route, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { HomePage } from "./pages/HomePage";
 import { OnboardingPage } from "./pages/OnboardingPage";
 import { FeatureDetailPage } from "./pages/FeatureDetailPage";
@@ -48,20 +48,24 @@ function AppLayout() {
   const { planningCount, executingCount } = useBackgroundPlanning();
   const tauri = useTauri();
   const location = useLocation();
+  const navigate = useNavigate();
   const [agentCount, setAgentCount] = useState<number | null>(null);
   const [repoCount, setRepoCount] = useState<number | null>(null);
   const [mapCount, setMapCount] = useState<number | null>(null);
   const [activeFeatureCount, setActiveFeatureCount] = useState<number | null>(null);
-  const [initialRoute, setInitialRoute] = useState<string | null>(null);
+  const didInitialRedirect = useRef(false);
 
   // Re-fetch badge counts whenever the route changes
   useEffect(() => {
     tauri.listGlobalAgents().then((a) => setAgentCount(a.length));
     tauri.listRepositories().then((r) => {
       setRepoCount(r.length);
-      // On first load, determine if we should redirect to onboarding
-      if (initialRoute === null) {
-        setInitialRoute(r.length === 0 ? "/onboarding" : "");
+      // On first load, redirect to onboarding if no repos configured
+      if (!didInitialRedirect.current) {
+        didInitialRedirect.current = true;
+        if (r.length === 0 && location.pathname === "/") {
+          navigate("/onboarding", { replace: true });
+        }
       }
     });
     tauri.listSystemMaps().then((m) => setMapCount(m.length));
@@ -158,9 +162,7 @@ function AppLayout() {
       <main className="main-content">
         <ErrorBoundary>
           <Routes>
-            <Route path="/" element={
-              initialRoute === "/onboarding" ? <Navigate to="/onboarding" replace /> : <HomePage />
-            } />
+            <Route path="/" element={<HomePage />} />
             <Route path="/onboarding" element={<OnboardingPage />} />
             <Route
               path="/feature/:featureId/detail"
