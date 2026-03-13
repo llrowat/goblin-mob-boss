@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, act } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import App from "./App";
 
@@ -166,8 +166,9 @@ describe("App tab bar", () => {
     await waitFor(() => {});
   });
 
-  it("redirects to onboarding when no repos are configured", async () => {
+  it("redirects to onboarding on first load when no repos are configured", async () => {
     mockCounts(0, 0, 0);
+    window.history.pushState({}, "", "/");
     render(<App />);
 
     await waitFor(() => {
@@ -180,6 +181,30 @@ describe("App tab bar", () => {
     // Reset URL to root since previous test may have navigated away
     window.history.pushState({}, "", "/");
     render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("home-page")).toBeTruthy();
+    });
+  });
+
+  it("features tab always loads home page even with no repos", async () => {
+    mockCounts(0, 0, 0);
+    window.history.pushState({}, "", "/");
+    render(<App />);
+
+    // Wait for initial redirect to onboarding
+    await waitFor(() => {
+      expect(screen.getByTestId("onboarding-page")).toBeTruthy();
+    });
+
+    // Now click the Features tab — should show HomePage, not redirect back to onboarding
+    const nav = screen.getByRole("navigation");
+    const featuresTab = Array.from(nav.querySelectorAll(".topbar-tab"))
+      .find((el) => el.textContent?.includes("Features"));
+    expect(featuresTab).toBeTruthy();
+    await act(async () => {
+      featuresTab!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
 
     await waitFor(() => {
       expect(screen.getByTestId("home-page")).toBeTruthy();
