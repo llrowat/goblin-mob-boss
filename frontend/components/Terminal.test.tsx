@@ -121,4 +121,45 @@ describe("Terminal", () => {
     outputHandler({ payload: { seq: 0, session_id: "test-session", data: "late data" } });
     expect(mockWrite).not.toHaveBeenCalled();
   });
+
+  it("immediately unsubscribes stale listeners that resolve after teardown", async () => {
+    // Simulate the race condition: listen() returns a promise that resolves
+    // AFTER the component unmounts and cleanup runs.
+    const unsubFns: Array<ReturnType<typeof vi.fn>> = [];
+    let resolveOutput!: (fn: () => void) => void;
+    let resolveExit!: (fn: () => void) => void;
+
+    const mockListen = listen as ReturnType<typeof vi.fn>;
+    mockListen.mockImplementation((event: string) => {
+      if (event === "pty-output") {
+        const unsub = vi.fn();
+        unsubFns.push(unsub);
+        return new Promise<() => void>((resolve) => { resolveOutput = resolve; })
+          .then((fn) => fn || unsub);
+      }
+      const unsub = vi.fn();
+      unsubFns.push(unsub);
+      return new Promise<() => void>((resolve) => { resolveExit = resolve; })
+        .then((fn) => fn || unsub);
+    });
+
+    const { unmount } = render(<Terminal sessionId="test-session" />);
+
+    // Unmount BEFORE the listen promises resolve — this is the race condition
+    unmount();
+
+    // Now resolve the promises (simulating late async resolution)
+    const staleOutputUnsub = vi.fn();
+    const staleExitUnsub = vi.fn();
+    resolveOutput(staleOutputUnsub);
+    resolveExit(staleExitUnsub);
+
+    // Wait for microtask queue to flush
+    await new Promise((r) => setTimeout(r, 0));
+
+    // The stale unsub functions should have been called immediately
+    // because the generation has advanced past when they were created
+    expect(staleOutputUnsub).toHaveBeenCalled();
+    expect(staleExitUnsub).toHaveBeenCalled();
+  });
 });
