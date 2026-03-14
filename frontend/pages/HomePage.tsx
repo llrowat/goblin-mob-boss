@@ -1,8 +1,12 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { open } from "@tauri-apps/plugin-dialog";
+import { readTextFile } from "@tauri-apps/plugin-fs";
 import { useTauri } from "../hooks/useTauri";
 import { useBackgroundPlanning } from "../hooks/useBackgroundPlanning";
 import type { Repository, Feature, SystemMap, DocumentAttachment } from "../types";
+
+const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "ico"]);
 
 
 export function HomePage() {
@@ -25,9 +29,6 @@ export function HomePage() {
   useEffect(() => {
     tauri.listRepositories().then((r) => {
       setRepos(r);
-      if (r.length > 0 && selectedRepoIds.length === 0) {
-        setSelectedRepoIds([r[0].id]);
-      }
     });
     tauri.listSystemMaps().then(setMaps).catch(() => {});
   }, []);
@@ -383,7 +384,7 @@ export function HomePage() {
                       {att.name}
                     </span>
                     <span style={{ fontSize: 11, color: "var(--muted)" }}>
-                      {Math.ceil(att.content.length / 1024)}KB
+                      {att.file_path ? "image" : `${Math.ceil(att.content.length / 1024)}KB`}
                     </span>
                     <button
                       className="btn btn-secondary"
@@ -394,35 +395,42 @@ export function HomePage() {
                     </button>
                   </div>
                 ))}
-                <label
+                <button
                   className="btn btn-secondary"
-                  style={{ display: "inline-flex", alignItems: "center", gap: 6, width: "fit-content", cursor: "pointer" }}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 6, width: "fit-content" }}
+                  onClick={async () => {
+                    const selected = await open({
+                      multiple: true,
+                      title: "Attach files",
+                    });
+                    if (!selected) return;
+                    const paths = Array.isArray(selected) ? selected : [selected];
+                    const newAttachments: DocumentAttachment[] = [];
+                    for (const filePath of paths) {
+                      const name = filePath.split("/").pop() || filePath;
+                      const ext = name.split(".").pop()?.toLowerCase() || "";
+                      if (IMAGE_EXTENSIONS.has(ext)) {
+                        newAttachments.push({ name, content: "", file_path: filePath });
+                      } else {
+                        try {
+                          const content = await readTextFile(filePath);
+                          newAttachments.push({ name, content });
+                        } catch {
+                          newAttachments.push({ name, content: `[Failed to read file: ${filePath}]` });
+                        }
+                      }
+                    }
+                    setAttachments((prev) => [...prev, ...newAttachments]);
+                  }}
                 >
                   <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
                     <path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
                   </svg>
                   Add Files
-                  <input
-                    type="file"
-                    multiple
-                    accept=".txt,.md,.json,.yaml,.yml,.toml,.csv,.xml,.html,.css,.js,.ts,.tsx,.jsx,.py,.rs,.go,.java,.c,.cpp,.h,.hpp,.sh,.sql,.graphql,.proto,.env.example,.cfg,.ini,.conf,.log"
-                    style={{ display: "none" }}
-                    onChange={async (e) => {
-                      const files = e.target.files;
-                      if (!files) return;
-                      const newAttachments: DocumentAttachment[] = [];
-                      for (const file of Array.from(files)) {
-                        const content = await file.text();
-                        newAttachments.push({ name: file.name, content });
-                      }
-                      setAttachments((prev) => [...prev, ...newAttachments]);
-                      e.target.value = "";
-                    }}
-                  />
-                </label>
+                </button>
               </div>
               <div className="form-help">
-                Attach design docs, specs, or reference files to give Claude extra context.
+                Attach design docs, specs, images, or reference files to give Claude extra context.
               </div>
             </div>
 

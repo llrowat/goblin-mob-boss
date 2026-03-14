@@ -2,12 +2,18 @@ use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::io::{Read, Write};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 
+/// Global monotonic counter so every pty-output event has a unique sequence number.
+/// The frontend uses this to skip duplicate deliveries.
+static EVENT_SEQ: AtomicU64 = AtomicU64::new(0);
+
 #[derive(Clone, Serialize)]
 struct PtyOutputPayload {
+    seq: u64,
     session_id: String,
     data: String,
 }
@@ -55,11 +61,15 @@ pub fn spawn_pty_session(
         })
         .map_err(|e| format!("Failed to open PTY: {}", e))?;
 
-    let mut command = CommandBuilder::new(cmd);
+    // Strip nul bytes from all inputs — CommandBuilder uses CString internally
+    // and will fail with "nul byte found in provided data" if any are present.
+    let sanitize = |s: &str| s.replace('\0', "");
+
+    let mut command = CommandBuilder::new(sanitize(cmd));
     for arg in args {
-        command.arg(arg);
+        command.arg(sanitize(arg));
     }
-    command.cwd(cwd);
+    command.cwd(sanitize(cwd));
     // Set terminal type so tmux and other TUI programs render correctly in xterm.js
     command.env("TERM", "xterm-256color");
     command.env("COLORTERM", "truecolor");
@@ -67,10 +77,10 @@ pub fn spawn_pty_session(
     // where Claude Code is installed (e.g. via npm/nvm). Propagate the
     // user's full login-shell PATH so the PTY process can find `claude`.
     if let Some(path) = resolved_user_path {
-        command.env("PATH", path);
+        command.env("PATH", sanitize(path));
     }
     for (key, val) in env_vars {
-        command.env(key, val);
+        command.env(&sanitize(key), sanitize(val));
     }
 
     let child = pair
@@ -129,6 +139,7 @@ fn start_reader_thread(
                         let _ = app_handle.emit(
                             "pty-output",
                             PtyOutputPayload {
+                                seq: EVENT_SEQ.fetch_add(1, Ordering::Relaxed),
                                 session_id: session_id.clone(),
                                 data: std::mem::take(&mut pending),
                             },
@@ -144,6 +155,7 @@ fn start_reader_thread(
                         let _ = app_handle.emit(
                             "pty-output",
                             PtyOutputPayload {
+                                seq: EVENT_SEQ.fetch_add(1, Ordering::Relaxed),
                                 session_id: session_id.clone(),
                                 data: std::mem::take(&mut pending),
                             },
@@ -156,6 +168,7 @@ fn start_reader_thread(
                         let _ = app_handle.emit(
                             "pty-output",
                             PtyOutputPayload {
+                                seq: EVENT_SEQ.fetch_add(1, Ordering::Relaxed),
                                 session_id: session_id.clone(),
                                 data: std::mem::take(&mut pending),
                             },

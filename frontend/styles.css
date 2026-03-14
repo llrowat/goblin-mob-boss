@@ -168,6 +168,26 @@ body {
   flex-shrink: 0;
   overflow-y: auto;
   padding-left: 8px;
+  transition: width 0.2s ease;
+}
+
+.feature-detail-sidebar.collapsed {
+  width: 44px;
+  flex-shrink: 0;
+  overflow: visible;
+}
+
+.feature-detail-sidebar.collapsed .feature-sidebar-panel {
+  padding: 0;
+  min-width: 0;
+  width: 44px;
+}
+
+.feature-detail-sidebar.collapsed .activity-log-toggle {
+  width: 44px;
+  height: 44px;
+  justify-content: center;
+  padding: 0;
 }
 
 .feature-sidebar-panel {
@@ -2244,6 +2264,7 @@ body {
 .activity-log-toggle {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
   width: 100%;
   background: none;
@@ -2259,10 +2280,9 @@ body {
 }
 
 .activity-log-chevron {
-  font-size: 10px;
   color: var(--muted);
   transition: transform 0.15s ease-out;
-  display: inline-block;
+  flex-shrink: 0;
 }
 
 .activity-log-chevron.collapsed {

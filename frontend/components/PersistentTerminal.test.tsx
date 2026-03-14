@@ -41,12 +41,20 @@ describe("PersistentTerminal", () => {
     mockSession = { featureId: "f1", sessionId: "pty-1" };
     mockPathname = "/feature/f1/detail";
     Element.prototype.scrollIntoView = vi.fn();
+    // The terminal only renders when a portal target exists in the DOM
+    const portal = document.createElement("div");
+    portal.id = "terminal-portal-target";
+    document.body.appendChild(portal);
     mockedInvoke.mockImplementation(async (cmd: string) => {
       if (cmd === "get_feature") {
         return { launched_command: "claude --prompt test", task_specs: [] };
       }
       return undefined;
     });
+  });
+
+  afterEach(() => {
+    document.getElementById("terminal-portal-target")?.remove();
   });
 
   it("renders nothing when no session", () => {
@@ -57,22 +65,24 @@ describe("PersistentTerminal", () => {
 
   it("shows execution section with cancel button on detail page", async () => {
     render(<PersistentTerminal />);
-    expect(screen.getByText("Execution")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText("Execution")).toBeInTheDocument();
+    });
     expect(screen.getByText("Cancel Execution")).toBeInTheDocument();
     expect(screen.getByTestId("mock-terminal")).toBeInTheDocument();
-    await waitFor(() => {});
   });
 
-  it("is hidden on other pages", async () => {
+  it("renders nothing on other pages", () => {
     mockPathname = "/";
-    render(<PersistentTerminal />);
-    const container = screen.getByText("Execution").closest(".persistent-terminal-inline");
-    expect(container).toHaveStyle({ display: "none" });
-    await waitFor(() => {});
+    const { container } = render(<PersistentTerminal />);
+    expect(container.innerHTML).toBe("");
   });
 
   it("calls cancel_execution and clears session on cancel", async () => {
     render(<PersistentTerminal />);
+    await waitFor(() => {
+      expect(screen.getByText("Cancel Execution")).toBeInTheDocument();
+    });
 
     await userEvent.click(screen.getByText("Cancel Execution"));
 
@@ -84,6 +94,9 @@ describe("PersistentTerminal", () => {
 
   it("marks feature ready and clears session on terminal exit", async () => {
     render(<PersistentTerminal />);
+    await waitFor(() => {
+      expect(screen.getByText("exit")).toBeInTheDocument();
+    });
 
     await userEvent.click(screen.getByText("exit"));
 

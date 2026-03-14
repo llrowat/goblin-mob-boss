@@ -1269,21 +1269,28 @@ export function FeatureDetailPage() {
       </div>
 
       {/* Activity Log Sidebar */}
-      <div className="feature-detail-sidebar">
+      <div className={`feature-detail-sidebar${activityLogCollapsed ? " collapsed" : ""}`}>
         <div className="panel feature-sidebar-panel">
           <button
             className="activity-log-toggle"
             onClick={() => setActivityLogCollapsed((c) => !c)}
             aria-expanded={!activityLogCollapsed}
+            title={activityLogCollapsed ? "Show activity log" : "Hide activity log"}
           >
-            <span className={`activity-log-chevron${activityLogCollapsed ? " collapsed" : ""}`}>&#9662;</span>
-            <span className="panel-title" style={{ fontSize: 12 }}>
-              Activity Log
-            </span>
-            {activityLogCollapsed && (
-              <span className="activity-log-count">
-                {(feature.activity_log ?? []).length}
-              </span>
+            {activityLogCollapsed ? (
+              <svg width="18" height="18" viewBox="0 0 16 16" fill="none" style={{ opacity: 0.6 }}>
+                <path d="M8 14A6 6 0 1 0 8 2a6 6 0 0 0 0 12Z" stroke="currentColor" strokeWidth="1.3" />
+                <path d="M8 5v3.5l2.5 1.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            ) : (
+              <>
+                <svg className={`activity-log-chevron${activityLogCollapsed ? " collapsed" : ""}`} width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <path d="M4.5 6L8 9.5L11.5 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                <span className="panel-title" style={{ fontSize: 12 }}>
+                  Activity Log
+                </span>
+              </>
             )}
           </button>
           {!activityLogCollapsed && (

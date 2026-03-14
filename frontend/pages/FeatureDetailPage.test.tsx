@@ -1044,17 +1044,16 @@ describe("FeatureDetailPage", () => {
     expect(toggle).toHaveAttribute("aria-expanded", "true");
     await userEvent.click(toggle);
 
-    // Entries should be hidden, count badge should appear
+    // Entries should be hidden, toggle shows clock icon instead of text
     expect(screen.queryByText("Feature created")).not.toBeInTheDocument();
     expect(screen.queryByText("Plan generated")).not.toBeInTheDocument();
     expect(toggle).toHaveAttribute("aria-expanded", "false");
-    expect(screen.getByText("2")).toBeInTheDocument(); // count badge
 
-    // Click again to expand
-    await userEvent.click(toggle);
+    // Click clock icon to expand (button title changes when collapsed)
+    const collapsedToggle = screen.getByTitle("Show activity log");
+    await userEvent.click(collapsedToggle);
     expect(screen.getByText("Feature created")).toBeInTheDocument();
     expect(screen.getByText("Plan generated")).toBeInTheDocument();
-    expect(toggle).toHaveAttribute("aria-expanded", "true");
   });
 
   it("does not show per-repo panel for single-repo ready features", async () => {

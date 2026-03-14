@@ -75,12 +75,14 @@ export function PersistentTerminal() {
     navigate(0);
   };
 
-  const content = (
-    <div
-      ref={containerRef}
-      className="persistent-terminal-inline"
-      style={isOnFeaturePage ? undefined : { display: "none" }}
-    >
+  // Only render the terminal once we have a stable portal target.
+  // Previously, the Terminal mounted inline (hidden) then moved into
+  // the portal, causing xterm + event listeners to tear down and
+  // re-create — producing duplicate output.
+  if (!isOnFeaturePage || !portalTarget) return null;
+
+  return createPortal(
+    <div ref={containerRef} className="persistent-terminal-inline">
       <div className="panel" style={{ marginTop: 16 }}>
         <div className="panel-header">
           <div className="panel-title">
@@ -119,14 +121,7 @@ export function PersistentTerminal() {
         )}
         <Terminal sessionId={session.sessionId} onExit={handleExit} />
       </div>
-    </div>
+    </div>,
+    portalTarget,
   );
-
-  // When on the feature detail page and the portal target exists,
-  // render into the portal target so the terminal appears above Validation & PR
-  if (portalTarget) {
-    return createPortal(content, portalTarget);
-  }
-
-  return content;
 }

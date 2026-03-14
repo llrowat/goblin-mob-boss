@@ -148,10 +148,17 @@ Rules for functional testing:
     } else {
         let mut section = String::from("\n## Attached Documents\n\nThe user has attached the following documents as additional context. Read them carefully — they may contain requirements, design specs, API schemas, or other important information.\n\n");
         for attachment in attachments {
-            section.push_str(&format!(
-                "### {}\n\n{}\n\n",
-                attachment.name, attachment.content
-            ));
+            if let Some(path) = &attachment.file_path {
+                section.push_str(&format!(
+                    "### {} (image)\n\nThis is an image file. Read it with your Read tool to view it: `{}`\n\n",
+                    attachment.name, path
+                ));
+            } else {
+                section.push_str(&format!(
+                    "### {}\n\n{}\n\n",
+                    attachment.name, attachment.content
+                ));
+            }
         }
         section
     };
@@ -565,10 +572,12 @@ mod tests {
             crate::models::DocumentAttachment {
                 name: "design-spec.md".to_string(),
                 content: "# Design Spec\n\nThe widget should be blue.".to_string(),
+                file_path: None,
             },
             crate::models::DocumentAttachment {
                 name: "api-schema.json".to_string(),
                 content: r#"{"endpoint": "/api/v1/widgets"}"#.to_string(),
+                file_path: None,
             },
         ];
         let prompt = ideation_user_prompt_full("desc", "/tasks", "agents", "", false, &attachments);
@@ -590,6 +599,7 @@ mod tests {
         let attachments = vec![crate::models::DocumentAttachment {
             name: "spec.md".to_string(),
             content: "Important spec content".to_string(),
+            file_path: None,
         }];
         let answers = vec![crate::models::PlanningAnswer {
             id: "q1".to_string(),

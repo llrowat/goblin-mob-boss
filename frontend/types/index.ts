@@ -111,6 +111,8 @@ export interface TestingStatus {
 export interface DocumentAttachment {
   name: string;
   content: string;
+  /** For image files: absolute path so Claude can read the file directly. */
+  file_path?: string;
 }
 
 export interface Feature {

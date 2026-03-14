@@ -10,6 +10,41 @@ interface TerminalProps {
   onExit?: () => void;
 }
 
+// ── Single global listener architecture ──
+// Instead of each Terminal component registering its own listen() call
+// (which races with React StrictMode, HMR, and portal transitions),
+// we maintain ONE global listener that dispatches to the active handler.
+type OutputHandler = (data: string) => void;
+type ExitHandler = (exitCode: number | null) => void;
+
+const outputHandlers = new Map<string, OutputHandler>();
+const exitHandlers = new Map<string, ExitHandler>();
+let globalOutputUnsub: (() => void) | null = null;
+let globalExitUnsub: (() => void) | null = null;
+let listenerRefCount = 0;
+
+function ensureGlobalListeners() {
+  if (listenerRefCount++ > 0) return; // already set up
+
+  listen<{ seq: number; session_id: string; data: string }>("pty-output", (event) => {
+    const handler = outputHandlers.get(event.payload.session_id);
+    if (handler) handler(event.payload.data);
+  }).then((fn) => { globalOutputUnsub = fn; });
+
+  listen<{ session_id: string; exit_code: number | null }>("pty-exit", (event) => {
+    const handler = exitHandlers.get(event.payload.session_id);
+    if (handler) handler(event.payload.exit_code);
+  }).then((fn) => { globalExitUnsub = fn; });
+}
+
+function releaseGlobalListeners() {
+  if (--listenerRefCount > 0) return; // other terminals still active
+  globalOutputUnsub?.();
+  globalExitUnsub?.();
+  globalOutputUnsub = null;
+  globalExitUnsub = null;
+}
+
 export function Terminal({ sessionId, onExit }: TerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const onExitRef = useRef(onExit);
@@ -37,7 +72,6 @@ export function Terminal({ sessionId, onExit }: TerminalProps) {
     term.open(containerRef.current);
 
     // Delay initial fit to ensure DOM layout is complete before measuring.
-    // This prevents tmux from starting with wrong dimensions.
     let lastCols = 0;
     let lastRows = 0;
     const syncSize = () => {
@@ -59,44 +93,18 @@ export function Terminal({ sessionId, onExit }: TerminalProps) {
       invoke("write_pty", { sessionId, data }).catch(() => {});
     });
 
-    // PTY output -> terminal
-    // Use a disposed flag to handle the race between async listen() setup
-    // and synchronous effect cleanup (e.g. React StrictMode double-mount).
-    // Without this, cleanup can run before .then() assigns the unlisten fn,
-    // leaving orphaned listeners that cause duplicate writes.
-    let disposed = false;
-    let unlistenOutput: (() => void) | null = null;
-    let unlistenExit: (() => void) | null = null;
-
-    listen<{ session_id: string; data: string }>("pty-output", (event) => {
-      if (!disposed && event.payload.session_id === sessionId) {
-        term.write(event.payload.data);
-      }
-    }).then((fn) => {
-      if (disposed) {
-        fn();
-      } else {
-        unlistenOutput = fn;
-      }
+    // Register this terminal as the handler — replaces any previous
+    // handler for the same session (e.g. from StrictMode double-mount).
+    // There is exactly ONE global listener dispatching to this map,
+    // so duplicate writes are impossible.
+    outputHandlers.set(sessionId, (data) => term.write(data));
+    exitHandlers.set(sessionId, () => {
+      term.write("\r\n\x1b[90m[Process exited]\x1b[0m\r\n");
+      onExitRef.current?.();
     });
+    ensureGlobalListeners();
 
-    listen<{ session_id: string; exit_code: number | null }>(
-      "pty-exit",
-      (event) => {
-        if (!disposed && event.payload.session_id === sessionId) {
-          term.write("\r\n\x1b[90m[Process exited]\x1b[0m\r\n");
-          onExitRef.current?.();
-        }
-      },
-    ).then((fn) => {
-      if (disposed) {
-        fn();
-      } else {
-        unlistenExit = fn;
-      }
-    });
-
-    // Debounced resize to avoid flooding tmux with rapid SIGWINCH signals
+    // Debounced resize to avoid flooding with rapid SIGWINCH signals
     let resizeTimer: ReturnType<typeof setTimeout> | null = null;
     const doResize = () => {
       if (resizeTimer) clearTimeout(resizeTimer);
@@ -107,13 +115,13 @@ export function Terminal({ sessionId, onExit }: TerminalProps) {
     observer.observe(containerRef.current);
 
     return () => {
-      disposed = true;
       clearTimeout(initTimer);
       if (resizeTimer) clearTimeout(resizeTimer);
       observer.disconnect();
       dataDisposable.dispose();
-      unlistenOutput?.();
-      unlistenExit?.();
+      outputHandlers.delete(sessionId);
+      exitHandlers.delete(sessionId);
+      releaseGlobalListeners();
       term.dispose();
     };
   }, [sessionId]);

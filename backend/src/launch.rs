@@ -163,7 +163,14 @@ fn build_attachments_section(attachments: &[DocumentAttachment]) -> String {
     }
     let mut section = String::from("## Attached Documents\n\n");
     for attachment in attachments {
-        section.push_str(&format!("### {}\n\n{}\n\n", attachment.name, attachment.content));
+        if let Some(path) = &attachment.file_path {
+            section.push_str(&format!(
+                "### {} (image)\n\nThis is an image file. Read it with your Read tool to view it: `{}`\n\n",
+                attachment.name, path
+            ));
+        } else {
+            section.push_str(&format!("### {}\n\n{}\n\n", attachment.name, attachment.content));
+        }
     }
     section
 }
@@ -468,6 +475,7 @@ mod tests {
         feature.attachments = vec![DocumentAttachment {
             name: "design.md".to_string(),
             content: "Widget must be blue".to_string(),
+            file_path: None,
         }];
         let (_, _, prompt) = build_launch(&feature, "System prompt");
         assert!(prompt.contains("Attached Documents"));
@@ -481,11 +489,27 @@ mod tests {
         feature.attachments = vec![DocumentAttachment {
             name: "api-spec.json".to_string(),
             content: r#"{"endpoint": "/widgets"}"#.to_string(),
+            file_path: None,
         }];
         let (_, _, prompt) = build_launch(&feature, "System prompt");
         assert!(prompt.contains("Attached Documents"));
         assert!(prompt.contains("### api-spec.json"));
         assert!(prompt.contains("/widgets"));
+    }
+
+    #[test]
+    fn prompt_includes_image_attachment_as_path() {
+        let mut feature = make_feature(ExecutionMode::Subagents);
+        feature.attachments = vec![DocumentAttachment {
+            name: "mockup.png".to_string(),
+            content: String::new(),
+            file_path: Some("/Users/me/mockup.png".to_string()),
+        }];
+        let (_, _, prompt) = build_launch(&feature, "System prompt");
+        assert!(prompt.contains("Attached Documents"));
+        assert!(prompt.contains("mockup.png (image)"));
+        assert!(prompt.contains("/Users/me/mockup.png"));
+        assert!(prompt.contains("Read tool"));
     }
 
     #[test]

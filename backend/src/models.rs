@@ -446,8 +446,11 @@ impl Feature {
 pub struct DocumentAttachment {
     /// Original file name (e.g. "design-spec.md").
     pub name: String,
-    /// The full text content of the document.
+    /// The full text content of the document (empty for image attachments).
     pub content: String,
+    /// For image files: absolute path so Claude can read the file directly.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file_path: Option<String>,
 }
 
 // ── Task Spec ──
@@ -2158,10 +2161,12 @@ You are enabled by default."#;
             DocumentAttachment {
                 name: "spec.md".to_string(),
                 content: "# Spec\nDetails here".to_string(),
+                file_path: None,
             },
             DocumentAttachment {
                 name: "schema.json".to_string(),
                 content: r#"{"type": "object"}"#.to_string(),
+                file_path: None,
             },
         ];
         let feature = Feature::new(
@@ -2186,6 +2191,7 @@ You are enabled by default."#;
             vec![DocumentAttachment {
                 name: "design.md".to_string(),
                 content: "Blue widgets".to_string(),
+                file_path: None,
             }],
         );
         feature.execution_mode = Some(ExecutionMode::Subagents);

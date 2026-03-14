@@ -9,6 +9,16 @@ vi.mock("react-router-dom", async () => {
   return { ...actual, useNavigate: () => mockNavigate };
 });
 
+const mockDialogOpen = vi.fn();
+vi.mock("@tauri-apps/plugin-dialog", () => ({
+  open: (...args: unknown[]) => mockDialogOpen(...args),
+}));
+
+const mockReadTextFile = vi.fn();
+vi.mock("@tauri-apps/plugin-fs", () => ({
+  readTextFile: (...args: unknown[]) => mockReadTextFile(...args),
+}));
+
 const mockAddPlanning = vi.fn();
 vi.mock("../hooks/useBackgroundPlanning", () => ({
   useBackgroundPlanning: () => ({
@@ -323,6 +333,10 @@ describe("HomePage", () => {
       { target: { value: "Build something cool" } },
     );
 
+    // Select a repo (no longer auto-selected)
+    const repoCheckbox = screen.getByRole("checkbox");
+    fireEvent.click(repoCheckbox);
+
     fireEvent.click(screen.getByText("Start Feature"));
 
     await waitFor(() => {
@@ -473,6 +487,10 @@ describe("HomePage", () => {
       return Promise.resolve([]);
     });
 
+    // Mock dialog to return a text file path, and readTextFile to return its content
+    mockDialogOpen.mockResolvedValueOnce(["/home/user/spec.md"]);
+    mockReadTextFile.mockResolvedValueOnce("# Spec");
+
     render(
       <MemoryRouter>
         <HomePage />
@@ -494,18 +512,17 @@ describe("HomePage", () => {
       { target: { value: "Feature with attached docs" } },
     );
 
-    // Simulate file attachment via the hidden input
-    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
-    expect(fileInput).toBeTruthy();
+    // Click "Add Files" button to trigger Tauri dialog
+    fireEvent.click(screen.getByText("Add Files"));
 
-    const file = new File(["# Spec"], "spec.md", { type: "text/markdown" });
-    Object.defineProperty(fileInput, "files", { value: [file] });
-    fireEvent.change(fileInput);
-
-    // Wait for file to be read
+    // Wait for file to be read and displayed
     await waitFor(() => {
       expect(screen.getByText("spec.md")).toBeInTheDocument();
     });
+
+    // Select the repo
+    const repoCheckbox = screen.getByRole("checkbox");
+    fireEvent.click(repoCheckbox);
 
     fireEvent.click(screen.getByText("Start Feature"));
 
@@ -514,5 +531,40 @@ describe("HomePage", () => {
         attachments: [{ name: "spec.md", content: "# Spec" }],
       }));
     });
+  });
+
+  it("attaches image files with file_path instead of content", async () => {
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "list_repositories") return Promise.resolve([mockRepo]);
+      if (cmd === "list_features") return Promise.resolve([]);
+      return Promise.resolve([]);
+    });
+
+    // Mock dialog to return an image file path
+    mockDialogOpen.mockResolvedValueOnce(["/home/user/mockup.png"]);
+
+    render(
+      <MemoryRouter>
+        <HomePage />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("New Feature")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText("New Feature"));
+
+    // Click "Add Files" to trigger dialog
+    fireEvent.click(screen.getByText("Add Files"));
+
+    // Image should show with "image" label instead of KB size
+    await waitFor(() => {
+      expect(screen.getByText("mockup.png")).toBeInTheDocument();
+      expect(screen.getByText("image")).toBeInTheDocument();
+    });
+
+    // readTextFile should NOT have been called for an image
+    expect(mockReadTextFile).not.toHaveBeenCalled();
   });
 });

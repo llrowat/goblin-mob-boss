@@ -1553,7 +1553,7 @@ export function SystemMapPage() {
                     className="map-detail-route"
                     onClick={() => openEditConnection(c)}
                   >
-                    {fromSvc?.name ?? "?"} \u2192 {c.connection_type}
+                    {fromSvc?.name ?? "?"} {'\u2192'} {c.connection_type}
                     {c.label && ` (${c.label})`}
                     {!c.sync && " [async]"}
                   </div>
@@ -1573,7 +1573,7 @@ export function SystemMapPage() {
                     className="map-detail-route"
                     onClick={() => openEditConnection(c)}
                   >
-                    \u2192 {toSvc?.name ?? "?"} ({c.connection_type})
+                    {'\u2192'} {toSvc?.name ?? "?"} ({c.connection_type})
                     {c.label && ` ${c.label}`}
                     {!c.sync && " [async]"}
                   </div>

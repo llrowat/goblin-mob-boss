@@ -75,49 +75,50 @@ describe("Terminal", () => {
     expect(mockDispose).toHaveBeenCalled();
   });
 
-  it("unregisters listeners that resolve after unmount (StrictMode double-mount)", async () => {
-    // Simulate the race: listen() resolves AFTER the effect cleanup runs
-    const unlistenOutput = vi.fn();
-    const unlistenExit = vi.fn();
-    let resolveOutput!: (fn: () => void) => void;
-    let resolveExit!: (fn: () => void) => void;
-
+  it("sets up global listeners on first mount", () => {
     const mockListen = listen as ReturnType<typeof vi.fn>;
-    mockListen
-      .mockImplementationOnce(
-        () => new Promise<() => void>((r) => (resolveOutput = r)),
-      )
-      .mockImplementationOnce(
-        () => new Promise<() => void>((r) => (resolveExit = r)),
-      );
+    mockListen.mockImplementation(() => Promise.resolve(() => {}));
 
-    const { unmount } = render(<Terminal sessionId="test-session" />);
-    // Unmount before listen promises resolve
-    unmount();
-
-    // Now resolve the listen promises — the unlisten fns should be called immediately
-    resolveOutput(unlistenOutput);
-    resolveExit(unlistenExit);
-    await waitFor(() => {
-      expect(unlistenOutput).toHaveBeenCalled();
-      expect(unlistenExit).toHaveBeenCalled();
-    });
+    render(<Terminal sessionId="test-session" />);
+    // Global listeners: one for pty-output, one for pty-exit
+    expect(mockListen).toHaveBeenCalledWith("pty-output", expect.any(Function));
+    expect(mockListen).toHaveBeenCalledWith("pty-exit", expect.any(Function));
   });
 
-  it("ignores pty-output events after unmount", async () => {
-    let outputHandler!: (event: { payload: { session_id: string; data: string } }) => void;
+  it("dispatches pty-output to the correct terminal", async () => {
+    let outputHandler!: (event: { payload: { seq: number; session_id: string; data: string } }) => void;
     const mockListen = listen as ReturnType<typeof vi.fn>;
-    mockListen.mockImplementationOnce((_event: string, handler: typeof outputHandler) => {
-      outputHandler = handler;
+    mockListen.mockImplementation((event: string, handler: typeof outputHandler) => {
+      if (event === "pty-output") outputHandler = handler;
       return Promise.resolve(() => {});
-    }).mockImplementationOnce(() => Promise.resolve(() => {}));
+    });
+
+    render(<Terminal sessionId="test-session" />);
+
+    // Simulate a pty-output event
+    outputHandler({ payload: { seq: 0, session_id: "test-session", data: "hello" } });
+    expect(mockWrite).toHaveBeenCalledWith("hello");
+
+    // Event for a different session should be ignored
+    mockWrite.mockClear();
+    outputHandler({ payload: { seq: 1, session_id: "other-session", data: "nope" } });
+    expect(mockWrite).not.toHaveBeenCalled();
+  });
+
+  it("does not write after unmount", async () => {
+    let outputHandler!: (event: { payload: { seq: number; session_id: string; data: string } }) => void;
+    const mockListen = listen as ReturnType<typeof vi.fn>;
+    mockListen.mockImplementation((event: string, handler: typeof outputHandler) => {
+      if (event === "pty-output") outputHandler = handler;
+      return Promise.resolve(() => {});
+    });
 
     const { unmount } = render(<Terminal sessionId="test-session" />);
     unmount();
 
-    // Fire event after unmount — write should not be called
+    // Fire event after unmount — handler should be removed from map
     mockWrite.mockClear();
-    outputHandler({ payload: { session_id: "test-session", data: "late data" } });
+    outputHandler({ payload: { seq: 0, session_id: "test-session", data: "late data" } });
     expect(mockWrite).not.toHaveBeenCalled();
   });
 });
