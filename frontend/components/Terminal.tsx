@@ -22,23 +22,43 @@ const exitHandlers = new Map<string, ExitHandler>();
 let globalOutputUnsub: (() => void) | null = null;
 let globalExitUnsub: (() => void) | null = null;
 let listenerRefCount = 0;
+// Monotonic generation counter: incremented on every teardown so that
+// late-resolving listen() promises from a previous generation can
+// detect they are stale and immediately unsubscribe themselves.
+let listenerGeneration = 0;
 
 function ensureGlobalListeners() {
   if (listenerRefCount++ > 0) return; // already set up
 
+  const gen = listenerGeneration;
+
   listen<{ seq: number; session_id: string; data: string }>("pty-output", (event) => {
     const handler = outputHandlers.get(event.payload.session_id);
     if (handler) handler(event.payload.data);
-  }).then((fn) => { globalOutputUnsub = fn; });
+  }).then((fn) => {
+    if (gen !== listenerGeneration) {
+      // This listener was created before the last teardown — it's stale.
+      fn();
+    } else {
+      globalOutputUnsub = fn;
+    }
+  });
 
   listen<{ session_id: string; exit_code: number | null }>("pty-exit", (event) => {
     const handler = exitHandlers.get(event.payload.session_id);
     if (handler) handler(event.payload.exit_code);
-  }).then((fn) => { globalExitUnsub = fn; });
+  }).then((fn) => {
+    if (gen !== listenerGeneration) {
+      fn();
+    } else {
+      globalExitUnsub = fn;
+    }
+  });
 }
 
 function releaseGlobalListeners() {
   if (--listenerRefCount > 0) return; // other terminals still active
+  listenerGeneration++;
   globalOutputUnsub?.();
   globalExitUnsub?.();
   globalOutputUnsub = null;
