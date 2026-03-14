@@ -1665,6 +1665,10 @@ body {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   overflow: hidden;
+  /* Force GPU compositing layer — prevents WebKit from missing
+     repaints during rapid DOM mutations (xterm.js DOM renderer
+     updates frequently as Claude Code streams output). */
+  will-change: contents;
 }
 
 .terminal-status {

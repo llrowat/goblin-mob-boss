@@ -125,12 +125,22 @@ fn start_reader_thread(
     std::thread::spawn(move || {
         let mut buf = [0u8; 8192];
         let mut pending = String::new();
+        // Carry-over buffer for incomplete UTF-8 sequences split across reads.
+        // Without this, multi-byte characters (emoji, CJK, etc.) that straddle
+        // a read boundary get replaced with U+FFFD by from_utf8_lossy, corrupting
+        // the output and breaking xterm.js's escape sequence parser.
+        let mut utf8_remainder: Vec<u8> = Vec::new();
         let mut last_flush = Instant::now();
         let flush_interval = Duration::from_millis(16);
 
         loop {
             match reader.read(&mut buf) {
                 Ok(0) => {
+                    // EOF — flush any remaining valid data
+                    if !utf8_remainder.is_empty() {
+                        pending.push_str(&String::from_utf8_lossy(&utf8_remainder));
+                        utf8_remainder.clear();
+                    }
                     if !pending.is_empty() {
                         let _ = app_handle.emit_to(
                             EventTarget::webview_window("main"),
@@ -145,7 +155,37 @@ fn start_reader_thread(
                     break;
                 }
                 Ok(n) => {
-                    pending.push_str(&String::from_utf8_lossy(&buf[..n]));
+                    // Prepend any leftover bytes from the previous read
+                    let chunk = if utf8_remainder.is_empty() {
+                        &buf[..n]
+                    } else {
+                        utf8_remainder.extend_from_slice(&buf[..n]);
+                        utf8_remainder.as_slice()
+                    };
+
+                    // Find the longest valid UTF-8 prefix
+                    match std::str::from_utf8(chunk) {
+                        Ok(s) => {
+                            pending.push_str(s);
+                            utf8_remainder.clear();
+                        }
+                        Err(e) => {
+                            let valid_up_to = e.valid_up_to();
+                            // Safe: we know bytes up to valid_up_to are valid UTF-8
+                            let valid = unsafe { std::str::from_utf8_unchecked(&chunk[..valid_up_to]) };
+                            pending.push_str(valid);
+                            // Keep the trailing incomplete bytes for the next read
+                            let remainder = &chunk[valid_up_to..];
+                            if remainder.len() >= 4 {
+                                // 4+ bytes can't be a partial character — it's truly invalid
+                                pending.push_str(&String::from_utf8_lossy(remainder));
+                                utf8_remainder.clear();
+                            } else {
+                                utf8_remainder = remainder.to_vec();
+                            }
+                        }
+                    }
+
                     if last_flush.elapsed() >= flush_interval || pending.len() > 32768 {
                         let _ = app_handle.emit_to(
                             EventTarget::webview_window("main"),
@@ -160,6 +200,10 @@ fn start_reader_thread(
                     }
                 }
                 Err(_) => {
+                    if !utf8_remainder.is_empty() {
+                        pending.push_str(&String::from_utf8_lossy(&utf8_remainder));
+                        utf8_remainder.clear();
+                    }
                     if !pending.is_empty() {
                         let _ = app_handle.emit_to(
                             EventTarget::webview_window("main"),

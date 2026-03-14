@@ -26,7 +26,7 @@ export function Terminal({ sessionId, onExit }: TerminalProps) {
         selectionBackground: "#3a3a42",
       },
       fontFamily:
-        "'SF Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace",
+        "'SF Mono', 'Fira Code', 'Cascadia Code', Consolas, 'Noto Sans Mono', monospace",
       fontSize: 13,
       cursorBlink: true,
       rescaleOverlappingGlyphs: true,
