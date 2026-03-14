@@ -275,6 +275,9 @@ export function useTauri() {
     ptySessionExists: (sessionId: string) =>
       invoke<boolean>("pty_session_exists", { sessionId }),
 
+    pollPtyOutput: (sessionId: string) =>
+      invoke<[string, boolean, number | null]>("poll_pty_output", { sessionId }),
+
     // Built-in Agents & Recipes
     listBuiltInAgents: () =>
       invoke<AgentFile[]>("list_built_in_agents"),

@@ -515,7 +515,7 @@ export function FeatureDetailPage() {
         ideationResult.functional_test_steps,
       );
       autoEndedRef.current = false;
-      const sessionId = await tauri.startLaunchPty(featureId, 120, 30);
+      const sessionId = await tauri.startLaunchPty(featureId, 80, 24);
       startSession(featureId, sessionId);
       // Refresh feature state so polling effects detect "executing" status
       const updated = await tauri.getFeature(featureId);
@@ -754,7 +754,7 @@ export function FeatureDetailPage() {
     setError("");
     setTaskProgress(null);
     try {
-      const sessionId = await tauri.startLaunchPty(featureId, 120, 30);
+      const sessionId = await tauri.startLaunchPty(featureId, 80, 24);
       startSession(featureId, sessionId);
       const updated = await tauri.getFeature(featureId);
       setFeature(updated);

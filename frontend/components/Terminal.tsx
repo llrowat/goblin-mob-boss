@@ -10,61 +10,6 @@ interface TerminalProps {
   onExit?: () => void;
 }
 
-// ── Single global listener architecture ──
-// Instead of each Terminal component registering its own listen() call
-// (which races with React StrictMode, HMR, and portal transitions),
-// we maintain ONE global listener that dispatches to the active handler.
-type OutputHandler = (data: string) => void;
-type ExitHandler = (exitCode: number | null) => void;
-
-const outputHandlers = new Map<string, OutputHandler>();
-const exitHandlers = new Map<string, ExitHandler>();
-let globalOutputUnsub: (() => void) | null = null;
-let globalExitUnsub: (() => void) | null = null;
-let listenerRefCount = 0;
-// Monotonic generation counter: incremented on every teardown so that
-// late-resolving listen() promises from a previous generation can
-// detect they are stale and immediately unsubscribe themselves.
-let listenerGeneration = 0;
-
-function ensureGlobalListeners() {
-  if (listenerRefCount++ > 0) return; // already set up
-
-  const gen = listenerGeneration;
-
-  listen<{ seq: number; session_id: string; data: string }>("pty-output", (event) => {
-    const handler = outputHandlers.get(event.payload.session_id);
-    if (handler) handler(event.payload.data);
-  }).then((fn) => {
-    if (gen !== listenerGeneration) {
-      // This listener was created before the last teardown — it's stale.
-      fn();
-    } else {
-      globalOutputUnsub = fn;
-    }
-  });
-
-  listen<{ session_id: string; exit_code: number | null }>("pty-exit", (event) => {
-    const handler = exitHandlers.get(event.payload.session_id);
-    if (handler) handler(event.payload.exit_code);
-  }).then((fn) => {
-    if (gen !== listenerGeneration) {
-      fn();
-    } else {
-      globalExitUnsub = fn;
-    }
-  });
-}
-
-function releaseGlobalListeners() {
-  if (--listenerRefCount > 0) return; // other terminals still active
-  listenerGeneration++;
-  globalOutputUnsub?.();
-  globalExitUnsub?.();
-  globalOutputUnsub = null;
-  globalExitUnsub = null;
-}
-
 export function Terminal({ sessionId, onExit }: TerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const onExitRef = useRef(onExit);
@@ -85,63 +30,73 @@ export function Terminal({ sessionId, onExit }: TerminalProps) {
       fontSize: 13,
       cursorBlink: true,
       rescaleOverlappingGlyphs: true,
+      scrollback: 5000,
     });
 
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
     term.open(containerRef.current);
 
-    // Delay initial fit to ensure DOM layout is complete before measuring.
-    let lastCols = 0;
-    let lastRows = 0;
-    const syncSize = () => {
-      fitAddon.fit();
-      if (term.cols !== lastCols || term.rows !== lastRows) {
-        lastCols = term.cols;
-        lastRows = term.rows;
-        invoke("resize_pty", {
-          sessionId,
-          cols: term.cols,
-          rows: term.rows,
-        }).catch(() => {});
-      }
-    };
-    const initTimer = setTimeout(syncSize, 50);
+    // Sync PTY dimensions when xterm.js resizes (per official docs).
+    const resizeDisposable = term.onResize(({ cols, rows }) => {
+      invoke("resize_pty", { sessionId, cols, rows }).catch(() => {});
+    });
+
+    // fit() measures the container and resizes the terminal to match.
+    // Call immediately (setTimeout 0 lets the browser finish layout).
+    const initTimer = setTimeout(() => fitAddon.fit(), 0);
 
     // User input -> PTY
     const dataDisposable = term.onData((data) => {
       invoke("write_pty", { sessionId, data }).catch(() => {});
     });
 
-    // Register this terminal as the handler — replaces any previous
-    // handler for the same session (e.g. from StrictMode double-mount).
-    // There is exactly ONE global listener dispatching to this map,
-    // so duplicate writes are impossible.
-    outputHandlers.set(sessionId, (data) => term.write(data));
-    exitHandlers.set(sessionId, () => {
-      term.write("\r\n\x1b[90m[Process exited]\x1b[0m\r\n");
-      onExitRef.current?.();
-    });
-    ensureGlobalListeners();
 
-    // Debounced resize to avoid flooding with rapid SIGWINCH signals
+    // PTY output -> terminal
+    let disposed = false;
+    let unlistenOutput: (() => void) | null = null;
+    let unlistenExit: (() => void) | null = null;
+
+    listen<{ seq: number; session_id: string; data: string }>("pty-output", (event) => {
+      if (!disposed && event.payload.session_id === sessionId) {
+        term.write(event.payload.data);
+      }
+    }).then((fn) => {
+      if (disposed) fn(); else unlistenOutput = fn;
+    });
+
+    listen<{ session_id: string; exit_code: number | null }>(
+      "pty-exit",
+      (event) => {
+        if (!disposed && event.payload.session_id === sessionId) {
+          term.write("\r\n\x1b[90m[Process exited]\x1b[0m\r\n");
+          onExitRef.current?.();
+        }
+      },
+    ).then((fn) => {
+      if (disposed) fn(); else unlistenExit = fn;
+    });
+
+    // Debounced resize — fit() measures container and resizes terminal;
+    // onResize handler above sends the new dimensions to the PTY.
     let resizeTimer: ReturnType<typeof setTimeout> | null = null;
     const doResize = () => {
       if (resizeTimer) clearTimeout(resizeTimer);
-      resizeTimer = setTimeout(syncSize, 100);
+      resizeTimer = setTimeout(() => fitAddon.fit(), 200);
     };
 
     const observer = new ResizeObserver(doResize);
     observer.observe(containerRef.current);
 
     return () => {
+      disposed = true;
       clearTimeout(initTimer);
       if (resizeTimer) clearTimeout(resizeTimer);
       observer.disconnect();
       dataDisposable.dispose();
-      outputHandlers.delete(sessionId);
-      exitHandlers.delete(sessionId);
-      releaseGlobalListeners();
+      resizeDisposable.dispose();
+      unlistenOutput?.();
+      unlistenExit?.();
       term.dispose();
     };
   }, [sessionId]);

@@ -3,12 +3,11 @@ use serde::Serialize;
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, EventTarget};
 
 /// Global monotonic counter so every pty-output event has a unique sequence number.
-/// The frontend uses this to skip duplicate deliveries.
 static EVENT_SEQ: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Clone, Serialize)]
@@ -31,12 +30,18 @@ pub struct PtySession {
     child: Box<dyn portable_pty::Child + Send + Sync>,
 }
 
-pub struct PtySessions(pub std::sync::Arc<Mutex<HashMap<String, PtySession>>>);
+pub struct PtySessions(pub Arc<Mutex<HashMap<String, PtySession>>>);
 
 impl PtySessions {
     pub fn new() -> Self {
-        Self(std::sync::Arc::new(Mutex::new(HashMap::new())))
+        Self(Arc::new(Mutex::new(HashMap::new())))
     }
+}
+
+// Keep PtyBuffers as an empty struct so lib.rs compiles without changes
+pub struct PtyBuffers;
+impl PtyBuffers {
+    pub fn new() -> Self { Self }
 }
 
 pub fn spawn_pty_session(
@@ -48,6 +53,7 @@ pub fn spawn_pty_session(
     cols: u16,
     rows: u16,
     sessions: &PtySessions,
+    _buffers: &PtyBuffers,
     env_vars: &[(String, String)],
     resolved_user_path: Option<&str>,
 ) -> Result<(), String> {
@@ -61,8 +67,6 @@ pub fn spawn_pty_session(
         })
         .map_err(|e| format!("Failed to open PTY: {}", e))?;
 
-    // Strip nul bytes from all inputs — CommandBuilder uses CString internally
-    // and will fail with "nul byte found in provided data" if any are present.
     let sanitize = |s: &str| s.replace('\0', "");
 
     let mut command = CommandBuilder::new(sanitize(cmd));
@@ -70,12 +74,8 @@ pub fn spawn_pty_session(
         command.arg(sanitize(arg));
     }
     command.cwd(sanitize(cwd));
-    // Set terminal type so tmux and other TUI programs render correctly in xterm.js
     command.env("TERM", "xterm-256color");
     command.env("COLORTERM", "truecolor");
-    // On macOS, GUI apps inherit a minimal PATH that may not include paths
-    // where Claude Code is installed (e.g. via npm/nvm). Propagate the
-    // user's full login-shell PATH so the PTY process can find `claude`.
     if let Some(path) = resolved_user_path {
         command.env("PATH", sanitize(path));
     }
@@ -108,7 +108,6 @@ pub fn spawn_pty_session(
     map.insert(session_id.to_string(), session);
     drop(map);
 
-    // Start background reader thread with shared session map for cleanup
     let app = app_handle.clone();
     let sid = session_id.to_string();
     let sessions_arc = sessions.0.clone();
@@ -121,22 +120,20 @@ fn start_reader_thread(
     app_handle: AppHandle,
     session_id: String,
     mut reader: Box<dyn Read + Send>,
-    sessions: std::sync::Arc<Mutex<HashMap<String, PtySession>>>,
+    sessions: Arc<Mutex<HashMap<String, PtySession>>>,
 ) {
     std::thread::spawn(move || {
         let mut buf = [0u8; 8192];
         let mut pending = String::new();
         let mut last_flush = Instant::now();
-        let flush_interval = Duration::from_millis(16); // ~60fps
+        let flush_interval = Duration::from_millis(16);
 
-        // Use non-blocking-style polling: set a short read timeout by
-        // reading in a loop and flushing accumulated data periodically.
         loop {
             match reader.read(&mut buf) {
                 Ok(0) => {
-                    // EOF — flush remaining data and exit
                     if !pending.is_empty() {
-                        let _ = app_handle.emit(
+                        let _ = app_handle.emit_to(
+                            EventTarget::webview_window("main"),
                             "pty-output",
                             PtyOutputPayload {
                                 seq: EVENT_SEQ.fetch_add(1, Ordering::Relaxed),
@@ -149,10 +146,9 @@ fn start_reader_thread(
                 }
                 Ok(n) => {
                     pending.push_str(&String::from_utf8_lossy(&buf[..n]));
-
-                    // Flush if enough time has passed or buffer is large
                     if last_flush.elapsed() >= flush_interval || pending.len() > 32768 {
-                        let _ = app_handle.emit(
+                        let _ = app_handle.emit_to(
+                            EventTarget::webview_window("main"),
                             "pty-output",
                             PtyOutputPayload {
                                 seq: EVENT_SEQ.fetch_add(1, Ordering::Relaxed),
@@ -165,7 +161,8 @@ fn start_reader_thread(
                 }
                 Err(_) => {
                     if !pending.is_empty() {
-                        let _ = app_handle.emit(
+                        let _ = app_handle.emit_to(
+                            EventTarget::webview_window("main"),
                             "pty-output",
                             PtyOutputPayload {
                                 seq: EVENT_SEQ.fetch_add(1, Ordering::Relaxed),
@@ -179,27 +176,24 @@ fn start_reader_thread(
             }
         }
 
-        // Get the exit code from the child process before removing the session
         let exit_code = {
             let mut map = sessions.lock().unwrap();
             if let Some(session) = map.get_mut(&session_id) {
-                // Try to wait for the child to get exit code
                 session.child.wait().ok().map(|s| s.exit_code())
             } else {
                 None
             }
         };
 
-        // Remove the session from the map to prevent leaks
         {
             let mut map = sessions.lock().unwrap();
             if let Some(mut session) = map.remove(&session_id) {
-                // Ensure child is killed if still running
                 let _ = session.child.kill();
             }
         }
 
-        let _ = app_handle.emit(
+        let _ = app_handle.emit_to(
+            EventTarget::webview_window("main"),
             "pty-exit",
             PtyExitPayload {
                 session_id,
@@ -207,6 +201,14 @@ fn start_reader_thread(
             },
         );
     });
+}
+
+// Keep poll_output so the command compiles (returns empty)
+pub fn poll_output(
+    _buffers: &PtyBuffers,
+    _session_id: &str,
+) -> Result<(String, bool, Option<u32>), String> {
+    Ok((String::new(), false, None))
 }
 
 pub fn write_to_pty(sessions: &PtySessions, session_id: &str, data: &str) -> Result<(), String> {

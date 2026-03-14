@@ -895,6 +895,7 @@ pub fn start_launch_pty(
     app_handle: tauri::AppHandle,
     state: State<AppState>,
     pty_sessions: State<pty::PtySessions>,
+    pty_buffers: State<pty::PtyBuffers>,
     feature_id: String,
     cols: u16,
     rows: u16,
@@ -950,6 +951,7 @@ pub fn start_launch_pty(
         cols,
         rows,
         &pty_sessions,
+        &pty_buffers,
         &env,
         resolve_user_path().as_deref(),
     )?;
@@ -1200,6 +1202,7 @@ pub fn start_functional_testing(
     app_handle: tauri::AppHandle,
     state: State<AppState>,
     pty_sessions: State<pty::PtySessions>,
+    pty_buffers: State<pty::PtyBuffers>,
     harness_mgr: State<harness::HarnessManager>,
     feature_id: String,
     cols: u16,
@@ -1366,6 +1369,7 @@ pub fn start_functional_testing(
         cols,
         rows,
         &pty_sessions,
+        &pty_buffers,
         &[],
         resolve_user_path().as_deref(),
     ) {
@@ -1522,6 +1526,7 @@ pub fn relaunch_with_fix_context(
     app_handle: tauri::AppHandle,
     state: State<AppState>,
     pty_sessions: State<pty::PtySessions>,
+    pty_buffers: State<pty::PtyBuffers>,
     feature_id: String,
     cols: u16,
     rows: u16,
@@ -1604,6 +1609,7 @@ pub fn relaunch_with_fix_context(
         cols,
         rows,
         &pty_sessions,
+        &pty_buffers,
         &env,
         resolve_user_path().as_deref(),
     )?;
@@ -2480,6 +2486,14 @@ pub fn kill_pty(pty_sessions: State<pty::PtySessions>, session_id: String) -> Re
 #[tauri::command]
 pub fn pty_session_exists(pty_sessions: State<pty::PtySessions>, session_id: String) -> bool {
     pty::session_exists(&pty_sessions, &session_id)
+}
+
+#[tauri::command]
+pub fn poll_pty_output(
+    pty_buffers: State<pty::PtyBuffers>,
+    session_id: String,
+) -> Result<(String, bool, Option<u32>), String> {
+    pty::poll_output(&pty_buffers, &session_id)
 }
 
 // ── Preferences Commands ──

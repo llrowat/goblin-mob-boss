@@ -3,36 +3,35 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Terminal } from "./Terminal";
 
-// Mock xterm.js with proper class constructors
 const mockWrite = vi.fn();
 const mockDispose = vi.fn();
 const mockOpen = vi.fn();
 const mockLoadAddon = vi.fn();
 const mockOnData = vi.fn(() => ({ dispose: vi.fn() }));
+const mockOnResize = vi.fn(() => ({ dispose: vi.fn() }));
 
-vi.mock("@xterm/xterm", () => {
-  return {
-    Terminal: class MockTerminal {
-      cols = 80;
-      rows = 24;
-      open = mockOpen;
-      write = mockWrite;
-      onData = mockOnData;
-      dispose = mockDispose;
-      loadAddon = mockLoadAddon;
-    },
-  };
-});
+vi.mock("@xterm/xterm", () => ({
+  Terminal: class MockTerminal {
+    cols = 80;
+    rows = 24;
+    open = mockOpen;
+    write = mockWrite;
+    onData = mockOnData;
+    onResize = mockOnResize;
+    dispose = mockDispose;
+    loadAddon = mockLoadAddon;
+    resize = vi.fn();
+    refresh = vi.fn();
+  },
+}));
 
-vi.mock("@xterm/addon-fit", () => {
-  return {
-    FitAddon: class MockFitAddon {
-      fit = vi.fn();
-    },
-  };
-});
+vi.mock("@xterm/addon-fit", () => ({
+  FitAddon: class MockFitAddon {
+    fit = vi.fn();
+    proposeDimensions = vi.fn(() => ({ cols: 80, rows: 24 }));
+  },
+}));
 
-// CSS import is a no-op in test
 vi.mock("@xterm/xterm/css/xterm.css", () => ({}));
 
 describe("Terminal", () => {
@@ -53,15 +52,9 @@ describe("Terminal", () => {
     expect(mockOpen).toHaveBeenCalled();
   });
 
-  it("sends initial resize to backend after layout delay", async () => {
+  it("registers onResize handler for PTY sync", () => {
     render(<Terminal sessionId="test-session" />);
-    await waitFor(() => {
-      expect(invoke).toHaveBeenCalledWith("resize_pty", {
-        sessionId: "test-session",
-        cols: 80,
-        rows: 24,
-      });
-    });
+    expect(mockOnResize).toHaveBeenCalled();
   });
 
   it("registers onData handler for user input", () => {
@@ -75,17 +68,16 @@ describe("Terminal", () => {
     expect(mockDispose).toHaveBeenCalled();
   });
 
-  it("sets up global listeners on first mount", () => {
+  it("registers pty-output and pty-exit listeners", () => {
     const mockListen = listen as ReturnType<typeof vi.fn>;
     mockListen.mockImplementation(() => Promise.resolve(() => {}));
 
     render(<Terminal sessionId="test-session" />);
-    // Global listeners: one for pty-output, one for pty-exit
     expect(mockListen).toHaveBeenCalledWith("pty-output", expect.any(Function));
     expect(mockListen).toHaveBeenCalledWith("pty-exit", expect.any(Function));
   });
 
-  it("dispatches pty-output to the correct terminal", async () => {
+  it("writes pty-output data to terminal", async () => {
     let outputHandler!: (event: { payload: { seq: number; session_id: string; data: string } }) => void;
     const mockListen = listen as ReturnType<typeof vi.fn>;
     mockListen.mockImplementation((event: string, handler: typeof outputHandler) => {
@@ -95,13 +87,12 @@ describe("Terminal", () => {
 
     render(<Terminal sessionId="test-session" />);
 
-    // Simulate a pty-output event
     outputHandler({ payload: { seq: 0, session_id: "test-session", data: "hello" } });
     expect(mockWrite).toHaveBeenCalledWith("hello");
 
-    // Event for a different session should be ignored
+    // Different session should be ignored
     mockWrite.mockClear();
-    outputHandler({ payload: { seq: 1, session_id: "other-session", data: "nope" } });
+    outputHandler({ payload: { seq: 1, session_id: "other", data: "nope" } });
     expect(mockWrite).not.toHaveBeenCalled();
   });
 
@@ -116,50 +107,8 @@ describe("Terminal", () => {
     const { unmount } = render(<Terminal sessionId="test-session" />);
     unmount();
 
-    // Fire event after unmount — handler should be removed from map
     mockWrite.mockClear();
-    outputHandler({ payload: { seq: 0, session_id: "test-session", data: "late data" } });
+    outputHandler({ payload: { seq: 0, session_id: "test-session", data: "late" } });
     expect(mockWrite).not.toHaveBeenCalled();
-  });
-
-  it("immediately unsubscribes stale listeners that resolve after teardown", async () => {
-    // Simulate the race condition: listen() returns a promise that resolves
-    // AFTER the component unmounts and cleanup runs.
-    const unsubFns: Array<ReturnType<typeof vi.fn>> = [];
-    let resolveOutput!: (fn: () => void) => void;
-    let resolveExit!: (fn: () => void) => void;
-
-    const mockListen = listen as ReturnType<typeof vi.fn>;
-    mockListen.mockImplementation((event: string) => {
-      if (event === "pty-output") {
-        const unsub = vi.fn();
-        unsubFns.push(unsub);
-        return new Promise<() => void>((resolve) => { resolveOutput = resolve; })
-          .then((fn) => fn || unsub);
-      }
-      const unsub = vi.fn();
-      unsubFns.push(unsub);
-      return new Promise<() => void>((resolve) => { resolveExit = resolve; })
-        .then((fn) => fn || unsub);
-    });
-
-    const { unmount } = render(<Terminal sessionId="test-session" />);
-
-    // Unmount BEFORE the listen promises resolve — this is the race condition
-    unmount();
-
-    // Now resolve the promises (simulating late async resolution)
-    const staleOutputUnsub = vi.fn();
-    const staleExitUnsub = vi.fn();
-    resolveOutput(staleOutputUnsub);
-    resolveExit(staleExitUnsub);
-
-    // Wait for microtask queue to flush
-    await new Promise((r) => setTimeout(r, 0));
-
-    // The stale unsub functions should have been called immediately
-    // because the generation has advanced past when they were created
-    expect(staleOutputUnsub).toHaveBeenCalled();
-    expect(staleExitUnsub).toHaveBeenCalled();
   });
 });

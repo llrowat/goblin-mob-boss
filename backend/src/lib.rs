@@ -38,6 +38,7 @@ pub fn run() {
         })
         .manage(state)
         .manage(pty::PtySessions::new())
+        .manage(pty::PtyBuffers::new())
         .manage(harness::HarnessManager::new())
         .invoke_handler(tauri::generate_handler![
             // Repository
@@ -107,6 +108,7 @@ pub fn run() {
             commands::resize_pty,
             commands::kill_pty,
             commands::pty_session_exists,
+            commands::poll_pty_output,
             // Preferences
             commands::get_preferences,
             commands::set_preferences,
