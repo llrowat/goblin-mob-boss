@@ -3616,6 +3616,118 @@ fn generate_context_pack_string(repo_path: &str) -> String {
     map
 }
 
+// ── Hooks Commands ──
+
+/// Read hooks from a repository's .claude/settings.json.
+#[tauri::command]
+pub fn get_repo_hooks(repo_path: String) -> Result<RepoHooks, String> {
+    let settings_path = Path::new(&repo_path).join(".claude").join("settings.json");
+    if !settings_path.exists() {
+        return Ok(RepoHooks::default());
+    }
+    let content =
+        std::fs::read_to_string(&settings_path).map_err(|e| format!("Failed to read settings: {e}"))?;
+    let parsed: serde_json::Value =
+        serde_json::from_str(&content).map_err(|e| format!("Invalid JSON in settings: {e}"))?;
+    match parsed.get("hooks") {
+        Some(hooks_val) => serde_json::from_value(hooks_val.clone())
+            .map_err(|e| format!("Failed to parse hooks: {e}")),
+        None => Ok(RepoHooks::default()),
+    }
+}
+
+/// Write hooks to a repository's .claude/settings.json, preserving other settings.
+#[tauri::command]
+pub fn save_repo_hooks(repo_path: String, hooks: RepoHooks) -> Result<(), String> {
+    let claude_dir = Path::new(&repo_path).join(".claude");
+    std::fs::create_dir_all(&claude_dir)
+        .map_err(|e| format!("Failed to create .claude directory: {e}"))?;
+
+    let settings_path = claude_dir.join("settings.json");
+
+    // Load existing settings or start fresh.
+    let mut settings: serde_json::Value = if settings_path.exists() {
+        let content =
+            std::fs::read_to_string(&settings_path).map_err(|e| format!("Failed to read settings: {e}"))?;
+        serde_json::from_str(&content).map_err(|e| format!("Invalid JSON in settings: {e}"))?
+    } else {
+        serde_json::json!({})
+    };
+
+    // Serialize hooks, omitting empty event arrays.
+    let hooks_val =
+        serde_json::to_value(&hooks).map_err(|e| format!("Failed to serialize hooks: {e}"))?;
+
+    // If all events are empty, remove the hooks key entirely.
+    if hooks_val.as_object().map_or(true, |m| m.is_empty()) {
+        if let Some(obj) = settings.as_object_mut() {
+            obj.remove("hooks");
+        }
+    } else {
+        settings["hooks"] = hooks_val;
+    }
+
+    let json = serde_json::to_string_pretty(&settings)
+        .map_err(|e| format!("Failed to format settings: {e}"))?;
+    std::fs::write(&settings_path, json).map_err(|e| format!("Failed to write settings: {e}"))?;
+    Ok(())
+}
+
+/// Return the list of built-in hook templates.
+#[tauri::command]
+pub fn list_hook_templates() -> Vec<HookTemplate> {
+    vec![
+        HookTemplate {
+            id: "lint-on-write".into(),
+            name: "Lint on file change".into(),
+            description: "Run your linter after Claude edits or creates a file".into(),
+            event: "PostToolUse".into(),
+            matcher: "Edit|Write".into(),
+            command: "npm run lint --fix".into(),
+        },
+        HookTemplate {
+            id: "format-on-write".into(),
+            name: "Format on file change".into(),
+            description: "Auto-format files after Claude edits or creates them".into(),
+            event: "PostToolUse".into(),
+            matcher: "Edit|Write".into(),
+            command: "npx prettier --write".into(),
+        },
+        HookTemplate {
+            id: "test-after-bash".into(),
+            name: "Run tests after shell commands".into(),
+            description: "Automatically run your test suite after Claude executes shell commands".into(),
+            event: "PostToolUse".into(),
+            matcher: "Bash".into(),
+            command: "npm test".into(),
+        },
+        HookTemplate {
+            id: "block-force-push".into(),
+            name: "Block force push".into(),
+            description: "Prevent Claude from running git push --force".into(),
+            event: "PreToolUse".into(),
+            matcher: "Bash".into(),
+            command: "if echo \"$CLAUDE_TOOL_INPUT\" | grep -q 'push.*--force\\|push.*-f'; then echo 'Force push blocked' >&2; exit 2; fi".into(),
+        },
+        HookTemplate {
+            id: "notify-on-stop".into(),
+            name: "Notify when done".into(),
+            description: "Send a desktop notification when Claude finishes its response".into(),
+            event: "Stop".into(),
+            matcher: "".into(),
+            command: "osascript -e 'display notification \"Claude is done\" with title \"Goblin Mob Boss\"'".into(),
+        },
+        HookTemplate {
+            id: "env-setup".into(),
+            name: "Load environment on start".into(),
+            description: "Source a .env file or set up environment variables when a session starts".into(),
+            event: "SessionStart".into(),
+            matcher: "startup".into(),
+            command: "if [ -f .env ]; then export $(cat .env | grep -v '^#' | xargs); fi".into(),
+        },
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3829,6 +3941,7 @@ mod tests {
             vec![],
             None,
             vec!["sim-1".to_string()],
+            None,
         );
 
         let mut similar_repo = Repository::new(
@@ -3839,6 +3952,7 @@ mod tests {
             vec![],
             None,
             vec![],
+            None,
         );
         similar_repo.id = "sim-1".to_string();
 
@@ -3850,6 +3964,7 @@ mod tests {
             vec![],
             None,
             vec![],
+            None,
         );
 
         let all_repos = vec![feature_repo.clone(), similar_repo, unrelated_repo];
@@ -3875,6 +3990,7 @@ mod tests {
             vec![],
             None,
             vec![],
+            None,
         );
 
         let context = generate_multi_repo_context_with_similar(&[repo.clone()], &[repo]);
@@ -3894,6 +4010,7 @@ mod tests {
             vec![],
             None,
             vec!["self-ref".to_string()],
+            None,
         );
         repo.id = "self-ref".to_string();
 
@@ -4047,6 +4164,7 @@ mod tests {
             vec![],
             None,
             vec![],
+            None,
         );
 
         let context = generate_multi_repo_context(&[repo]);
@@ -4067,6 +4185,7 @@ mod tests {
             vec![],
             None,
             vec![],
+            None,
         );
         let repo2 = Repository::new(
             "backend".to_string(),
@@ -4076,6 +4195,7 @@ mod tests {
             vec![],
             None,
             vec![],
+            None,
         );
 
         let context = generate_multi_repo_context(&[repo1, repo2]);
@@ -4325,6 +4445,145 @@ mod tests {
             description: "".into(), owns_data: vec![], position: (0.0, 0.0), color: "".into(),
         };
         assert_eq!(infer_service_type_from_properties(&svc), ServiceType::Backend);
+    }
+
+    // ── Hooks Tests ──
+
+    #[test]
+    fn get_repo_hooks_returns_default_when_no_settings_file() {
+        let dir = TempDir::new().unwrap();
+        let result = get_repo_hooks(dir.path().to_string_lossy().to_string());
+        assert!(result.is_ok());
+        let hooks = result.unwrap();
+        assert!(hooks.pre_tool_use.is_empty());
+        assert!(hooks.post_tool_use.is_empty());
+        assert!(hooks.stop.is_empty());
+    }
+
+    #[test]
+    fn get_repo_hooks_returns_default_when_no_hooks_key() {
+        let dir = TempDir::new().unwrap();
+        let claude_dir = dir.path().join(".claude");
+        std::fs::create_dir_all(&claude_dir).unwrap();
+        std::fs::write(
+            claude_dir.join("settings.json"),
+            r#"{"permissions": {"allow": ["Bash"]}}"#,
+        ).unwrap();
+        let result = get_repo_hooks(dir.path().to_string_lossy().to_string());
+        assert!(result.is_ok());
+        let hooks = result.unwrap();
+        assert!(hooks.pre_tool_use.is_empty());
+    }
+
+    #[test]
+    fn get_repo_hooks_parses_existing_hooks() {
+        let dir = TempDir::new().unwrap();
+        let claude_dir = dir.path().join(".claude");
+        std::fs::create_dir_all(&claude_dir).unwrap();
+        std::fs::write(
+            claude_dir.join("settings.json"),
+            r#"{
+                "hooks": {
+                    "PostToolUse": [
+                        {
+                            "matcher": "Edit|Write",
+                            "hooks": [{"type": "command", "command": "npm run lint"}]
+                        }
+                    ]
+                }
+            }"#,
+        ).unwrap();
+        let result = get_repo_hooks(dir.path().to_string_lossy().to_string());
+        assert!(result.is_ok());
+        let hooks = result.unwrap();
+        assert_eq!(hooks.post_tool_use.len(), 1);
+        assert_eq!(hooks.post_tool_use[0].matcher, "Edit|Write");
+        assert_eq!(hooks.post_tool_use[0].hooks[0].command, "npm run lint");
+    }
+
+    #[test]
+    fn save_repo_hooks_creates_settings_file() {
+        let dir = TempDir::new().unwrap();
+        let mut hooks = RepoHooks::default();
+        hooks.pre_tool_use.push(HookRule {
+            matcher: "Bash".into(),
+            hooks: vec![HookHandler {
+                handler_type: "command".into(),
+                command: "echo pre".into(),
+                timeout: None,
+                status_message: None,
+            }],
+        });
+        let result = save_repo_hooks(dir.path().to_string_lossy().to_string(), hooks);
+        assert!(result.is_ok());
+
+        // Verify file was created and contains the hook.
+        let content = std::fs::read_to_string(dir.path().join(".claude/settings.json")).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+        assert!(parsed["hooks"]["PreToolUse"].is_array());
+        assert_eq!(parsed["hooks"]["PreToolUse"][0]["matcher"], "Bash");
+    }
+
+    #[test]
+    fn save_repo_hooks_preserves_other_settings() {
+        let dir = TempDir::new().unwrap();
+        let claude_dir = dir.path().join(".claude");
+        std::fs::create_dir_all(&claude_dir).unwrap();
+        std::fs::write(
+            claude_dir.join("settings.json"),
+            r#"{"permissions": {"allow": ["Bash"]}, "hooks": {"Stop": []}}"#,
+        ).unwrap();
+
+        let mut hooks = RepoHooks::default();
+        hooks.stop.push(HookRule {
+            matcher: "".into(),
+            hooks: vec![HookHandler {
+                handler_type: "command".into(),
+                command: "echo done".into(),
+                timeout: None,
+                status_message: None,
+            }],
+        });
+        save_repo_hooks(dir.path().to_string_lossy().to_string(), hooks).unwrap();
+
+        let content = std::fs::read_to_string(claude_dir.join("settings.json")).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+        // Original permissions key is preserved.
+        assert_eq!(parsed["permissions"]["allow"][0], "Bash");
+        // Hooks are updated.
+        assert_eq!(parsed["hooks"]["Stop"][0]["hooks"][0]["command"], "echo done");
+    }
+
+    #[test]
+    fn save_repo_hooks_removes_hooks_key_when_empty() {
+        let dir = TempDir::new().unwrap();
+        let claude_dir = dir.path().join(".claude");
+        std::fs::create_dir_all(&claude_dir).unwrap();
+        std::fs::write(
+            claude_dir.join("settings.json"),
+            r#"{"permissions": {"allow": ["Bash"]}, "hooks": {"Stop": [{"matcher": "", "hooks": []}]}}"#,
+        ).unwrap();
+
+        let hooks = RepoHooks::default();
+        save_repo_hooks(dir.path().to_string_lossy().to_string(), hooks).unwrap();
+
+        let content = std::fs::read_to_string(claude_dir.join("settings.json")).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+        assert!(parsed.get("hooks").is_none());
+        assert_eq!(parsed["permissions"]["allow"][0], "Bash");
+    }
+
+    #[test]
+    fn list_hook_templates_returns_templates() {
+        let templates = list_hook_templates();
+        assert!(!templates.is_empty());
+        // Each template has required fields.
+        for t in &templates {
+            assert!(!t.id.is_empty());
+            assert!(!t.name.is_empty());
+            assert!(!t.command.is_empty());
+            assert!(!t.event.is_empty());
+        }
     }
 
 }

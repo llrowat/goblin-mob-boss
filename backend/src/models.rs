@@ -949,6 +949,68 @@ impl Default for Preferences {
     }
 }
 
+// ── Hooks ──
+
+/// A single hook handler (command to run when a hook event fires).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HookHandler {
+    /// Handler type — currently only "command" is supported in the UI.
+    #[serde(rename = "type", default = "default_hook_type")]
+    pub handler_type: String,
+    /// Shell command to execute.
+    #[serde(default)]
+    pub command: String,
+    /// Optional timeout in seconds (default 600).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timeout: Option<u32>,
+    /// Optional status message shown in the spinner while running.
+    #[serde(rename = "statusMessage", skip_serializing_if = "Option::is_none")]
+    pub status_message: Option<String>,
+}
+
+fn default_hook_type() -> String {
+    "command".to_string()
+}
+
+/// A hook rule: a matcher pattern plus one or more handlers.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HookRule {
+    /// Regex pattern to match against (tool name, event source, etc.). Empty = match all.
+    pub matcher: String,
+    /// The hook handlers to run when matched.
+    pub hooks: Vec<HookHandler>,
+}
+
+/// All hooks for a repository, keyed by event name.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct RepoHooks {
+    #[serde(rename = "PreToolUse", default, skip_serializing_if = "Vec::is_empty")]
+    pub pre_tool_use: Vec<HookRule>,
+    #[serde(rename = "PostToolUse", default, skip_serializing_if = "Vec::is_empty")]
+    pub post_tool_use: Vec<HookRule>,
+    #[serde(rename = "UserPromptSubmit", default, skip_serializing_if = "Vec::is_empty")]
+    pub user_prompt_submit: Vec<HookRule>,
+    #[serde(rename = "Notification", default, skip_serializing_if = "Vec::is_empty")]
+    pub notification: Vec<HookRule>,
+    #[serde(rename = "Stop", default, skip_serializing_if = "Vec::is_empty")]
+    pub stop: Vec<HookRule>,
+    #[serde(rename = "SubagentStop", default, skip_serializing_if = "Vec::is_empty")]
+    pub subagent_stop: Vec<HookRule>,
+    #[serde(rename = "SessionStart", default, skip_serializing_if = "Vec::is_empty")]
+    pub session_start: Vec<HookRule>,
+}
+
+/// A pre-built hook template for easy setup.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HookTemplate {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub event: String,
+    pub matcher: String,
+    pub command: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1756,6 +1818,7 @@ You are enabled by default."#;
             vec!["cargo test".to_string()],
             None,
             vec![],
+            None,
         );
         assert_eq!(repo.name, "my-app");
         assert_eq!(repo.description, "A React + Rust desktop app");
@@ -1787,6 +1850,7 @@ You are enabled by default."#;
             vec![],
             Some("gh pr create".to_string()),
             vec![],
+            None,
         );
         let json = serde_json::to_string(&repo).unwrap();
         let parsed: Repository = serde_json::from_str(&json).unwrap();
@@ -1819,6 +1883,7 @@ You are enabled by default."#;
             vec![],
             None,
             vec!["repo-a".to_string(), "repo-b".to_string()],
+            None,
         );
         assert_eq!(repo.similar_repo_ids.len(), 2);
         let json = serde_json::to_string(&repo).unwrap();
@@ -1836,6 +1901,7 @@ You are enabled by default."#;
             vec![],
             None,
             vec![],
+            None,
         );
         assert!(repo.similar_repo_ids.is_empty());
     }

@@ -25,6 +25,8 @@ import type {
   SystemMap,
   DiscoveryStatus,
   DocumentAttachment,
+  RepoHooks,
+  HookTemplate,
 } from "../types";
 
 export function useTauri() {
@@ -343,5 +345,15 @@ export function useTauri() {
 
     pollMapDiscovery: (mapId: string, repoIds: string[]) =>
       invoke<DiscoveryStatus>("poll_map_discovery", { mapId, repoIds }),
+
+    // Hooks
+    getRepoHooks: (repoPath: string) =>
+      invoke<RepoHooks>("get_repo_hooks", { repoPath }),
+
+    saveRepoHooks: (repoPath: string, hooks: RepoHooks) =>
+      invoke<void>("save_repo_hooks", { repoPath, hooks }),
+
+    listHookTemplates: () =>
+      invoke<HookTemplate[]>("list_hook_templates"),
   };
 }

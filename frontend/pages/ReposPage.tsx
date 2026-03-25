@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useTauri } from "../hooks/useTauri";
 import { AddRepoModal } from "../components/AddRepoModal";
+import { HooksEditor } from "../components/HooksEditor";
 import type { Repository } from "../types";
 
 
@@ -17,6 +18,7 @@ export function ReposPage() {
   const [editCommitPattern, setEditCommitPattern] = useState("");
   const [editSimilarRepoIds, setEditSimilarRepoIds] = useState<string[]>([]);
   const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
+  const [expandedHooksId, setExpandedHooksId] = useState<string | null>(null);
 
   const loadRepos = () => {
     tauri.listRepositories().then(setRepos);
@@ -266,6 +268,22 @@ export function ReposPage() {
                     </span>
                   )}
                 </div>
+                <div style={{ marginTop: 6 }}>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    style={{ fontSize: 11, padding: "2px 8px" }}
+                    onClick={() =>
+                      setExpandedHooksId(
+                        expandedHooksId === repo.id ? null : repo.id,
+                      )
+                    }
+                  >
+                    {expandedHooksId === repo.id ? "Hide Hooks" : "Hooks"}
+                  </button>
+                </div>
+                {expandedHooksId === repo.id && (
+                  <HooksEditor repoPath={repo.path} />
+                )}
               </>
             )}
           </div>

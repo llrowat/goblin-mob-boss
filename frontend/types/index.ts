@@ -417,6 +417,51 @@ export interface DiscoveryStatus {
   errors: string[];
 }
 
+// ── Hooks ──
+
+export interface HookHandler {
+  type: string;
+  command: string;
+  timeout?: number;
+  statusMessage?: string;
+}
+
+export interface HookRule {
+  matcher: string;
+  hooks: HookHandler[];
+}
+
+export interface RepoHooks {
+  PreToolUse?: HookRule[];
+  PostToolUse?: HookRule[];
+  UserPromptSubmit?: HookRule[];
+  Notification?: HookRule[];
+  Stop?: HookRule[];
+  SubagentStop?: HookRule[];
+  SessionStart?: HookRule[];
+}
+
+export interface HookTemplate {
+  id: string;
+  name: string;
+  description: string;
+  event: string;
+  matcher: string;
+  command: string;
+}
+
+export const HOOK_EVENTS = [
+  { value: "PreToolUse", label: "Before Tool Use", description: "Runs before Claude uses a tool — can block the action" },
+  { value: "PostToolUse", label: "After Tool Use", description: "Runs after a tool completes successfully" },
+  { value: "UserPromptSubmit", label: "On Prompt Submit", description: "Runs when the user submits a prompt" },
+  { value: "SessionStart", label: "Session Start", description: "Runs when a Claude Code session begins" },
+  { value: "Stop", label: "When Done", description: "Runs when Claude finishes its response" },
+  { value: "Notification", label: "On Notification", description: "Runs when Claude sends a notification" },
+  { value: "SubagentStop", label: "Subagent Finished", description: "Runs when a subagent completes" },
+] as const;
+
+export type HookEventName = typeof HOOK_EVENTS[number]["value"];
+
 // ── Heuristics ──
 
 export interface TaskNode {

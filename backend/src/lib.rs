@@ -134,6 +134,10 @@ pub fn run() {
             commands::start_map_discovery,
             commands::start_discovery_pty,
             commands::poll_map_discovery,
+            // Hooks
+            commands::get_repo_hooks,
+            commands::save_repo_hooks,
+            commands::list_hook_templates,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
