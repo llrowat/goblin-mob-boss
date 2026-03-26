@@ -5,8 +5,8 @@
 <h1 align="center">Goblin Mob Boss</h1>
 
 <p align="center">
-  A desktop GUI for orchestrating Claude Code multi-agent workflows.<br/>
-  Plan features interactively, assign agents, pick an execution mode, launch, validate, and ship.
+  Get more out of Claude Code.<br/>
+  GMB guides you through planning, context injection, agent setup, and execution mode selection — so your agents start with the right context and the right strategy.
 </p>
 
 <p align="center">
@@ -20,13 +20,17 @@
 
 ## What Is This?
 
-Goblin Mob Boss (GMB) wraps [Claude Code](https://docs.anthropic.com/en/docs/claude-code) with a desktop app that handles the orchestration layer: feature branching, interactive planning, agent configuration, execution mode selection, validation, and PR workflow. You describe what you want to build, GMB plans it with Claude, then launches one or more Claude Code agents to execute — while you watch from a built-in terminal.
+Goblin Mob Boss (GMB) is a desktop app that helps you use [Claude Code](https://docs.anthropic.com/en/docs/claude-code) more effectively. It doesn't replace Claude Code — it sits in front of it and handles the parts that make multi-agent workflows succeed or fail: **context injection**, **agent management**, **forced planning**, and **execution mode selection**.
 
-**Key ideas:**
+Without GMB, getting good results from Claude Code agents means manually wrangling agent files, crafting prompts with the right context, deciding how to split work, and managing branches across repos. GMB turns that into a guided workflow:
 
-- **Agent Teams** — Run multiple Claude Code instances in parallel tmux panes, each with its own agent identity (frontend dev, backend dev, test engineer, etc.). Best for large features with independent workstreams.
-- **Subagents** — A single lead Claude Code instance that delegates subtasks. Best for focused features with dependent tasks.
-- **Cross-repo** — Features can span multiple repositories with shared branch names, coordinated worktrees, and aggregated validation.
+- **Simplifies context injection** — Attach design specs, API schemas, and reference docs. GMB includes them in both planning and execution prompts so agents start with full context.
+- **Manages agents** — Visual editor for `.claude/agents/*.md` files with built-in templates. No more hand-editing YAML frontmatter.
+- **Forces planning** — Every feature goes through an interactive planning phase with Claude before any code is written. The planner breaks work into task specs, assigns agents, and can ask you clarifying questions.
+- **Suggests execution modes** — GMB analyzes your task dependency graph and recommends the right approach:
+  - **Agent Teams** — Multiple Claude Code instances in parallel tmux panes. Best for large features with independent workstreams.
+  - **Subagents** — A single lead instance that delegates. Best for focused features with dependent tasks.
+- **Handles git workflow** — Feature branches, worktrees, cross-repo coordination, validation, and PR creation.
 
 ## Screenshots
 
