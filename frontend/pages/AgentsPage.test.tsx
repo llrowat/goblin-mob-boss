@@ -112,8 +112,8 @@ describe("AgentsPage", () => {
     mockInvokeEmpty();
     render(<AgentsPage />);
 
-    expect(screen.getByText("The Crew")).toBeInTheDocument();
-    expect(screen.getByText(/goblins and their tricks/)).toBeInTheDocument();
+    expect(screen.getByText("Agents & Skills")).toBeInTheDocument();
+    expect(screen.getByText(/agents and their skills/)).toBeInTheDocument();
 
     await waitFor(() => {});
   });
@@ -122,8 +122,8 @@ describe("AgentsPage", () => {
     mockInvokeEmpty();
     render(<AgentsPage />);
 
-    expect(screen.getByRole("tab", { name: "Goblins" })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "Tricks" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Agents" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Skills" })).toBeInTheDocument();
 
     await waitFor(() => {});
   });
@@ -132,7 +132,7 @@ describe("AgentsPage", () => {
     mockInvokeForAgents();
     render(<AgentsPage />);
 
-    const goblinsTab = screen.getByRole("tab", { name: "Goblins" });
+    const goblinsTab = screen.getByRole("tab", { name: "Agents" });
     expect(goblinsTab.getAttribute("aria-selected")).toBe("true");
 
     await waitFor(() => {
@@ -467,9 +467,9 @@ describe("AgentsPage", () => {
 
     render(<AgentsPage />);
 
-    fireEvent.click(screen.getByRole("tab", { name: "Tricks" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Skills" }));
 
-    const tricksTab = screen.getByRole("tab", { name: "Tricks" });
+    const tricksTab = screen.getByRole("tab", { name: "Skills" });
     expect(tricksTab.getAttribute("aria-selected")).toBe("true");
 
     await waitFor(() => {
@@ -481,7 +481,7 @@ describe("AgentsPage", () => {
     mockInvokeForSkills();
 
     render(<AgentsPage />);
-    fireEvent.click(screen.getByRole("tab", { name: "Tricks" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Skills" }));
 
     await waitFor(() => {
       expect(screen.getByText("Review PR")).toBeInTheDocument();
@@ -496,7 +496,7 @@ describe("AgentsPage", () => {
     mockInvokeForSkills();
 
     render(<AgentsPage />);
-    fireEvent.click(screen.getByRole("tab", { name: "Tricks" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Skills" }));
 
     await waitFor(() => {
       expect(screen.getByText("Automates PR review")).toBeInTheDocument();
@@ -507,11 +507,11 @@ describe("AgentsPage", () => {
     mockInvokeForSkills();
 
     render(<AgentsPage />);
-    fireEvent.click(screen.getByRole("tab", { name: "Tricks" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Skills" }));
 
     await waitFor(() => {
       expect(screen.getByText("+ New Skill")).toBeInTheDocument();
-      expect(screen.getByText("Teach a Trick")).toBeInTheDocument();
+      expect(screen.getByText("Teach a Skill")).toBeInTheDocument();
     });
   });
 
@@ -519,7 +519,7 @@ describe("AgentsPage", () => {
     mockInvokeForSkills();
 
     render(<AgentsPage />);
-    fireEvent.click(screen.getByRole("tab", { name: "Tricks" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Skills" }));
 
     await waitFor(() => {
       expect(screen.getByText("+ New Skill")).toBeInTheDocument();
@@ -538,7 +538,7 @@ describe("AgentsPage", () => {
     mockInvokeForSkills();
 
     render(<AgentsPage />);
-    fireEvent.click(screen.getByRole("tab", { name: "Tricks" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Skills" }));
 
     await waitFor(() => {
       expect(screen.getByText("Review PR")).toBeInTheDocument();
@@ -558,7 +558,7 @@ describe("AgentsPage", () => {
     mockInvokeForSkills();
 
     render(<AgentsPage />);
-    fireEvent.click(screen.getByRole("tab", { name: "Tricks" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Skills" }));
 
     await waitFor(() => {
       expect(screen.getByText("+ New Skill")).toBeInTheDocument();
@@ -592,7 +592,7 @@ describe("AgentsPage", () => {
     mockInvokeForSkills();
 
     render(<AgentsPage />);
-    fireEvent.click(screen.getByRole("tab", { name: "Tricks" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Skills" }));
 
     await waitFor(() => {
       expect(screen.getByText("Review PR")).toBeInTheDocument();
@@ -618,11 +618,11 @@ describe("AgentsPage", () => {
     mockInvokeEmpty();
 
     render(<AgentsPage />);
-    fireEvent.click(screen.getByRole("tab", { name: "Tricks" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Skills" }));
 
     await waitFor(() => {
-      expect(screen.getByText("No Tricks Yet")).toBeInTheDocument();
-      expect(screen.getByText(/hasn't learned any moves/)).toBeInTheDocument();
+      expect(screen.getByText("No Skills Yet")).toBeInTheDocument();
+      expect(screen.getByText(/No tricks in the book yet/)).toBeInTheDocument();
     });
   });
 
@@ -630,17 +630,17 @@ describe("AgentsPage", () => {
     mockInvokeForSkills();
 
     render(<AgentsPage />);
-    fireEvent.click(screen.getByRole("tab", { name: "Tricks" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Skills" }));
 
     await waitFor(() => {
-      expect(screen.getByText("Teach a Trick")).toBeInTheDocument();
+      expect(screen.getByText("Teach a Skill")).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByText("Teach a Trick"));
+    fireEvent.click(screen.getByText("Teach a Skill"));
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith("get_teach_skill_command");
-      expect(screen.getByText("Teach a new trick")).toBeInTheDocument();
+      expect(screen.getByText("Teach a new skill")).toBeInTheDocument();
       expect(screen.getByText("Dismiss")).toBeInTheDocument();
     });
   });
@@ -649,13 +649,13 @@ describe("AgentsPage", () => {
     mockInvokeForSkills();
 
     render(<AgentsPage />);
-    fireEvent.click(screen.getByRole("tab", { name: "Tricks" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Skills" }));
 
     await waitFor(() => {
-      expect(screen.getByText("Teach a Trick")).toBeInTheDocument();
+      expect(screen.getByText("Teach a Skill")).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByText("Teach a Trick"));
+    fireEvent.click(screen.getByText("Teach a Skill"));
 
     await waitFor(() => {
       expect(screen.getByText("Dismiss")).toBeInTheDocument();
@@ -663,14 +663,14 @@ describe("AgentsPage", () => {
 
     fireEvent.click(screen.getByText("Dismiss"));
 
-    expect(screen.queryByText("Teach a new trick")).not.toBeInTheDocument();
+    expect(screen.queryByText("Teach a new skill")).not.toBeInTheDocument();
   });
 
   it("closes skill modal when Cancel is clicked", async () => {
     mockInvokeForSkills();
 
     render(<AgentsPage />);
-    fireEvent.click(screen.getByRole("tab", { name: "Tricks" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Skills" }));
 
     await waitFor(() => {
       expect(screen.getByText("+ New Skill")).toBeInTheDocument();

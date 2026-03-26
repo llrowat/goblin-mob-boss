@@ -63,10 +63,10 @@ export function AgentsPage() {
   return (
     <div>
       <div className="page-header">
-        <h2>The Crew</h2>
+        <h2>Agents &amp; Skills</h2>
         <p>
-          Manage your goblins and their tricks. Heroes handle the jobs,
-          skills define what moves they know.
+          Manage your agents and their skills. Agents handle the jobs,
+          skills define reusable slash commands they can run.
         </p>
       </div>
 
@@ -77,7 +77,7 @@ export function AgentsPage() {
           className={`crew-tab ${activeTab === "agents" ? "crew-tab-active" : ""}`}
           onClick={() => setActiveTab("agents")}
         >
-          Goblins
+          Agents
         </button>
         <button
           role="tab"
@@ -85,7 +85,7 @@ export function AgentsPage() {
           className={`crew-tab ${activeTab === "skills" ? "crew-tab-active" : ""}`}
           onClick={() => setActiveTab("skills")}
         >
-          Tricks
+          Skills
         </button>
       </div>
 
@@ -379,7 +379,7 @@ function SkillsTab() {
           + New Skill
         </button>
         <button className="btn btn-secondary" onClick={handleTeach}>
-          Teach a Trick
+          Teach a Skill
         </button>
       </div>
 
@@ -387,7 +387,7 @@ function SkillsTab() {
         <div className="teach-skill-panel" style={{ marginBottom: 20 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
             <div>
-              <strong>Teach a new trick</strong>
+              <strong>Teach a new skill</strong>
               <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "4px 0 0" }}>
                 Run this command in your terminal. Claude will walk you through
                 creating a custom slash command, then refresh this page to see it.
@@ -423,9 +423,9 @@ function SkillsTab() {
 
       {skills.length === 0 && !teachCommand && (
         <div className="empty-state">
-          <h3>No Tricks Yet</h3>
+          <h3>No Skills Yet</h3>
           <p>
-            The crew hasn&apos;t learned any moves. Create a skill manually or
+            No tricks in the book yet. Create a skill manually or
             let Claude teach one — custom slash commands live in
             ~/.claude/commands/.
           </p>
