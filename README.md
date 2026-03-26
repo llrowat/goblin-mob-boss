@@ -1,156 +1,137 @@
-# Goblin Mob Boss
+<p align="center">
+  <img src="frontend/assets/icon/goblin-logo.png" alt="Goblin Mob Boss" width="120" />
+</p>
 
-A desktop app for agent-based AI development workflows. Configure agents, plan features interactively with Claude, choose an execution mode (Agent Teams or Subagents), then launch Claude Code to execute — GMB handles setup, visibility, and git workflow.
+<h1 align="center">Goblin Mob Boss</h1>
+
+<p align="center">
+  A desktop GUI for orchestrating Claude Code multi-agent workflows.<br/>
+  Plan features interactively, assign agents, pick an execution mode, launch, validate, and ship.
+</p>
+
+<p align="center">
+  <a href="#getting-started">Getting Started</a> &middot;
+  <a href="#how-it-works">How It Works</a> &middot;
+  <a href="#screenshots">Screenshots</a> &middot;
+  <a href="#contributing">Contributing</a>
+</p>
+
+---
+
+## What Is This?
+
+Goblin Mob Boss (GMB) wraps [Claude Code](https://docs.anthropic.com/en/docs/claude-code) with a desktop app that handles the orchestration layer: feature branching, interactive planning, agent configuration, execution mode selection, validation, and PR workflow. You describe what you want to build, GMB plans it with Claude, then launches one or more Claude Code agents to execute — while you watch from a built-in terminal.
+
+**Key ideas:**
+
+- **Agent Teams** — Run multiple Claude Code instances in parallel tmux panes, each with its own agent identity (frontend dev, backend dev, test engineer, etc.). Best for large features with independent workstreams.
+- **Subagents** — A single lead Claude Code instance that delegates subtasks. Best for focused features with dependent tasks.
+- **Cross-repo** — Features can span multiple repositories with shared branch names, coordinated worktrees, and aggregated validation.
+
+## Screenshots
+
+| Features | Feature Planning |
+|:---:|:---:|
+| ![Features](screenshots/home.png) | ![Planning](screenshots/feature-detail.png) |
+
+| Agents | System Map |
+|:---:|:---:|
+| ![Agents](screenshots/agents.png) | ![System Map](screenshots/system-map.png) |
+
+| Repositories |
+|:---:|
+| ![Repositories](screenshots/repos.png) |
 
 ## How It Works
 
-1. **Configure Agents** — Agents are defined as `.claude/agents/*.md` files with YAML frontmatter (name, description, tools, model, system prompt, color, role). Manage them per-repo or globally via the built-in form editor. Built-in agents (Frontend Developer, Backend Developer, Test Engineer, etc.) appear as greyed-out cards and can be added to any repo with one click. Agents with the **quality** role (e.g., Code Reviewer, Test Engineer) are automatically included as verification steps in every plan.
-2. **Start a Feature** — Describe what you want to build, select one or more repositories, and optionally attach documents (design specs, API schemas, reference files) for extra context. A feature branch is created from each repo's base branch, and a **git worktree** is automatically provisioned per repo so multiple features can run concurrently without interfering. Cross-repo features span multiple repositories with a shared branch name.
-3. **Plan with Claude** — An interactive Claude Code session in plan mode helps you refine the approach and break it into task specs, each with assigned agents. The ideation prompt includes repo context (languages, structure, available agents). If the planner encounters important ambiguities, it can pause to ask clarifying questions — you answer in the UI, and planning resumes with your answers as context. All Q&A history stays visible so you can see exactly what informed the plan.
-4. **Configure Launch** — GMB analyzes your task dependency graph and recommends an execution mode with confidence scoring:
-   - **Agent Teams** — Multiple Claude Code instances in parallel tmux panes, each with its own agent identity. Best for large features with 3+ independent workstreams.
-   - **Subagents** — A single lead Claude Code instance that delegates subtasks. Best for focused features with dependent tasks.
-   You can accept or override the recommendation, and select which agents participate.
-5. **Execute & Monitor** — The launch command runs in an embedded PTY terminal. GMB tracks task completion progress in real-time, detects stale execution, and shows auto-completion when all tasks finish.
-6. **Validate & Analyze** — Run repository validators, review diffs, and analyze execution results across all repos. The post-execution analysis compares the original plan against actual file changes, assesses whether the chosen execution mode was appropriate, and identifies unplanned modifications.
-7. **PR** — Push the feature branch to all repos. PR command generation is available in the backend but not yet surfaced in the UI.
+1. **Register repos** — Point GMB at your local git repositories. Configure base branches, validators (tests, linters), and PR commands.
+
+2. **Configure agents** — Agents are `.claude/agents/*.md` files with YAML frontmatter (name, tools, model, system prompt, role). Use the built-in form editor or add agents from the template library with one click.
+
+3. **Start a feature** — Describe what you want to build, select repos, optionally attach docs (design specs, API schemas, reference files). GMB creates a feature branch and provisions a git worktree per repo.
+
+4. **Plan with Claude** — An interactive Claude Code session in plan mode breaks the work into task specs with assigned agents. The planner can pause to ask clarifying questions — you answer in the UI, and planning resumes. Every plan revision is snapshotted so you can see how it evolved.
+
+5. **Pick an execution mode** — GMB analyzes the task dependency graph and recommends Agent Teams or Subagents with confidence scoring. You can accept or override.
+
+6. **Launch** — The generated command runs in an embedded PTY terminal. GMB tracks per-task progress, detects stale execution, and auto-completes when done.
+
+7. **Validate** — Run your repo's test suites and linters against the feature branch. Review diffs and post-execution analysis (plan vs. actual changes). Optionally run a functional testing loop where a QA agent exercises the running app via Playwright, API calls, or CLI.
+
+8. **Ship** — Push the feature branch and create PRs across all repos.
 
 ## Features
 
-### Core Workflow
-- **Cross-repo features** — Features can span multiple repositories. Branches, validators, diffs, and pushes operate across all selected repos. Agents and context from all repos are aggregated during ideation and launch.
-- **Execution mode intelligence** — Ideation analyzes planned tasks and recommends Teams or Subagents mode with confidence scoring and rationale
-- **Agent management** — Agents stored as `.claude/agents/*.md` files with YAML frontmatter; form-based editor with color picker, role selector, tools, model, and system prompt configuration
-- **Document attachments** — Attach design specs, API schemas, reference files, or any text document when creating a feature. Attachment content is included in both ideation and execution prompts, giving Claude rich context beyond the feature description
-- **Interactive planning** — Back-and-forth conversation with Claude in plan mode; task specs written to `plan.json` with automatic polling. Planner can ask clarifying questions via `questions.json` when decisions would materially change the plan — users answer in the UI and planning resumes with full context
-- **Plan history** — Every plan revision, restart, or Q&A round automatically snapshots the previous plan. View prior versions inline with trigger labels, feedback, and task summaries to see how a plan evolved
-- **Launch command generation** — GMB builds the appropriate Claude Code command with environment variables, agent configs, and system prompts for the chosen execution mode
-- **Feature recipes** — Built-in task templates for common patterns (CRUD endpoint, new UI page, full-stack feature, refactor module). Backend-ready; not yet surfaced in the UI.
-- **Feature lifecycle** — Features progress through statuses: Ideation → Configuring → Executing → Testing → Ready → Pushed → Complete (or Failed at any stage)
-- **Functional testing loop** — After implementation, an optional QA phase where a dedicated agent (QA Goblin) exercises the running app via browser automation (Playwright), API testing, or CLI to verify the feature works. Test proofs (screenshots, API responses, console output) are captured and displayed in the UI. If tests fail and attempts remain, the feature loops back to implementation for fixes (with failed proof context injected). Configurable via Settings and skippable per-feature.
-- **Test harness management** — GMB starts and stops the app under test as a managed background process, monitors stdout for a configurable ready signal, and reports harness status (starting/running/error) in real-time
-- **Testing resilience** — Lenient results.json parsing (handles single objects, wrapped objects, and malformed JSON with actionable error messages), per-round timeout with auto-collection, completion signal detection, and schema validation warnings appended to proof artifacts
+### Planning & Execution
+- Interactive planning with clarifying Q&A and plan history
+- Two execution modes: Agent Teams (parallel tmux panes) or Subagents (delegated)
+- Heuristic-based mode recommendation with confidence scoring
+- Task dependency graph analysis (parallelism ratio, critical path)
+- Document attachments included in both planning and execution prompts
+- Feature lifecycle tracking: Ideation → Configuring → Executing → Testing → Ready → Pushed → Complete
 
-### Execution Observability
-- **Task progress tracking** — During execution, GMB polls task completion status from the plan, showing per-task progress and stale execution warnings (5-minute threshold)
-- **Git activity polling** — Backend tracks commit count, files changed, insertions/deletions, and active file list via the observer module. IPC command is wired up; detailed git activity display in the UI is not yet implemented.
-- **Guidance notes** — Backend support for mid-execution notes (info, important, critical) written to the feature directory where the agent can read them. IPC commands are wired up; UI for sending notes is not yet implemented.
-
-### Post-Execution Learning
-- **Execution analysis** — Compare the original plan against actual file changes to assess task coverage
-- **Mode assessment** — Evaluate whether the chosen execution mode (Teams vs Subagents) was appropriate based on task independence and file overlap
-- **Unplanned change detection** — Identify files modified that weren't part of any planned task
+### Agents
+- Agents defined as `.claude/agents/*.md` with YAML frontmatter
+- Form-based editor with color picker, role selector, tools, model, and system prompt
+- Built-in agent templates (Frontend Dev, Backend Dev, Test Engineer, Code Reviewer, etc.)
+- Quality-role agents automatically included as verification steps in every plan
+- Per-repo and global agents
 
 ### System Map
-- **Service topology** — Map your services, their types (backend, frontend, worker, gateway, database, queue, cache, external), and how they connect
-- **Connection mapping** — Define connections between services with type (REST, gRPC, GraphQL, WebSocket, event, shared DB, file system, IPC), sync/async mode, and labels
-- **Interactive SVG visualization** — Services rendered with type-specific shapes and color-coded abbreviations, connections with distinct line styles per connection type. Includes a legend bar for service types and connection types
-- **Drag-and-drop layout** — Reposition service nodes on the map by dragging; positions are persisted automatically
-- **Service detail panel** — Click a service to see its connections (incoming/outgoing), runtime, framework, and description
-- **Multiple maps** — Create and switch between multiple system maps for different environments or subsystems
-- **Discovery mode** — Run Claude against your repositories to automatically discover services and connections; progress tracked in the UI
-
-### Intelligent Mode Selection
-- **Task dependency graph** — Tasks display their dependencies in the task list (e.g., "TASK-1, TASK-2"). Backend also provides deeper graph analysis (depth levels, parallelism ratio, critical path length) for mode recommendation.
-- **Heuristic analysis** — Automatic recommendation based on: task count, parallelism ratio, agent diversity, and critical path length
-- **Confidence scoring** — Each recommendation includes a confidence percentage and detailed reasoning
+- Map your service topology: backends, frontends, workers, databases, queues, caches, external services
+- Connection types: REST, gRPC, GraphQL, WebSocket, event, shared DB, file system, IPC
+- Interactive SVG visualization with drag-and-drop layout
+- Auto-discovery mode: Claude scans your repos to find services and connections
 
 ### Validation & Git
-- **Repository validators** — Configure shell commands (tests, linters) per repo; run them in the feature's worktree with per-command timeout protection (10 min default) and detailed stdout/stderr output
-- **Git worktrees** — Each feature gets isolated worktrees per repo, enabling concurrent feature development without branch checkout conflicts
-- **Git diff summary** — View files changed, lines added/removed before pushing
-- **PR creation** — Push feature branch with per-repo push status tracking. PR command generation (with custom `pr_command` templates using `{branch}` placeholder) is available in the backend; UI for displaying the generated PR command is not yet implemented.
+- Per-repo validators (tests, linters) run in isolated worktrees
+- Git worktrees per feature for concurrent development without checkout conflicts
+- Diff summary before pushing
+- Multi-repo rollback on branch creation failure
+- Atomic JSON persistence (write-to-temp-then-rename)
 
-### Robustness
-- **Atomic persistence** — JSON state files (features, repos, preferences) are saved via write-to-temp-then-rename to prevent corruption from partial writes
-- **Multi-repo rollback** — If branch creation fails in one repo during feature start, branches already created in other repos are automatically rolled back
-- **Worktree-based validation** — Validators run in isolated worktrees rather than modifying the main working directory, preventing branch state corruption
-- **PTY lifecycle management** — PTY sessions are automatically cleaned up when the reader thread exits, preventing file descriptor and session leaks
-- **Input validation** — Feature names are validated for length, path traversal, and invalid characters
-- **Polling with safety limits** — Ideation and execution polling use fixed intervals with maximum poll counts to prevent runaway requests
-
-### UX
-- **Toast notifications** — Non-intrusive, auto-dismissing toast messages for confirmations and errors. Toasts appear in the bottom-right corner and can be clicked to dismiss.
-- **Activity log** — Collapsible timeline on each feature detail page showing the full lifecycle: creation, plan revisions, Q&A rounds, execution launch, task progress, validation results, push status, and completion. Built from existing feature data — no extra backend storage needed.
-- **Configurable preferences** — Settings page includes shell selection, default execution mode (Teams/Subagents/auto), preferred Claude model, auto-validate toggle, and functional testing toggle.
-
-### Infrastructure
-- **Repository management** — Register local git repos, configure base branch, validators, PR commands, and similar repositories. Similar repos serve as pattern hints during ideation, giving agents reference implementations to follow.
-- **Dark theme UI** — Full dark theme with sidebar navigation
-
-## Project Structure
-
-```
-goblin-mob-boss/
-├── backend/            # Rust backend (Tauri v2)
-│   ├── src/
-│   │   ├── lib.rs              # App entry, state management, plugin setup
-│   │   ├── main.rs             # Binary entry point
-│   │   ├── commands.rs         # Tauri IPC command handlers
-│   │   ├── models.rs           # Data models (Agent, Feature, TaskSpec, Repository, Preferences, SystemMap)
-│   │   ├── store.rs            # JSON file-based persistence
-│   │   ├── launch.rs           # Launch command builder (Teams/Subagents mode)
-│   │   ├── git.rs              # Git operations (branches, merge, push, diff)
-│   │   ├── prompts.rs          # Ideation prompt templates
-│   │   ├── validators.rs       # Validator execution and result aggregation
-│   │   ├── templates.rs        # Built-in agent definitions and feature recipes
-│   │   ├── observer.rs         # Execution observability (git activity polling)
-│   │   ├── analytics.rs        # Post-execution analysis (plan vs reality)
-│   │   ├── guidance.rs         # Mid-execution guidance notes
-│   │   ├── heuristics.rs       # Task graph analysis and mode recommendation
-│   │   ├── functional_testing.rs # Functional testing loop (proof collection, QA prompts)
-│   │   ├── harness.rs          # Test harness process management (start/stop app under test)
-│   │   └── pty.rs              # PTY session management for embedded terminal
-│   └── tauri.conf.json
-├── frontend/           # React (TypeScript) frontend
-│   ├── components/     # AddRepoModal, StatusBadge, Terminal, PersistentTerminal, CommandDisplay, ToastContainer, ActivityLog, ErrorBoundary
-│   ├── pages/          # HomePage, FeatureDetailPage, AgentsPage, ReposPage, SettingsPage, SystemMapPage
-│   │   └── feature-detail/     # Sub-components: PlanningComponents, ValidationPanel, TestingPanel
-│   ├── hooks/          # useTauri (IPC wrapper), useToast, useTerminalSession, useBackgroundPlanning
-│   ├── types/          # TypeScript type definitions
-│   ├── test/           # Vitest setup
-│   └── styles.css      # Global styles (dark theme)
-├── Cargo.toml          # Cargo workspace root
-├── package.json        # Frontend dependencies
-└── vite.config.ts      # Vite + Vitest configuration
-```
+### Functional Testing
+- Optional QA phase after implementation
+- Test harness manages app-under-test as a background process
+- QA agent exercises the app via browser automation, API, or CLI
+- Proof artifacts (screenshots, API responses, console output) captured in the UI
+- Failed tests loop back to implementation with proof context
 
 ## Getting Started
 
 ### Prerequisites
 
 - [Node.js](https://nodejs.org/) (v18+)
-- [npm](https://www.npmjs.com/)
 - [Rust](https://www.rust-lang.org/tools/install)
-- Tauri v2 system dependencies ([see Tauri docs](https://v2.tauri.app/start/prerequisites/))
+- [Tauri v2 system dependencies](https://v2.tauri.app/start/prerequisites/)
 - [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and on PATH
 
-### Development
+### Build & Run
 
 ```bash
-# Install frontend dependencies
 npm install
-
-# Run in dev mode (starts both Vite and Tauri)
-npm run tauri dev
-
-# Build for production
-npm run tauri build
+npm run tauri dev        # Dev mode (Vite + Tauri)
+npm run tauri build      # Production build
 ```
 
 ### Testing
 
 ```bash
-# Run Rust backend tests
-cd backend && cargo test --lib
-
-# Run frontend tests
-npm test
+cd backend && cargo test --lib   # Rust backend tests
+npm test                          # Frontend tests (Vitest)
 ```
+
+## Tech Stack
+
+- **Backend:** Rust + Tauri v2
+- **Frontend:** React + TypeScript + Vite
+- **Terminal:** xterm.js with PTY sessions
+- **Persistence:** JSON files with atomic writes
+- **Visualization:** Custom SVG rendering for system maps
 
 ## Contributing
 
-Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on getting started, running tests, and submitting pull requests.
+Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## License
 
