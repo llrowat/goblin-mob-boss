@@ -11,7 +11,7 @@ goblin-mob-boss/
 │   │   ├── lib.rs              # App entry, state management, plugin setup
 │   │   ├── main.rs             # Binary entry point
 │   │   ├── commands.rs         # Tauri IPC command handlers (repos, agents, features, ideation, launch, validation, PR)
-│   │   ├── models.rs           # Data models (AgentFile, Feature, TaskSpec, Repository, Preferences, ExecutionMode, SystemMap)
+│   │   ├── models.rs           # Data models (AgentFile, SkillFile, Feature, TaskSpec, Repository, Preferences, ExecutionMode, SystemMap)
 │   │   ├── store.rs            # JSON file-based persistence (repos, features, agents, preferences, system maps)
 │   │   ├── launch.rs           # Launch command builder (Teams/Subagents mode)
 │   │   ├── git.rs              # Git operations (branches, merge, push, diff)
@@ -43,7 +43,7 @@ goblin-mob-boss/
 │   │   │   ├── PlanningComponents  # TaskTable, ExecutionModeSelector, PlanHistory
 │   │   │   ├── ValidationPanel     # Validator results, diff summary, push status
 │   │   │   └── TestingPanel        # Functional testing harness, proof collection
-│   │   ├── AgentsPage          # Agent CRUD (form-based editor for .claude/agents/*.md files)
+│   │   ├── AgentsPage          # Agent + Skill CRUD (tabbed: Goblins for agents, Tricks for skills)
 │   │   ├── ReposPage           # Repository management (validators, base branch, PR command)
 │   │   ├── SettingsPage        # App preferences (shell, execution defaults, model, auto-validate, functional testing)
 │   │   └── SystemMapPage       # Interactive system topology map (SVG visualization)
@@ -63,7 +63,7 @@ goblin-mob-boss/
 
 ## Core Workflow
 
-1. **Agents** — Defined as `.claude/agents/*.md` files with YAML frontmatter (name, description, tools, model, system_prompt, color, role). Per-repo and global agents supported. Built-in agent templates available for one-click setup.
+1. **Agents & Skills** — Agents (`.claude/agents/*.md`) define who's in the crew; Skills (`.claude/commands/*.md`) define reusable slash commands. Managed in a tabbed "Goblins + Tricks" UI. Skills can be created manually or via a guided "Teach a Trick" Claude Code interaction.
 2. **Feature** — User starts a feature → creates feature branch from repo base branch with isolated git worktree per repo
 3. **Ideation** — Background Claude Code session in plan mode; discovers task specs with assigned agents, recommends an execution mode (Teams vs Subagents) with confidence scoring. Can pause to ask clarifying questions.
 4. **Launch Config** — User reviews tasks and execution mode recommendation, selects agents, generates launch command
@@ -120,7 +120,7 @@ The app has a light **goblin mob-boss personality** woven into UI copy — empty
 - **Keep it subtle** — One short phrase per empty state or description. Never let flavor text crowd out functional guidance.
 - **No war or military language** — Avoid words like battle, war, raid, rally, recruit, orders, troops, deploy. Prefer crew/mob/heist/scheme/lair/hustle framing instead.
 - **Usability first** — Every themed message must still clearly communicate what the user should do. If in doubt, lead with the practical instruction and add a touch of character around it.
-- **Consistent vocabulary** — Agents are "goblins" or "the mob/crew." Repos are "lairs" or "turf." Features are "schemes" or "jobs." Planning is "scheming." Execution is "the mob at work."
+- **Consistent vocabulary** — Agents are "goblins" or "the mob/crew." Skills are "tricks" or "moves." Repos are "lairs" or "turf." Features are "schemes" or "jobs." Planning is "scheming." Execution is "the mob at work."
 - **Don't overdo it** — Headers, button labels, form fields, and error messages stay plain and functional. Character belongs in descriptions, empty states, and confirmations.
 
 ## Documentation

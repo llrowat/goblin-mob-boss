@@ -256,6 +256,46 @@ pub fn delete_global_agent(filename: String) -> Result<(), String> {
     store::delete_global_agent(&filename)
 }
 
+// ── Skill Commands (file-based) ──
+
+#[tauri::command]
+pub fn list_global_skills() -> Result<Vec<SkillFile>, String> {
+    store::list_global_skills()
+}
+
+#[tauri::command]
+pub fn save_global_skill(skill: SkillFile) -> Result<(), String> {
+    store::save_global_skill(&skill)
+}
+
+#[tauri::command]
+pub fn delete_global_skill(filename: String) -> Result<(), String> {
+    store::delete_global_skill(&filename)
+}
+
+#[tauri::command]
+pub fn get_teach_skill_command() -> String {
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .unwrap_or_default();
+    let commands_dir = std::path::Path::new(&home)
+        .join(".claude")
+        .join("commands");
+    format!(
+        "claude --print \"I want to create a new custom slash command (skill). \
+Walk me through it step by step:\n\
+1. Ask me what workflow or task this skill should automate\n\
+2. Ask me what inputs/parameters it needs (if any, use $ARGUMENTS placeholder)\n\
+3. Suggest a good slash command name\n\
+4. Write the prompt template as a .md file to {commands_dir}\n\
+\n\
+The file should be saved to {commands_dir}/<name>.md. \
+Keep the prompt template focused and actionable. \
+Include a YAML frontmatter block with name and description fields.\"",
+        commands_dir = commands_dir.display()
+    )
+}
+
 // ── Feature Commands ──
 
 /// Validate a feature name: must not be empty, not too long, no path traversal.

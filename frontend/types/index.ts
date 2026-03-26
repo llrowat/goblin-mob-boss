@@ -28,6 +28,14 @@ export interface AgentFile {
   enabled: boolean;
 }
 
+export interface SkillFile {
+  filename: string;
+  name: string;
+  description: string;
+  prompt_template: string;
+  is_global: boolean;
+}
+
 export type ExecutionMode = "teams" | "subagents";
 
 export interface ExecutionRecommendation {

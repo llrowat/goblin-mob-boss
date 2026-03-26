@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useTauri } from "../hooks/useTauri";
-import type { AgentFile } from "../types";
+import type { AgentFile, SkillFile } from "../types";
+import { CommandDisplay } from "../components/CommandDisplay";
 
 
 const PRESET_COLORS = [
@@ -17,6 +18,8 @@ const PRESET_COLORS = [
   "#aa6a3a",
   "#5a7a9a",
 ];
+
+type ActiveTab = "agents" | "skills";
 
 interface AgentFormData {
   filename: string;
@@ -40,7 +43,60 @@ const emptyForm: AgentFormData = {
   role: "developer",
 };
 
+interface SkillFormData {
+  filename: string;
+  name: string;
+  description: string;
+  prompt_template: string;
+}
+
+const emptySkillForm: SkillFormData = {
+  filename: "",
+  name: "",
+  description: "",
+  prompt_template: "",
+};
+
 export function AgentsPage() {
+  const [activeTab, setActiveTab] = useState<ActiveTab>("agents");
+
+  return (
+    <div>
+      <div className="page-header">
+        <h2>The Crew</h2>
+        <p>
+          Manage your goblins and their tricks. Heroes handle the jobs,
+          skills define what moves they know.
+        </p>
+      </div>
+
+      <div className="crew-tabs" role="tablist">
+        <button
+          role="tab"
+          aria-selected={activeTab === "agents"}
+          className={`crew-tab ${activeTab === "agents" ? "crew-tab-active" : ""}`}
+          onClick={() => setActiveTab("agents")}
+        >
+          Goblins
+        </button>
+        <button
+          role="tab"
+          aria-selected={activeTab === "skills"}
+          className={`crew-tab ${activeTab === "skills" ? "crew-tab-active" : ""}`}
+          onClick={() => setActiveTab("skills")}
+        >
+          Tricks
+        </button>
+      </div>
+
+      {activeTab === "agents" ? <AgentsTab /> : <SkillsTab />}
+    </div>
+  );
+}
+
+// ── Agents Tab ──
+
+function AgentsTab() {
   const tauri = useTauri();
   const [agents, setAgents] = useState<AgentFile[]>([]);
   const [error, setError] = useState("");
@@ -157,15 +213,7 @@ export function AgentsPage() {
   );
 
   return (
-    <div>
-      <div className="page-header">
-        <h2>Agents</h2>
-        <p>
-          Manage your global agents. These ~/.claude/agents/*.md files define
-          who&apos;s available for task execution across all repos.
-        </p>
-      </div>
-
+    <>
       {error && !modalMode && <div className="error-banner">{error}</div>}
 
       <div style={{ marginBottom: 20 }}>
@@ -234,9 +282,171 @@ export function AgentsPage() {
           onClose={closeModal}
         />
       )}
-    </div>
+    </>
   );
 }
+
+// ── Skills Tab ──
+
+function SkillsTab() {
+  const tauri = useTauri();
+  const [skills, setSkills] = useState<SkillFile[]>([]);
+  const [error, setError] = useState("");
+  const [modalSkill, setModalSkill] = useState<SkillFile | null>(null);
+  const [modalMode, setModalMode] = useState<"create" | "edit" | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [teachCommand, setTeachCommand] = useState<string | null>(null);
+
+  const loadSkills = () => {
+    tauri
+      .listGlobalSkills()
+      .then(setSkills)
+      .catch(() => setSkills([]));
+  };
+
+  useEffect(loadSkills, []);
+
+  const openCreate = () => {
+    setModalSkill(null);
+    setModalMode("create");
+    setError("");
+  };
+
+  const openEdit = (skill: SkillFile) => {
+    setModalSkill(skill);
+    setModalMode("edit");
+    setError("");
+  };
+
+  const closeModal = () => {
+    setModalMode(null);
+    setModalSkill(null);
+    setError("");
+  };
+
+  const handleSave = async (data: SkillFormData) => {
+    if (!data.name.trim() || !data.prompt_template.trim()) return;
+    setError("");
+
+    const filename =
+      data.filename.trim() ||
+      `${data.name.trim().toLowerCase().replace(/\s+/g, "-")}.md`;
+
+    const skill: SkillFile = {
+      filename: filename.endsWith(".md") ? filename : `${filename}.md`,
+      name: data.name.trim(),
+      description: data.description.trim(),
+      prompt_template: data.prompt_template.trim(),
+      is_global: true,
+    };
+
+    try {
+      await tauri.saveGlobalSkill(skill);
+      closeModal();
+      loadSkills();
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const handleRemove = async (filename: string) => {
+    setError("");
+    try {
+      await tauri.deleteGlobalSkill(filename);
+      setDeleteConfirm(null);
+      loadSkills();
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const handleTeach = async () => {
+    setError("");
+    try {
+      const cmd = await tauri.getTeachSkillCommand();
+      setTeachCommand(cmd);
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  return (
+    <>
+      {error && !modalMode && <div className="error-banner">{error}</div>}
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+        <button className="btn btn-primary" onClick={openCreate}>
+          + New Skill
+        </button>
+        <button className="btn btn-secondary" onClick={handleTeach}>
+          Teach a Trick
+        </button>
+      </div>
+
+      {teachCommand && (
+        <div className="teach-skill-panel" style={{ marginBottom: 20 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+            <div>
+              <strong>Teach a new trick</strong>
+              <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "4px 0 0" }}>
+                Run this command in your terminal. Claude will walk you through
+                creating a custom slash command, then refresh this page to see it.
+              </p>
+            </div>
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={() => setTeachCommand(null)}
+            >
+              Dismiss
+            </button>
+          </div>
+          <CommandDisplay command={teachCommand} label="View Command" />
+        </div>
+      )}
+
+      {/* Skill cards */}
+      {skills.length > 0 && (
+        <div className="agent-grid">
+          {skills.map((skill) => (
+            <SkillCard
+              key={skill.filename}
+              skill={skill}
+              onEdit={() => openEdit(skill)}
+              onRemove={() => setDeleteConfirm(skill.filename)}
+              onConfirmDelete={() => handleRemove(skill.filename)}
+              deleteConfirm={deleteConfirm === skill.filename}
+              onCancelDelete={() => setDeleteConfirm(null)}
+            />
+          ))}
+        </div>
+      )}
+
+      {skills.length === 0 && !teachCommand && (
+        <div className="empty-state">
+          <h3>No Tricks Yet</h3>
+          <p>
+            The crew hasn&apos;t learned any moves. Create a skill manually or
+            let Claude teach one — custom slash commands live in
+            ~/.claude/commands/.
+          </p>
+        </div>
+      )}
+
+      {/* Create / Edit Modal */}
+      {modalMode && (
+        <SkillFormModal
+          mode={modalMode}
+          skill={modalSkill}
+          error={error}
+          onSave={handleSave}
+          onClose={closeModal}
+        />
+      )}
+    </>
+  );
+}
+
+// ── Agent Card ──
 
 function AgentCard({
   agent,
@@ -423,6 +633,96 @@ function BuiltInAgentCard({
     </div>
   );
 }
+
+// ── Skill Card ──
+
+function SkillCard({
+  skill,
+  onEdit,
+  onRemove,
+  onConfirmDelete,
+  deleteConfirm,
+  onCancelDelete,
+}: {
+  skill: SkillFile;
+  onEdit: () => void;
+  onRemove: () => void;
+  onConfirmDelete: () => void;
+  deleteConfirm: boolean;
+  onCancelDelete: () => void;
+}) {
+  const slashName = skill.filename.replace(/\.md$/, "");
+  return (
+    <div className="agent-card skill-card">
+      <div
+        className="agent-card-color-bar"
+        style={{ background: "var(--accent-brass)" }}
+      />
+      <div className="agent-card-body">
+        <div className="agent-card-top">
+          <div
+            className="agent-card-avatar skill-card-avatar"
+            style={{ background: "var(--accent-brass)" }}
+          >
+            /
+          </div>
+          <div className="agent-card-info">
+            <div className="agent-card-name">{skill.name}</div>
+            <div className="agent-card-role">
+              /{slashName}
+              {skill.is_global && (
+                <span className="agent-card-builtin-badge">global</span>
+              )}
+            </div>
+          </div>
+        </div>
+        {skill.description && (
+          <div
+            style={{
+              fontSize: 12,
+              color: "var(--text-secondary)",
+              marginBottom: 8,
+            }}
+          >
+            {skill.description}
+          </div>
+        )}
+        <div className="agent-card-prompt">{skill.prompt_template}</div>
+        <div className="agent-card-actions">
+          <button className="btn btn-secondary btn-sm" onClick={onEdit}>
+            Edit
+          </button>
+          {!deleteConfirm && (
+            <button className="btn btn-danger btn-sm" onClick={onRemove}>
+              Remove
+            </button>
+          )}
+          {deleteConfirm && (
+            <div className="agent-card-confirm">
+              <span style={{ fontSize: 12, color: "var(--danger)" }}>
+                Delete?
+              </span>
+              <button
+                className="btn btn-danger btn-sm"
+                onClick={onConfirmDelete}
+              >
+                Yes
+              </button>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={onCancelDelete}
+              >
+                No
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Agent Form Modal ──
 
 function AgentFormModal({
   mode,
@@ -657,6 +957,147 @@ function AgentFormModal({
             disabled={!isValid}
           >
             {mode === "create" ? "Create Agent" : "Save Changes"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Skill Form Modal ──
+
+function SkillFormModal({
+  mode,
+  skill,
+  error,
+  onSave,
+  onClose,
+}: {
+  mode: "create" | "edit";
+  skill: SkillFile | null;
+  error: string;
+  onSave: (data: SkillFormData) => void;
+  onClose: () => void;
+}) {
+  const [form, setForm] = useState<SkillFormData>(() => {
+    if (skill) {
+      return {
+        filename: skill.filename,
+        name: skill.name,
+        description: skill.description,
+        prompt_template: skill.prompt_template,
+      };
+    }
+    return { ...emptySkillForm };
+  });
+
+  const overlayRef = useRef<HTMLDivElement>(null);
+
+  const update = (field: keyof SkillFormData, value: string) => {
+    setForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleOverlayClick = (e: React.MouseEvent) => {
+    if (e.target === overlayRef.current) {
+      onClose();
+    }
+  };
+
+  const isValid = form.name.trim() !== "" && form.prompt_template.trim() !== "";
+
+  return (
+    <div
+      className="modal-overlay"
+      ref={overlayRef}
+      onClick={handleOverlayClick}
+    >
+      <div className="modal agent-form-modal">
+        {/* Header */}
+        <div className="agent-form-header" style={{ background: "var(--accent-brass)" }}>
+          <div className="agent-form-avatar" style={{ fontSize: 22 }}>
+            /
+          </div>
+          <div className="agent-form-header-text">
+            <div className="agent-form-header-title">
+              {mode === "create" ? "Create Skill" : "Edit Skill"}
+            </div>
+            <div className="agent-form-header-subtitle">
+              {form.name ? `/${form.name.toLowerCase().replace(/\s+/g, "-")}` : "/unnamed"}
+            </div>
+          </div>
+        </div>
+
+        <div className="agent-form-body">
+          {error && <div className="error-banner">{error}</div>}
+
+          {/* Name */}
+          <div className="form-group">
+            <label className="form-label">Name</label>
+            <input
+              className="form-input"
+              value={form.name}
+              onChange={(e) => update("name", e.target.value)}
+              placeholder="review-pr"
+              autoFocus
+            />
+          </div>
+
+          {/* Filename */}
+          <div className="form-group">
+            <label className="form-label">Filename</label>
+            <input
+              className="form-input"
+              value={form.filename}
+              onChange={(e) => update("filename", e.target.value)}
+              placeholder="auto-generated-from-name.md"
+              disabled={mode === "edit"}
+            />
+            <div className="form-help">
+              {mode === "edit"
+                ? "Filename cannot be changed after creation."
+                : "Optional. Auto-generated from name if left blank. This becomes the /slash-command name."}
+            </div>
+          </div>
+
+          {/* Description */}
+          <div className="form-group">
+            <label className="form-label">Description</label>
+            <input
+              className="form-input"
+              value={form.description}
+              onChange={(e) => update("description", e.target.value)}
+              placeholder="Automates PR review workflow"
+            />
+          </div>
+
+          {/* Prompt Template */}
+          <div className="form-group">
+            <label className="form-label">Prompt Template</label>
+            <textarea
+              className="form-textarea"
+              value={form.prompt_template}
+              onChange={(e) => update("prompt_template", e.target.value)}
+              placeholder="Review the current PR and check for..."
+              style={{ minHeight: 200 }}
+            />
+            <div className="form-help">
+              The prompt that runs when this skill is invoked. Use $ARGUMENTS
+              for user-provided input.
+            </div>
+          </div>
+        </div>
+
+        {/* Footer actions */}
+        <div className="agent-form-footer">
+          <button className="btn btn-secondary" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            className="btn btn-primary"
+            onClick={() => onSave(form)}
+            disabled={!isValid}
+          >
+            {mode === "create" ? "Create Skill" : "Save Changes"}
           </button>
         </div>
       </div>

@@ -1,4 +1,4 @@
-use crate::models::{AgentFile, Feature, Preferences, Repository, SystemMap};
+use crate::models::{AgentFile, Feature, Preferences, Repository, SkillFile, SystemMap};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Mutex;
@@ -383,6 +383,78 @@ pub fn delete_global_agent(filename: &str) -> Result<(), String> {
     }
 }
 
+// ── Skill File Operations ──
+// Skills are stored as `.claude/commands/*.md` files (repo or global).
+
+/// List all skill files from a repo's `.claude/commands/` directory.
+pub fn list_repo_skills(repo_path: &str) -> Result<Vec<SkillFile>, String> {
+    let skills_dir = Path::new(repo_path).join(".claude").join("commands");
+    read_skills_from_dir(&skills_dir, false)
+}
+
+/// List all global skill files from `~/.claude/commands/`.
+pub fn list_global_skills() -> Result<Vec<SkillFile>, String> {
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .map_err(|_| "Could not determine home directory".to_string())?;
+    let skills_dir = Path::new(&home).join(".claude").join("commands");
+    read_skills_from_dir(&skills_dir, true)
+}
+
+fn read_skills_from_dir(skills_dir: &Path, is_global: bool) -> Result<Vec<SkillFile>, String> {
+    if !skills_dir.exists() {
+        return Ok(vec![]);
+    }
+    let mut skills = Vec::new();
+    let entries =
+        std::fs::read_dir(skills_dir).map_err(|e| format!("Failed to read commands dir: {}", e))?;
+
+    let mut files: Vec<_> = entries.flatten().collect();
+    files.sort_by_key(|e| e.file_name());
+
+    for entry in files {
+        let path = entry.path();
+        if path.extension().map(|e| e == "md").unwrap_or(false) {
+            let filename = path.file_name().unwrap().to_string_lossy().to_string();
+            if let Ok(content) = std::fs::read_to_string(&path) {
+                let mut skill = SkillFile::parse(&filename, &content);
+                skill.is_global = is_global;
+                skills.push(skill);
+            }
+        }
+    }
+    Ok(skills)
+}
+
+/// Save a skill file to the global `~/.claude/commands/` directory.
+pub fn save_global_skill(skill: &SkillFile) -> Result<(), String> {
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .map_err(|_| "Could not determine home directory".to_string())?;
+    let skills_dir = Path::new(&home).join(".claude").join("commands");
+    std::fs::create_dir_all(&skills_dir)
+        .map_err(|e| format!("Failed to create commands dir: {}", e))?;
+    let path = skills_dir.join(&skill.filename);
+    let content = skill.to_markdown();
+    std::fs::write(&path, content).map_err(|e| format!("Failed to write skill file: {}", e))
+}
+
+/// Delete a skill file from the global `~/.claude/commands/` directory.
+pub fn delete_global_skill(filename: &str) -> Result<(), String> {
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .map_err(|_| "Could not determine home directory".to_string())?;
+    let path = Path::new(&home)
+        .join(".claude")
+        .join("commands")
+        .join(filename);
+    if path.exists() {
+        std::fs::remove_file(&path).map_err(|e| format!("Failed to delete skill file: {}", e))
+    } else {
+        Err("Skill file not found".to_string())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -736,5 +808,82 @@ mod tests {
         let maps = state.system_maps.lock().unwrap();
         assert_eq!(maps.len(), 1);
         assert_eq!(maps.get("new").unwrap().name, "New");
+    }
+
+    // ── Skill Store Tests ──
+
+    #[test]
+    fn list_skills_from_empty_dir_returns_empty() {
+        let dir = TempDir::new().unwrap();
+        let result = read_skills_from_dir(&dir.path().join("nonexistent"), false);
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_empty());
+    }
+
+    #[test]
+    fn list_skills_reads_md_files() {
+        let dir = TempDir::new().unwrap();
+        let commands_dir = dir.path().join(".claude").join("commands");
+        std::fs::create_dir_all(&commands_dir).unwrap();
+
+        std::fs::write(
+            commands_dir.join("review-pr.md"),
+            "---\nname: \"Review PR\"\ndescription: \"Reviews PRs\"\n---\n\nReview this PR.",
+        )
+        .unwrap();
+        std::fs::write(
+            commands_dir.join("run-tests.md"),
+            "Run all tests and report failures.",
+        )
+        .unwrap();
+        // Non-.md files should be ignored
+        std::fs::write(commands_dir.join("notes.txt"), "not a skill").unwrap();
+
+        let skills = read_skills_from_dir(&commands_dir, true).unwrap();
+        assert_eq!(skills.len(), 2);
+        assert_eq!(skills[0].name, "Review PR");
+        assert!(skills[0].is_global);
+        assert_eq!(skills[1].name, "run tests");
+        assert!(skills[1].is_global);
+    }
+
+    #[test]
+    fn save_and_delete_global_skill_with_temp_home() {
+        let dir = TempDir::new().unwrap();
+        let home = dir.path().to_string_lossy().to_string();
+
+        // Point HOME at our temp dir
+        std::env::set_var("HOME", &home);
+
+        let skill = SkillFile {
+            filename: "test-skill.md".to_string(),
+            name: "Test Skill".to_string(),
+            description: "A test".to_string(),
+            prompt_template: "Do something.".to_string(),
+            is_global: true,
+        };
+
+        save_global_skill(&skill).unwrap();
+
+        let skills = list_global_skills().unwrap();
+        assert_eq!(skills.len(), 1);
+        assert_eq!(skills[0].name, "Test Skill");
+        assert_eq!(skills[0].prompt_template, "Do something.");
+
+        delete_global_skill("test-skill.md").unwrap();
+
+        let skills = list_global_skills().unwrap();
+        assert!(skills.is_empty());
+    }
+
+    #[test]
+    fn delete_nonexistent_skill_returns_error() {
+        let dir = TempDir::new().unwrap();
+        let home = dir.path().to_string_lossy().to_string();
+        std::env::set_var("HOME", &home);
+
+        let result = delete_global_skill("nonexistent.md");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Skill file not found"));
     }
 }

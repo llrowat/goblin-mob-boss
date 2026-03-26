@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   Repository,
   AgentFile,
+  SkillFile,
   Feature,
   TaskSpec,
   ExecutionMode,
@@ -112,6 +113,19 @@ export function useTauri() {
 
     deleteGlobalAgent: (filename: string) =>
       invoke<void>("delete_global_agent", { filename }),
+
+    // Skills (file-based)
+    listGlobalSkills: () =>
+      invoke<SkillFile[]>("list_global_skills"),
+
+    saveGlobalSkill: (skill: SkillFile) =>
+      invoke<void>("save_global_skill", { skill }),
+
+    deleteGlobalSkill: (filename: string) =>
+      invoke<void>("delete_global_skill", { filename }),
+
+    getTeachSkillCommand: () =>
+      invoke<string>("get_teach_skill_command"),
 
     // Features
     startFeature: (repoIds: string[], name: string, description: string, mapId?: string | null, attachments?: DocumentAttachment[]) =>

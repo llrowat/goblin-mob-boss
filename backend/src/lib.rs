@@ -57,6 +57,11 @@ pub fn run() {
             commands::list_global_agents,
             commands::save_global_agent,
             commands::delete_global_agent,
+            // Skills (file-based)
+            commands::list_global_skills,
+            commands::save_global_skill,
+            commands::delete_global_skill,
+            commands::get_teach_skill_command,
             // Features
             commands::start_feature,
             commands::list_features,

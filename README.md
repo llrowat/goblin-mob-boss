@@ -74,12 +74,16 @@ Without GMB, getting good results from Claude Code agents means manually wrangli
 - Document attachments included in both planning and execution prompts
 - Feature lifecycle tracking: Ideation → Configuring → Executing → Testing → Ready → Pushed → Complete
 
-### Agents
-- Agents defined as `.claude/agents/*.md` with YAML frontmatter
+### Agents & Skills
+- **Agents** ("Goblins") defined as `.claude/agents/*.md` with YAML frontmatter
 - Form-based editor with color picker, role selector, tools, model, and system prompt
 - Built-in agent templates (Frontend Dev, Backend Dev, Test Engineer, Code Reviewer, etc.)
 - Quality-role agents automatically included as verification steps in every plan
 - Per-repo and global agents
+- **Skills** ("Tricks") defined as `.claude/commands/*.md` — custom slash commands
+- Create skills manually via form editor or use the guided "Teach a Trick" flow (Claude walks you through creating one)
+- Skills support `$ARGUMENTS` placeholder for user-provided input
+- Tabbed "Goblins + Tricks" UI on the Agents page
 
 ### System Map
 - Map your service topology: backends, frontends, workers, databases, queues, caches, external services
