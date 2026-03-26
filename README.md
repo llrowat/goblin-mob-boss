@@ -38,13 +38,13 @@ Without GMB, getting good results from Claude Code agents means manually wrangli
 |:---:|:---:|
 | ![Features](screenshots/home.png) | ![Planning](screenshots/feature-detail.png) |
 
-| Agents | System Map |
+| Agents | Repositories |
 |:---:|:---:|
-| ![Agents](screenshots/agents.png) | ![System Map](screenshots/system-map.png) |
+| ![Agents](screenshots/agents.png) | ![Repositories](screenshots/repos.png) |
 
-| Repositories |
+| System Map |
 |:---:|
-| ![Repositories](screenshots/repos.png) |
+| ![System Map](screenshots/system-map.png) |
 
 ## How It Works
 
