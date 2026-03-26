@@ -28,7 +28,7 @@ Without GMB, getting good results from Claude Code agents means manually wrangli
 - **Manages agents** — Visual editor for `.claude/agents/*.md` files with built-in templates. No more hand-editing YAML frontmatter.
 - **Forces planning** — Every feature goes through an interactive planning phase with Claude before any code is written. The planner breaks work into task specs, assigns agents, and can ask you clarifying questions.
 - **Suggests execution modes** — GMB analyzes your task dependency graph and recommends the right approach:
-  - **Agent Teams** — Multiple Claude Code instances in parallel tmux panes. Best for large features with independent workstreams.
+  - **Agent Teams** — Multiple Claude Code instances running in parallel, each with its own agent identity. Best for large features with independent workstreams.
   - **Subagents** — A single lead instance that delegates. Best for focused features with dependent tasks.
 - **Handles git workflow** — Feature branches, worktrees, cross-repo coordination, validation, and PR creation.
 
@@ -68,7 +68,7 @@ Without GMB, getting good results from Claude Code agents means manually wrangli
 
 ### Planning & Execution
 - Interactive planning with clarifying Q&A and plan history
-- Two execution modes: Agent Teams (parallel tmux panes) or Subagents (delegated)
+- Two execution modes: Agent Teams (parallel agents) or Subagents (delegated)
 - Heuristic-based mode recommendation with confidence scoring
 - Task dependency graph analysis (parallelism ratio, critical path)
 - Document attachments included in both planning and execution prompts
