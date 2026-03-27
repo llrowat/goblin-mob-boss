@@ -2783,6 +2783,11 @@ pub fn add_built_in_agent(repo_path: String, filename: String) -> Result<AgentFi
 }
 
 #[tauri::command]
+pub fn list_built_in_skills() -> Vec<crate::models::SkillFile> {
+    templates::built_in_skills()
+}
+
+#[tauri::command]
 pub fn list_feature_recipes() -> Vec<templates::FeatureRecipe> {
     templates::list_feature_recipes()
 }

@@ -36,28 +36,47 @@ describe("AgentsPage", () => {
 
   const mockBuiltInAgents = [
     {
-      filename: "frontend-developer.md",
-      name: "Frontend Developer",
-      description: "React/TypeScript UI specialist",
+      filename: "developer.md",
+      name: "Developer",
+      description: "General-purpose coding agent",
       tools: "Read, Edit, Write, Bash, Glob, Grep",
       model: null,
-      system_prompt: "You are a frontend development specialist.",
+      system_prompt: "You are a software developer.",
       is_global: true,
       color: "#5b8abd",
       role: "developer",
       enabled: true,
     },
     {
-      filename: "test-engineer.md",
-      name: "Test Engineer",
-      description: "Testing and quality assurance specialist",
-      tools: "Read, Edit, Write, Bash, Glob, Grep",
+      filename: "architect.md",
+      name: "Architect",
+      description: "System design and code review specialist",
+      tools: "Read, Glob, Grep, Bash",
       model: null,
-      system_prompt: "You are a testing specialist.",
+      system_prompt: "You are a software architect.",
       is_global: true,
-      color: "#c9a84c",
-      role: "quality",
+      color: "#9b6b9e",
+      role: "architect",
       enabled: true,
+    },
+  ];
+
+  const mockBuiltInSkills = [
+    {
+      dir_name: "review-plan",
+      name: "review-plan",
+      description: "Review an ideation plan and suggest improvements",
+      prompt_template: "Review the ideation plan for the current feature.",
+      source: "user",
+      plugin_name: null,
+    },
+    {
+      dir_name: "validate-and-fix",
+      name: "validate-and-fix",
+      description: "Run validators and auto-fix failures in a loop",
+      prompt_template: "Run the project's validators and fix any failures.",
+      source: "user",
+      plugin_name: null,
     },
   ];
 
@@ -85,6 +104,7 @@ describe("AgentsPage", () => {
       if (cmd === "list_global_agents") return Promise.resolve(mockAgents);
       if (cmd === "list_built_in_agents") return Promise.resolve(mockBuiltInAgents);
       if (cmd === "list_global_skills") return Promise.resolve([]);
+      if (cmd === "list_built_in_skills") return Promise.resolve([]);
       return Promise.resolve([]);
     });
   }
@@ -94,6 +114,7 @@ describe("AgentsPage", () => {
       if (cmd === "list_global_agents") return Promise.resolve([]);
       if (cmd === "list_built_in_agents") return Promise.resolve([]);
       if (cmd === "list_global_skills") return Promise.resolve(mockSkills);
+      if (cmd === "list_built_in_skills") return Promise.resolve(mockBuiltInSkills);
       return Promise.resolve([]);
     });
   }
@@ -103,6 +124,7 @@ describe("AgentsPage", () => {
       if (cmd === "list_global_agents") return Promise.resolve([]);
       if (cmd === "list_built_in_agents") return Promise.resolve([]);
       if (cmd === "list_global_skills") return Promise.resolve([]);
+      if (cmd === "list_built_in_skills") return Promise.resolve([]);
       return Promise.resolve([]);
     });
   }
@@ -329,7 +351,7 @@ describe("AgentsPage", () => {
       expect(screen.getByText("Built-in Agents")).toBeInTheDocument();
     });
 
-    expect(screen.getByText("Test Engineer")).toBeInTheDocument();
+    expect(screen.getByText("Architect")).toBeInTheDocument();
 
     const addButtons = screen.getAllByText("+ Add");
     expect(addButtons.length).toBeGreaterThan(0);
@@ -353,7 +375,7 @@ describe("AgentsPage", () => {
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith("save_global_agent", {
         agent: expect.objectContaining({
-          filename: "frontend-developer.md",
+          filename: "developer.md",
           is_global: true,
         }),
       });
@@ -365,6 +387,7 @@ describe("AgentsPage", () => {
       if (cmd === "list_global_agents") return Promise.resolve([]);
       if (cmd === "list_built_in_agents") return Promise.resolve(mockBuiltInAgents);
       if (cmd === "list_global_skills") return Promise.resolve([]);
+      if (cmd === "list_built_in_skills") return Promise.resolve([]);
       return Promise.resolve([]);
     });
 
@@ -425,6 +448,7 @@ describe("AgentsPage", () => {
       if (cmd === "list_global_agents") return Promise.resolve(disabledAgents);
       if (cmd === "list_built_in_agents") return Promise.resolve([]);
       if (cmd === "list_global_skills") return Promise.resolve([]);
+      if (cmd === "list_built_in_skills") return Promise.resolve([]);
       return Promise.resolve([]);
     });
 
@@ -675,5 +699,81 @@ describe("AgentsPage", () => {
 
     fireEvent.click(screen.getByText("Cancel"));
     expect(screen.queryAllByText("Create Skill")).toHaveLength(0);
+  });
+
+  it("shows unapplied built-in skills on Skills tab", async () => {
+    mockInvokeForSkills();
+
+    render(<AgentsPage />);
+    fireEvent.click(screen.getByRole("tab", { name: "Skills" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Built-in Skills")).toBeInTheDocument();
+    });
+
+    // validate-and-fix is in built-ins but not in user skills
+    expect(screen.getByText("validate-and-fix")).toBeInTheDocument();
+  });
+
+  it("saves built-in skill when Add is clicked", async () => {
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "list_global_agents") return Promise.resolve([]);
+      if (cmd === "list_built_in_agents") return Promise.resolve([]);
+      if (cmd === "list_global_skills") return Promise.resolve([]);
+      if (cmd === "list_built_in_skills") return Promise.resolve(mockBuiltInSkills);
+      return Promise.resolve([]);
+    });
+
+    render(<AgentsPage />);
+    fireEvent.click(screen.getByRole("tab", { name: "Skills" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Built-in Skills")).toBeInTheDocument();
+    });
+
+    const addButtons = screen.getAllByText("+ Add");
+    fireEvent.click(addButtons[0]);
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("save_global_skill", {
+        skill: expect.objectContaining({
+          dir_name: "review-plan",
+          source: "user",
+        }),
+      });
+    });
+  });
+
+  it("hides built-in skill once already added by user", async () => {
+    // User already has review-plan, but not validate-and-fix
+    const userSkillsWithBuiltIn = [
+      {
+        dir_name: "review-plan",
+        name: "review-plan",
+        description: "Review an ideation plan",
+        prompt_template: "Review the plan.",
+        source: "user",
+        plugin_name: null,
+      },
+    ];
+
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "list_global_agents") return Promise.resolve([]);
+      if (cmd === "list_built_in_agents") return Promise.resolve([]);
+      if (cmd === "list_global_skills") return Promise.resolve(userSkillsWithBuiltIn);
+      if (cmd === "list_built_in_skills") return Promise.resolve(mockBuiltInSkills);
+      return Promise.resolve([]);
+    });
+
+    render(<AgentsPage />);
+    fireEvent.click(screen.getByRole("tab", { name: "Skills" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Built-in Skills")).toBeInTheDocument();
+    });
+
+    // Only validate-and-fix should appear as unapplied
+    const addButtons = screen.getAllByText("+ Add");
+    expect(addButtons).toHaveLength(1);
   });
 });

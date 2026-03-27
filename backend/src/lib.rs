@@ -118,9 +118,10 @@ pub fn run() {
             // Preferences
             commands::get_preferences,
             commands::set_preferences,
-            // Built-in Agents & Recipes
+            // Built-in Agents, Skills & Recipes
             commands::list_built_in_agents,
             commands::add_built_in_agent,
+            commands::list_built_in_skills,
             commands::list_feature_recipes,
             // Execution Observability
             commands::poll_execution_status,

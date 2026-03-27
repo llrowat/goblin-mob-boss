@@ -299,6 +299,8 @@ function AgentsTab() {
 function SkillsTab() {
   const tauri = useTauri();
   const [skills, setSkills] = useState<SkillFile[]>([]);
+  const [builtInSkills, setBuiltInSkills] = useState<SkillFile[]>([]);
+  const [addingBuiltIn, setAddingBuiltIn] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [modalSkill, setModalSkill] = useState<SkillFile | null>(null);
   const [modalMode, setModalMode] = useState<"create" | "edit" | null>(null);
@@ -314,7 +316,10 @@ function SkillsTab() {
       .catch(() => setSkills([]));
   };
 
-  useEffect(loadSkills, []);
+  useEffect(() => {
+    loadSkills();
+    tauri.listBuiltInSkills().then(setBuiltInSkills).catch(() => setBuiltInSkills([]));
+  }, []);
 
   const openCreate = () => {
     setModalSkill(null);
@@ -367,6 +372,28 @@ function SkillsTab() {
       setError(String(e));
     }
   };
+
+  const handleAddBuiltIn = async (dirName: string) => {
+    setAddingBuiltIn(dirName);
+    setError("");
+    try {
+      const template = builtInSkills.find((s) => s.dir_name === dirName);
+      if (template) {
+        await tauri.saveGlobalSkill({ ...template, source: "user" });
+      }
+      loadSkills();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setAddingBuiltIn(null);
+    }
+  };
+
+  // Built-in skills not yet added (match by dir_name)
+  const skillNames = new Set(skills.map((s) => s.dir_name));
+  const unappliedBuiltIns = builtInSkills.filter(
+    (s) => !skillNames.has(s.dir_name),
+  );
 
   const handleGenerate = async () => {
     if (!generateDesc.trim()) return;
@@ -485,7 +512,29 @@ function SkillsTab() {
         </div>
       )}
 
-      {skills.length === 0 && !showGenerateInput && !generating && (
+      {/* Built-in skills (not yet added) */}
+      {unappliedBuiltIns.length > 0 && (
+        <>
+          <div
+            className="section-label"
+            style={{ padding: skills.length > 0 ? "20px 0 8px" : "0 0 8px" }}
+          >
+            Built-in Skills
+          </div>
+          <div className="agent-grid">
+            {unappliedBuiltIns.map((skill) => (
+              <BuiltInSkillCard
+                key={skill.dir_name}
+                skill={skill}
+                adding={addingBuiltIn === skill.dir_name}
+                onAdd={() => handleAddBuiltIn(skill.dir_name)}
+              />
+            ))}
+          </div>
+        </>
+      )}
+
+      {skills.length === 0 && unappliedBuiltIns.length === 0 && !showGenerateInput && !generating && (
         <div className="empty-state">
           <h3>No Skills Yet</h3>
           <p>
@@ -788,6 +837,64 @@ function SkillCard({
               </button>
             </div>
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Built-in Skill Card ──
+
+function BuiltInSkillCard({
+  skill,
+  adding,
+  onAdd,
+}: {
+  skill: SkillFile;
+  adding: boolean;
+  onAdd: () => void;
+}) {
+  return (
+    <div className="agent-card agent-card-template skill-card">
+      <div
+        className="agent-card-color-bar"
+        style={{ background: "var(--accent-brass)" }}
+      />
+      <div className="agent-card-body">
+        <div className="agent-card-top">
+          <div
+            className="agent-card-avatar skill-card-avatar"
+            style={{ background: "var(--accent-brass)", opacity: 0.5 }}
+          >
+            /
+          </div>
+          <div className="agent-card-info">
+            <div className="agent-card-name">{skill.name}</div>
+            <div className="agent-card-role">
+              /{skill.dir_name}
+              <span className="agent-card-builtin-badge">built-in</span>
+            </div>
+          </div>
+        </div>
+        {skill.description && (
+          <div
+            style={{
+              fontSize: 12,
+              color: "var(--muted)",
+              marginBottom: 8,
+            }}
+          >
+            {skill.description}
+          </div>
+        )}
+        <div className="agent-card-actions">
+          <button
+            className="btn btn-primary btn-sm"
+            onClick={onAdd}
+            disabled={adding}
+          >
+            {adding ? "Adding..." : "+ Add"}
+          </button>
         </div>
       </div>
     </div>
