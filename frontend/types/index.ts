@@ -28,12 +28,15 @@ export interface AgentFile {
   enabled: boolean;
 }
 
+export type SkillSource = "user" | "plugin";
+
 export interface SkillFile {
-  filename: string;
+  dir_name: string;
   name: string;
   description: string;
   prompt_template: string;
-  is_global: boolean;
+  source: SkillSource;
+  plugin_name?: string | null;
 }
 
 export type ExecutionMode = "teams" | "subagents";

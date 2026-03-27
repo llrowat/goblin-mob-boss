@@ -269,31 +269,103 @@ pub fn save_global_skill(skill: SkillFile) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn delete_global_skill(filename: String) -> Result<(), String> {
-    store::delete_global_skill(&filename)
+pub fn delete_global_skill(dir_name: String) -> Result<(), String> {
+    store::delete_global_skill(&dir_name)
 }
 
+/// Spawn Claude Code in --print mode to auto-generate a skill from a description.
+/// Claude creates the skill directory and SKILL.md file.
+/// Returns the skill name; frontend polls `check_skill_generation` to detect completion.
 #[tauri::command]
-pub fn get_teach_skill_command() -> String {
+pub fn generate_skill(description: String) -> Result<String, String> {
+    use std::io::Write as IoWrite;
+
     let home = std::env::var("HOME")
         .or_else(|_| std::env::var("USERPROFILE"))
-        .unwrap_or_default();
-    let commands_dir = std::path::Path::new(&home)
-        .join(".claude")
-        .join("commands");
-    format!(
-        "claude --print \"I want to create a new custom slash command (skill). \
-Walk me through it step by step:\n\
-1. Ask me what workflow or task this skill should automate\n\
-2. Ask me what inputs/parameters it needs (if any, use $ARGUMENTS placeholder)\n\
-3. Suggest a good slash command name\n\
-4. Write the prompt template as a .md file to {commands_dir}\n\
-\n\
-The file should be saved to {commands_dir}/<name>.md. \
-Keep the prompt template focused and actionable. \
-Include a YAML frontmatter block with name and description fields.\"",
-        commands_dir = commands_dir.display()
-    )
+        .map_err(|_| "Could not determine home directory".to_string())?;
+    let skills_dir = std::path::Path::new(&home).join(".claude").join("skills");
+    let _ = std::fs::create_dir_all(&skills_dir);
+
+    // Derive a skill name from the description for polling
+    let skill_name = description
+        .split_whitespace()
+        .take(4)
+        .collect::<Vec<_>>()
+        .join("-")
+        .to_lowercase()
+        .replace(|c: char| !c.is_alphanumeric() && c != '-', "");
+    let skill_name = if skill_name.is_empty() {
+        "new-skill".to_string()
+    } else {
+        skill_name
+    };
+
+    let prompt = format!(
+        r#"Create a Claude Code custom skill based on this description:
+
+{description}
+
+Write the skill as a SKILL.md file in the directory: {skills_dir}/{skill_name}/
+
+The SKILL.md file MUST have this exact format:
+- YAML frontmatter with `name`, `description`, and `user_invocable: true`
+- Body contains the prompt template that runs when the skill is invoked
+- Use $ARGUMENTS placeholder if the skill should accept user input
+
+Example format:
+```
+---
+name: skill-name
+description: One-line description of what this skill does
+user_invocable: true
+---
+
+The prompt template content here...
+```
+
+Keep the prompt template focused and actionable. Create the directory if it doesn't exist, then write the SKILL.md file."#,
+        description = description,
+        skills_dir = skills_dir.display(),
+        skill_name = skill_name,
+    );
+
+    let log_dir = std::path::Path::new(&home).join(".claude").join(".gmb");
+    let _ = std::fs::create_dir_all(&log_dir);
+    let log_file = std::fs::File::create(log_dir.join("skill-generation.log"))
+        .map_err(|e| format!("Failed to create log file: {}", e))?;
+    let stderr_file = log_file
+        .try_clone()
+        .map_err(|e| format!("Failed to clone log file handle: {}", e))?;
+
+    let mut cmd = std::process::Command::new("claude");
+    apply_user_path(&mut cmd);
+    cmd.arg("--print")
+        .arg("--permission-mode")
+        .arg("bypassPermissions")
+        .arg("--allowedTools")
+        .arg("Write,Bash")
+        .stdin(std::process::Stdio::piped())
+        .stdout(log_file)
+        .stderr(stderr_file)
+        .current_dir(&home);
+
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("Failed to start Claude: {}", e))?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        std::thread::spawn(move || {
+            let _ = stdin.write_all(prompt.as_bytes());
+        });
+    }
+
+    Ok(skill_name)
+}
+
+/// Check if a skill has been generated (for polling after generate_skill).
+#[tauri::command]
+pub fn check_skill_generation(name: String) -> Result<bool, String> {
+    store::check_skill_generation(&name)
 }
 
 // ── Feature Commands ──

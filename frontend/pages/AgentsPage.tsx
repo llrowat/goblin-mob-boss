@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useTauri } from "../hooks/useTauri";
 import type { AgentFile, SkillFile } from "../types";
-import { CommandDisplay } from "../components/CommandDisplay";
 
 
 const PRESET_COLORS = [
@@ -44,14 +43,12 @@ const emptyForm: AgentFormData = {
 };
 
 interface SkillFormData {
-  filename: string;
   name: string;
   description: string;
   prompt_template: string;
 }
 
 const emptySkillForm: SkillFormData = {
-  filename: "",
   name: "",
   description: "",
   prompt_template: "",
@@ -66,7 +63,7 @@ export function AgentsPage() {
         <h2>Agents &amp; Skills</h2>
         <p>
           Manage your agents and their skills. Agents handle the jobs,
-          skills define reusable slash commands they can run.
+          skills define reusable workflows they can run.
         </p>
       </div>
 
@@ -295,7 +292,9 @@ function SkillsTab() {
   const [modalSkill, setModalSkill] = useState<SkillFile | null>(null);
   const [modalMode, setModalMode] = useState<"create" | "edit" | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
-  const [teachCommand, setTeachCommand] = useState<string | null>(null);
+  const [generating, setGenerating] = useState(false);
+  const [generateDesc, setGenerateDesc] = useState("");
+  const [showGenerateInput, setShowGenerateInput] = useState(false);
 
   const loadSkills = () => {
     tauri
@@ -328,16 +327,14 @@ function SkillsTab() {
     if (!data.name.trim() || !data.prompt_template.trim()) return;
     setError("");
 
-    const filename =
-      data.filename.trim() ||
-      `${data.name.trim().toLowerCase().replace(/\s+/g, "-")}.md`;
+    const dirName = data.name.trim().toLowerCase().replace(/\s+/g, "-");
 
     const skill: SkillFile = {
-      filename: filename.endsWith(".md") ? filename : `${filename}.md`,
-      name: data.name.trim(),
+      dir_name: dirName,
+      name: dirName,
       description: data.description.trim(),
       prompt_template: data.prompt_template.trim(),
-      is_global: true,
+      source: "user",
     };
 
     try {
@@ -349,10 +346,10 @@ function SkillsTab() {
     }
   };
 
-  const handleRemove = async (filename: string) => {
+  const handleRemove = async (dirName: string) => {
     setError("");
     try {
-      await tauri.deleteGlobalSkill(filename);
+      await tauri.deleteGlobalSkill(dirName);
       setDeleteConfirm(null);
       loadSkills();
     } catch (e) {
@@ -360,12 +357,40 @@ function SkillsTab() {
     }
   };
 
-  const handleTeach = async () => {
+  const handleGenerate = async () => {
+    if (!generateDesc.trim()) return;
     setError("");
+    setGenerating(true);
+
     try {
-      const cmd = await tauri.getTeachSkillCommand();
-      setTeachCommand(cmd);
+      const skillName = await tauri.generateSkill(generateDesc.trim());
+      setShowGenerateInput(false);
+      setGenerateDesc("");
+
+      // Poll for completion
+      const poll = setInterval(async () => {
+        try {
+          const exists = await tauri.checkSkillGeneration(skillName);
+          if (exists) {
+            clearInterval(poll);
+            setGenerating(false);
+            loadSkills();
+          }
+        } catch {
+          clearInterval(poll);
+          setGenerating(false);
+          setError("Failed to check skill generation status");
+        }
+      }, 2000);
+
+      // Timeout after 2 minutes
+      setTimeout(() => {
+        clearInterval(poll);
+        setGenerating(false);
+        loadSkills(); // Reload anyway in case it completed
+      }, 120000);
     } catch (e) {
+      setGenerating(false);
       setError(String(e));
     }
   };
@@ -378,29 +403,55 @@ function SkillsTab() {
         <button className="btn btn-primary" onClick={openCreate}>
           + New Skill
         </button>
-        <button className="btn btn-secondary" onClick={handleTeach}>
-          Teach a Skill
+        <button
+          className="btn btn-secondary"
+          onClick={() => setShowGenerateInput(!showGenerateInput)}
+          disabled={generating}
+        >
+          {generating ? "Generating..." : "Auto-Create Skill"}
         </button>
       </div>
 
-      {teachCommand && (
+      {showGenerateInput && !generating && (
         <div className="teach-skill-panel" style={{ marginBottom: 20 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-            <div>
-              <strong>Teach a new skill</strong>
-              <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "4px 0 0" }}>
-                Run this command in your terminal. Claude will walk you through
-                creating a custom slash command, then refresh this page to see it.
-              </p>
-            </div>
+          <div style={{ marginBottom: 8 }}>
+            <strong>Describe your skill</strong>
+            <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "4px 0 0" }}>
+              Tell Claude what this skill should do. It will create the skill file automatically.
+            </p>
+          </div>
+          <textarea
+            className="form-textarea"
+            value={generateDesc}
+            onChange={(e) => setGenerateDesc(e.target.value)}
+            placeholder="e.g. Review the current PR for security vulnerabilities, check for OWASP top 10 issues, and suggest fixes..."
+            style={{ minHeight: 80, marginBottom: 8 }}
+            autoFocus
+          />
+          <div style={{ display: "flex", gap: 8 }}>
             <button
-              className="btn btn-secondary btn-sm"
-              onClick={() => setTeachCommand(null)}
+              className="btn btn-primary"
+              onClick={handleGenerate}
+              disabled={!generateDesc.trim()}
             >
-              Dismiss
+              Generate
+            </button>
+            <button
+              className="btn btn-secondary"
+              onClick={() => { setShowGenerateInput(false); setGenerateDesc(""); }}
+            >
+              Cancel
             </button>
           </div>
-          <CommandDisplay command={teachCommand} label="View Command" />
+        </div>
+      )}
+
+      {generating && (
+        <div className="teach-skill-panel" style={{ marginBottom: 20, textAlign: "center", padding: 20 }}>
+          <div className="spinner" style={{ marginBottom: 8 }} />
+          <p style={{ color: "var(--text-secondary)", margin: 0 }}>
+            Claude is crafting your skill...
+          </p>
         </div>
       )}
 
@@ -409,25 +460,25 @@ function SkillsTab() {
         <div className="agent-grid">
           {skills.map((skill) => (
             <SkillCard
-              key={skill.filename}
+              key={skill.dir_name}
               skill={skill}
-              onEdit={() => openEdit(skill)}
-              onRemove={() => setDeleteConfirm(skill.filename)}
-              onConfirmDelete={() => handleRemove(skill.filename)}
-              deleteConfirm={deleteConfirm === skill.filename}
+              onEdit={skill.source === "user" ? () => openEdit(skill) : undefined}
+              onRemove={skill.source === "user" ? () => setDeleteConfirm(skill.dir_name) : undefined}
+              onConfirmDelete={() => handleRemove(skill.dir_name)}
+              deleteConfirm={deleteConfirm === skill.dir_name}
               onCancelDelete={() => setDeleteConfirm(null)}
             />
           ))}
         </div>
       )}
 
-      {skills.length === 0 && !teachCommand && (
+      {skills.length === 0 && !showGenerateInput && !generating && (
         <div className="empty-state">
           <h3>No Skills Yet</h3>
           <p>
             No tricks in the book yet. Create a skill manually or
-            let Claude teach one — custom slash commands live in
-            ~/.claude/commands/.
+            let Claude auto-create one — skills live in
+            ~/.claude/skills/.
           </p>
         </div>
       )}
@@ -645,33 +696,36 @@ function SkillCard({
   onCancelDelete,
 }: {
   skill: SkillFile;
-  onEdit: () => void;
-  onRemove: () => void;
+  onEdit?: () => void;
+  onRemove?: () => void;
   onConfirmDelete: () => void;
   deleteConfirm: boolean;
   onCancelDelete: () => void;
 }) {
-  const slashName = skill.filename.replace(/\.md$/, "");
+  const isPlugin = skill.source === "plugin";
   return (
     <div className="agent-card skill-card">
       <div
         className="agent-card-color-bar"
-        style={{ background: "var(--accent-brass)" }}
+        style={{ background: isPlugin ? "var(--accent-emerald)" : "var(--accent-brass)" }}
       />
       <div className="agent-card-body">
         <div className="agent-card-top">
           <div
             className="agent-card-avatar skill-card-avatar"
-            style={{ background: "var(--accent-brass)" }}
+            style={{ background: isPlugin ? "var(--accent-emerald)" : "var(--accent-brass)" }}
           >
             /
           </div>
           <div className="agent-card-info">
             <div className="agent-card-name">{skill.name}</div>
             <div className="agent-card-role">
-              /{slashName}
-              {skill.is_global && (
-                <span className="agent-card-builtin-badge">global</span>
+              /{skill.dir_name}
+              {isPlugin && skill.plugin_name && (
+                <span className="agent-card-builtin-badge">{skill.plugin_name}</span>
+              )}
+              {!isPlugin && (
+                <span className="agent-card-builtin-badge">user</span>
               )}
             </div>
           </div>
@@ -689,10 +743,12 @@ function SkillCard({
         )}
         <div className="agent-card-prompt">{skill.prompt_template}</div>
         <div className="agent-card-actions">
-          <button className="btn btn-secondary btn-sm" onClick={onEdit}>
-            Edit
-          </button>
-          {!deleteConfirm && (
+          {onEdit && (
+            <button className="btn btn-secondary btn-sm" onClick={onEdit}>
+              Edit
+            </button>
+          )}
+          {onRemove && !deleteConfirm && (
             <button className="btn btn-danger btn-sm" onClick={onRemove}>
               Remove
             </button>
@@ -982,7 +1038,6 @@ function SkillFormModal({
   const [form, setForm] = useState<SkillFormData>(() => {
     if (skill) {
       return {
-        filename: skill.filename,
         name: skill.name,
         description: skill.description,
         prompt_template: skill.prompt_template,
@@ -1039,23 +1094,10 @@ function SkillFormModal({
               onChange={(e) => update("name", e.target.value)}
               placeholder="review-pr"
               autoFocus
-            />
-          </div>
-
-          {/* Filename */}
-          <div className="form-group">
-            <label className="form-label">Filename</label>
-            <input
-              className="form-input"
-              value={form.filename}
-              onChange={(e) => update("filename", e.target.value)}
-              placeholder="auto-generated-from-name.md"
               disabled={mode === "edit"}
             />
             <div className="form-help">
-              {mode === "edit"
-                ? "Filename cannot be changed after creation."
-                : "Optional. Auto-generated from name if left blank. This becomes the /slash-command name."}
+              This becomes the /skill name and directory name in ~/.claude/skills/.
             </div>
           </div>
 

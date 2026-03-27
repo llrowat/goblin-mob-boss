@@ -61,7 +61,8 @@ pub fn run() {
             commands::list_global_skills,
             commands::save_global_skill,
             commands::delete_global_skill,
-            commands::get_teach_skill_command,
+            commands::generate_skill,
+            commands::check_skill_generation,
             // Features
             commands::start_feature,
             commands::list_features,

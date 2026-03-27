@@ -202,40 +202,56 @@ impl AgentFile {
 }
 
 // ── Skill File ──
-// Represents a `.claude/commands/*.md` file (or `~/.claude/commands/*.md` for global).
+// Represents a `~/.claude/skills/<name>/SKILL.md` file (directory-based format).
 // Skills are custom slash commands that define reusable workflow prompts.
+// Can also come from plugins at `~/.claude/plugins/marketplaces/<marketplace>/plugins/<plugin>/skills/<name>/SKILL.md`.
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SkillSource {
+    User,
+    Plugin,
+}
+
+impl Default for SkillSource {
+    fn default() -> Self {
+        SkillSource::User
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SkillFile {
-    pub filename: String,
+    /// Directory name on disk — used for file operations (delete, save).
+    pub dir_name: String,
+    /// Display name from YAML frontmatter (may differ from dir_name).
     pub name: String,
     #[serde(default)]
     pub description: String,
     pub prompt_template: String,
-    /// Whether this skill comes from ~/.claude/commands/ (global) vs repo-level.
+    /// Where this skill was loaded from.
     #[serde(default)]
-    pub is_global: bool,
+    pub source: SkillSource,
+    /// For plugin skills, which plugin they came from.
+    #[serde(default)]
+    pub plugin_name: Option<String>,
 }
 
 impl SkillFile {
-    /// Parse a `.claude/commands/*.md` file.
-    /// Skills may optionally have YAML frontmatter with `name` and `description`.
+    /// Parse a `SKILL.md` file.
+    /// Skills have YAML frontmatter with `name`, `description`, and optionally `user_invocable`.
     /// The body is the prompt template.
-    pub fn parse(filename: &str, content: &str) -> Self {
+    pub fn parse(dir_name: &str, content: &str) -> Self {
         let content = content.trim();
-        let human_name = filename
-            .strip_suffix(".md")
-            .unwrap_or(filename)
-            .replace('-', " ");
 
         if !content.starts_with("---") {
             // No frontmatter — entire content is the prompt template
             return Self {
-                filename: filename.to_string(),
-                name: human_name,
+                dir_name: dir_name.to_string(),
+                name: dir_name.to_string(),
                 description: String::new(),
                 prompt_template: content.to_string(),
-                is_global: false,
+                source: SkillSource::User,
+                plugin_name: None,
             };
         }
 
@@ -265,41 +281,40 @@ impl SkillFile {
             }
 
             if name.is_empty() {
-                name = human_name;
+                name = dir_name.to_string();
             }
 
             Self {
-                filename: filename.to_string(),
+                dir_name: dir_name.to_string(),
                 name,
                 description,
                 prompt_template: body.to_string(),
-                is_global: false,
+                source: SkillSource::User,
+                plugin_name: None,
             }
         } else {
             // Malformed frontmatter — treat as plain content
             Self {
-                filename: filename.to_string(),
-                name: human_name,
+                dir_name: dir_name.to_string(),
+                name: dir_name.to_string(),
                 description: String::new(),
                 prompt_template: content.to_string(),
-                is_global: false,
+                source: SkillSource::User,
+                plugin_name: None,
             }
         }
     }
 
-    /// Serialize to markdown with optional YAML frontmatter.
+    /// Serialize to SKILL.md with YAML frontmatter.
     pub fn to_markdown(&self) -> String {
         let mut out = String::new();
-        if !self.name.is_empty() || !self.description.is_empty() {
-            out.push_str("---\n");
-            if !self.name.is_empty() {
-                out.push_str(&format!("name: \"{}\"\n", self.name));
-            }
-            if !self.description.is_empty() {
-                out.push_str(&format!("description: \"{}\"\n", self.description));
-            }
-            out.push_str("---\n\n");
+        out.push_str("---\n");
+        out.push_str(&format!("name: {}\n", self.dir_name));
+        if !self.description.is_empty() {
+            out.push_str(&format!("description: {}\n", self.description));
         }
+        out.push_str("user_invocable: true\n");
+        out.push_str("---\n\n");
         out.push_str(&self.prompt_template);
         out.push('\n');
         out
@@ -2398,15 +2413,15 @@ You are enabled by default."#;
     #[test]
     fn skill_file_parse_with_frontmatter() {
         let content = r#"---
-name: "Review PR"
-description: "Automates PR review workflow"
+name: review-pr
+description: Automates PR review workflow
+user_invocable: true
 ---
 
 Review the current PR and check for security issues, performance problems, and code style."#;
 
-        let skill = SkillFile::parse("review-pr.md", content);
-        assert_eq!(skill.filename, "review-pr.md");
-        assert_eq!(skill.name, "Review PR");
+        let skill = SkillFile::parse("review-pr", content);
+        assert_eq!(skill.name, "review-pr");
         assert_eq!(skill.description, "Automates PR review workflow");
         assert!(skill.prompt_template.contains("Review the current PR"));
     }
@@ -2414,8 +2429,8 @@ Review the current PR and check for security issues, performance problems, and c
     #[test]
     fn skill_file_parse_without_frontmatter() {
         let content = "Run all tests and report failures with context.";
-        let skill = SkillFile::parse("run-tests.md", content);
-        assert_eq!(skill.name, "run tests");
+        let skill = SkillFile::parse("run-tests", content);
+        assert_eq!(skill.name, "run-tests");
         assert_eq!(skill.description, "");
         assert_eq!(skill.prompt_template, content);
     }
@@ -2423,7 +2438,7 @@ Review the current PR and check for security issues, performance problems, and c
     #[test]
     fn skill_file_parse_malformed_frontmatter() {
         let content = "---\nname: \"Broken\"\nNo closing delimiter here.";
-        let skill = SkillFile::parse("broken.md", content);
+        let skill = SkillFile::parse("broken", content);
         assert_eq!(skill.name, "broken");
         assert!(skill.prompt_template.contains("---"));
     }
@@ -2431,19 +2446,22 @@ Review the current PR and check for security issues, performance problems, and c
     #[test]
     fn skill_file_roundtrip() {
         let skill = SkillFile {
-            filename: "deploy.md".to_string(),
-            name: "Deploy".to_string(),
+            dir_name: "deploy".to_string(),
+            name: "deploy".to_string(),
             description: "Deploy to production".to_string(),
             prompt_template: "Run the deploy pipeline for $ARGUMENTS.".to_string(),
-            is_global: false,
+            source: SkillSource::User,
+            plugin_name: None,
         };
         let md = skill.to_markdown();
-        assert!(md.contains("name: \"Deploy\""));
-        assert!(md.contains("description: \"Deploy to production\""));
+        assert!(md.contains("name: deploy"));
+        assert!(md.contains("description: Deploy to production"));
+        assert!(md.contains("user_invocable: true"));
         assert!(md.contains("$ARGUMENTS"));
 
-        let parsed = SkillFile::parse("deploy.md", &md);
-        assert_eq!(parsed.name, "Deploy");
+        let parsed = SkillFile::parse("deploy", &md);
+        assert_eq!(parsed.dir_name, "deploy");
+        assert_eq!(parsed.name, "deploy");
         assert_eq!(parsed.description, "Deploy to production");
         assert_eq!(parsed.prompt_template, "Run the deploy pipeline for $ARGUMENTS.");
     }
@@ -2451,32 +2469,45 @@ Review the current PR and check for security issues, performance problems, and c
     #[test]
     fn skill_file_roundtrip_no_description() {
         let skill = SkillFile {
-            filename: "quick.md".to_string(),
-            name: "Quick Fix".to_string(),
+            dir_name: "quick-fix".to_string(),
+            name: "quick-fix".to_string(),
             description: String::new(),
             prompt_template: "Fix the issue.".to_string(),
-            is_global: false,
+            source: SkillSource::User,
+            plugin_name: None,
         };
         let md = skill.to_markdown();
         assert!(!md.contains("description:"));
-        let parsed = SkillFile::parse("quick.md", &md);
-        assert_eq!(parsed.name, "Quick Fix");
+        let parsed = SkillFile::parse("quick-fix", &md);
+        assert_eq!(parsed.dir_name, "quick-fix");
+        assert_eq!(parsed.name, "quick-fix");
         assert_eq!(parsed.prompt_template, "Fix the issue.");
+    }
+
+    #[test]
+    fn skill_file_name_differs_from_dir_name() {
+        let content = "---\nname: security-review\ndescription: Reviews code\n---\n\nCheck for vulns.";
+        let skill = SkillFile::parse("evaluate-code-changes-for", content);
+        assert_eq!(skill.dir_name, "evaluate-code-changes-for");
+        assert_eq!(skill.name, "security-review");
     }
 
     #[test]
     fn skill_file_serializes_json() {
         let skill = SkillFile {
-            filename: "test.md".to_string(),
-            name: "Test".to_string(),
+            dir_name: "test".to_string(),
+            name: "test".to_string(),
             description: "desc".to_string(),
             prompt_template: "Run tests".to_string(),
-            is_global: true,
+            source: SkillSource::Plugin,
+            plugin_name: Some("my-plugin".to_string()),
         };
         let json = serde_json::to_string(&skill).unwrap();
         let parsed: SkillFile = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed.name, "Test");
-        assert!(parsed.is_global);
+        assert_eq!(parsed.dir_name, "test");
+        assert_eq!(parsed.name, "test");
+        assert_eq!(parsed.source, SkillSource::Plugin);
+        assert_eq!(parsed.plugin_name.as_deref(), Some("my-plugin"));
         assert_eq!(parsed.prompt_template, "Run tests");
     }
 }

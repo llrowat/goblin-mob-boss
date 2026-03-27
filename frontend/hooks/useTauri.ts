@@ -121,11 +121,14 @@ export function useTauri() {
     saveGlobalSkill: (skill: SkillFile) =>
       invoke<void>("save_global_skill", { skill }),
 
-    deleteGlobalSkill: (filename: string) =>
-      invoke<void>("delete_global_skill", { filename }),
+    deleteGlobalSkill: (dirName: string) =>
+      invoke<void>("delete_global_skill", { dirName }),
 
-    getTeachSkillCommand: () =>
-      invoke<string>("get_teach_skill_command"),
+    generateSkill: (description: string) =>
+      invoke<string>("generate_skill", { description }),
+
+    checkSkillGeneration: (name: string) =>
+      invoke<boolean>("check_skill_generation", { name }),
 
     // Features
     startFeature: (repoIds: string[], name: string, description: string, mapId?: string | null, attachments?: DocumentAttachment[]) =>

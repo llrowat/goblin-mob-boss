@@ -1,4 +1,4 @@
-use crate::models::{AgentFile, Feature, Preferences, Repository, SkillFile, SystemMap};
+use crate::models::{AgentFile, Feature, Preferences, Repository, SkillFile, SkillSource, SystemMap};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Mutex;
@@ -386,73 +386,127 @@ pub fn delete_global_agent(filename: &str) -> Result<(), String> {
 // ── Skill File Operations ──
 // Skills are stored as `.claude/commands/*.md` files (repo or global).
 
-/// List all skill files from a repo's `.claude/commands/` directory.
-pub fn list_repo_skills(repo_path: &str) -> Result<Vec<SkillFile>, String> {
-    let skills_dir = Path::new(repo_path).join(".claude").join("commands");
-    read_skills_from_dir(&skills_dir, false)
-}
-
-/// List all global skill files from `~/.claude/commands/`.
-pub fn list_global_skills() -> Result<Vec<SkillFile>, String> {
+/// Return the `~/.claude/skills/` directory path.
+fn global_skills_dir() -> Result<std::path::PathBuf, String> {
     let home = std::env::var("HOME")
         .or_else(|_| std::env::var("USERPROFILE"))
         .map_err(|_| "Could not determine home directory".to_string())?;
-    let skills_dir = Path::new(&home).join(".claude").join("commands");
-    read_skills_from_dir(&skills_dir, true)
+    Ok(Path::new(&home).join(".claude").join("skills"))
 }
 
-fn read_skills_from_dir(skills_dir: &Path, is_global: bool) -> Result<Vec<SkillFile>, String> {
+/// List all global skill files from `~/.claude/skills/<name>/SKILL.md`
+/// and plugin skills from `~/.claude/plugins/marketplaces/`.
+pub fn list_global_skills() -> Result<Vec<SkillFile>, String> {
+    let mut skills = Vec::new();
+
+    // User skills: ~/.claude/skills/<name>/SKILL.md
+    let user_dir = global_skills_dir()?;
+    skills.extend(read_skills_from_dir(&user_dir, SkillSource::User)?);
+
+    // Plugin skills: read from installed plugins only.
+    // installed_plugins.json maps "<plugin>@<marketplace>" -> [{installPath, ...}]
+    // Skills at <installPath>/skills/<name>/SKILL.md
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .unwrap_or_default();
+    let installed_path = Path::new(&home)
+        .join(".claude")
+        .join("plugins")
+        .join("installed_plugins.json");
+    if installed_path.exists() {
+        if let Ok(content) = std::fs::read_to_string(&installed_path) {
+            if let Ok(manifest) = serde_json::from_str::<serde_json::Value>(&content) {
+                if let Some(plugins) = manifest.get("plugins").and_then(|p| p.as_object()) {
+                    for (key, entries) in plugins {
+                        // key is "plugin-name@marketplace-name"
+                        let plugin_name = key.split('@').next().unwrap_or(key).to_string();
+                        if let Some(installs) = entries.as_array() {
+                            for install in installs {
+                                if let Some(install_path) =
+                                    install.get("installPath").and_then(|p| p.as_str())
+                                {
+                                    let skills_dir = Path::new(install_path).join("skills");
+                                    if skills_dir.exists() {
+                                        let mut plugin_skills = read_skills_from_dir(
+                                            &skills_dir,
+                                            SkillSource::Plugin,
+                                        )?;
+                                        for s in &mut plugin_skills {
+                                            s.plugin_name = Some(plugin_name.clone());
+                                        }
+                                        skills.extend(plugin_skills);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    skills.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(skills)
+}
+
+/// Read skills from a directory of `<name>/SKILL.md` subdirectories.
+fn read_skills_from_dir(skills_dir: &Path, source: SkillSource) -> Result<Vec<SkillFile>, String> {
     if !skills_dir.exists() {
         return Ok(vec![]);
     }
     let mut skills = Vec::new();
     let entries =
-        std::fs::read_dir(skills_dir).map_err(|e| format!("Failed to read commands dir: {}", e))?;
+        std::fs::read_dir(skills_dir).map_err(|e| format!("Failed to read skills dir: {}", e))?;
 
-    let mut files: Vec<_> = entries.flatten().collect();
-    files.sort_by_key(|e| e.file_name());
+    let mut dirs: Vec<_> = entries.flatten().collect();
+    dirs.sort_by_key(|e| e.file_name());
 
-    for entry in files {
+    for entry in dirs {
         let path = entry.path();
-        if path.extension().map(|e| e == "md").unwrap_or(false) {
-            let filename = path.file_name().unwrap().to_string_lossy().to_string();
-            if let Ok(content) = std::fs::read_to_string(&path) {
-                let mut skill = SkillFile::parse(&filename, &content);
-                skill.is_global = is_global;
-                skills.push(skill);
-            }
+        if !path.is_dir() {
+            continue;
+        }
+        let skill_file = path.join("SKILL.md");
+        if !skill_file.exists() {
+            continue;
+        }
+        let dir_name = path.file_name().unwrap().to_string_lossy().to_string();
+        if let Ok(content) = std::fs::read_to_string(&skill_file) {
+            let mut skill = SkillFile::parse(&dir_name, &content);
+            skill.source = source.clone();
+            skills.push(skill);
         }
     }
     Ok(skills)
 }
 
-/// Save a skill file to the global `~/.claude/commands/` directory.
+/// Save a skill to `~/.claude/skills/<dir_name>/SKILL.md`.
 pub fn save_global_skill(skill: &SkillFile) -> Result<(), String> {
-    let home = std::env::var("HOME")
-        .or_else(|_| std::env::var("USERPROFILE"))
-        .map_err(|_| "Could not determine home directory".to_string())?;
-    let skills_dir = Path::new(&home).join(".claude").join("commands");
-    std::fs::create_dir_all(&skills_dir)
-        .map_err(|e| format!("Failed to create commands dir: {}", e))?;
-    let path = skills_dir.join(&skill.filename);
+    let skills_dir = global_skills_dir()?;
+    let skill_dir = skills_dir.join(&skill.dir_name);
+    std::fs::create_dir_all(&skill_dir)
+        .map_err(|e| format!("Failed to create skill dir: {}", e))?;
+    let path = skill_dir.join("SKILL.md");
     let content = skill.to_markdown();
     std::fs::write(&path, content).map_err(|e| format!("Failed to write skill file: {}", e))
 }
 
-/// Delete a skill file from the global `~/.claude/commands/` directory.
-pub fn delete_global_skill(filename: &str) -> Result<(), String> {
-    let home = std::env::var("HOME")
-        .or_else(|_| std::env::var("USERPROFILE"))
-        .map_err(|_| "Could not determine home directory".to_string())?;
-    let path = Path::new(&home)
-        .join(".claude")
-        .join("commands")
-        .join(filename);
-    if path.exists() {
-        std::fs::remove_file(&path).map_err(|e| format!("Failed to delete skill file: {}", e))
+/// Delete a skill directory from `~/.claude/skills/<dir_name>/`.
+pub fn delete_global_skill(dir_name: &str) -> Result<(), String> {
+    let skills_dir = global_skills_dir()?;
+    let skill_dir = skills_dir.join(dir_name);
+    if skill_dir.exists() {
+        std::fs::remove_dir_all(&skill_dir)
+            .map_err(|e| format!("Failed to delete skill: {}", e))
     } else {
-        Err("Skill file not found".to_string())
+        Err("Skill not found".to_string())
     }
+}
+
+/// Check if a skill generation output file exists (for polling).
+pub fn check_skill_generation(name: &str) -> Result<bool, String> {
+    let skills_dir = global_skills_dir()?;
+    Ok(skills_dir.join(name).join("SKILL.md").exists())
 }
 
 #[cfg(test)]
@@ -815,36 +869,47 @@ mod tests {
     #[test]
     fn list_skills_from_empty_dir_returns_empty() {
         let dir = TempDir::new().unwrap();
-        let result = read_skills_from_dir(&dir.path().join("nonexistent"), false);
+        let result = read_skills_from_dir(&dir.path().join("nonexistent"), SkillSource::User);
         assert!(result.is_ok());
         assert!(result.unwrap().is_empty());
     }
 
     #[test]
-    fn list_skills_reads_md_files() {
+    fn list_skills_reads_skill_directories() {
         let dir = TempDir::new().unwrap();
-        let commands_dir = dir.path().join(".claude").join("commands");
-        std::fs::create_dir_all(&commands_dir).unwrap();
+        let skills_dir = dir.path().join(".claude").join("skills");
 
+        // Skill with frontmatter
+        let review_dir = skills_dir.join("review-pr");
+        std::fs::create_dir_all(&review_dir).unwrap();
         std::fs::write(
-            commands_dir.join("review-pr.md"),
-            "---\nname: \"Review PR\"\ndescription: \"Reviews PRs\"\n---\n\nReview this PR.",
+            review_dir.join("SKILL.md"),
+            "---\nname: review-pr\ndescription: Reviews PRs\nuser_invocable: true\n---\n\nReview this PR.",
         )
         .unwrap();
+
+        // Skill without frontmatter
+        let test_dir = skills_dir.join("run-tests");
+        std::fs::create_dir_all(&test_dir).unwrap();
         std::fs::write(
-            commands_dir.join("run-tests.md"),
+            test_dir.join("SKILL.md"),
             "Run all tests and report failures.",
         )
         .unwrap();
-        // Non-.md files should be ignored
-        std::fs::write(commands_dir.join("notes.txt"), "not a skill").unwrap();
 
-        let skills = read_skills_from_dir(&commands_dir, true).unwrap();
+        // Non-directory files should be ignored
+        std::fs::write(skills_dir.join("notes.txt"), "not a skill").unwrap();
+
+        // Directory without SKILL.md should be ignored
+        let empty_dir = skills_dir.join("empty-skill");
+        std::fs::create_dir_all(&empty_dir).unwrap();
+
+        let skills = read_skills_from_dir(&skills_dir, SkillSource::User).unwrap();
         assert_eq!(skills.len(), 2);
-        assert_eq!(skills[0].name, "Review PR");
-        assert!(skills[0].is_global);
-        assert_eq!(skills[1].name, "run tests");
-        assert!(skills[1].is_global);
+        assert_eq!(skills[0].name, "review-pr");
+        assert_eq!(skills[0].source, SkillSource::User);
+        assert_eq!(skills[1].name, "run-tests");
+        assert_eq!(skills[1].source, SkillSource::User);
     }
 
     #[test]
@@ -856,24 +921,30 @@ mod tests {
         std::env::set_var("HOME", &home);
 
         let skill = SkillFile {
-            filename: "test-skill.md".to_string(),
-            name: "Test Skill".to_string(),
+            dir_name: "test-skill".to_string(),
+            name: "test-skill".to_string(),
             description: "A test".to_string(),
             prompt_template: "Do something.".to_string(),
-            is_global: true,
+            source: SkillSource::User,
+            plugin_name: None,
         };
 
         save_global_skill(&skill).unwrap();
 
+        // Verify the directory structure
+        let skill_dir = dir.path().join(".claude").join("skills").join("test-skill");
+        assert!(skill_dir.join("SKILL.md").exists());
+
         let skills = list_global_skills().unwrap();
         assert_eq!(skills.len(), 1);
-        assert_eq!(skills[0].name, "Test Skill");
+        assert_eq!(skills[0].name, "test-skill");
         assert_eq!(skills[0].prompt_template, "Do something.");
 
-        delete_global_skill("test-skill.md").unwrap();
+        delete_global_skill("test-skill").unwrap();
 
         let skills = list_global_skills().unwrap();
         assert!(skills.is_empty());
+        assert!(!skill_dir.exists());
     }
 
     #[test]
@@ -882,8 +953,111 @@ mod tests {
         let home = dir.path().to_string_lossy().to_string();
         std::env::set_var("HOME", &home);
 
-        let result = delete_global_skill("nonexistent.md");
+        let result = delete_global_skill("nonexistent");
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Skill file not found"));
+        assert!(result.unwrap_err().contains("Skill not found"));
+    }
+
+    #[test]
+    fn read_skills_includes_user_and_plugin_sources() {
+        let dir = TempDir::new().unwrap();
+
+        // User skills directory
+        let user_skill_dir = dir.path().join("user-skills").join("my-skill");
+        std::fs::create_dir_all(&user_skill_dir).unwrap();
+        std::fs::write(
+            user_skill_dir.join("SKILL.md"),
+            "---\nname: my-skill\ndescription: My skill\nuser_invocable: true\n---\n\nDo stuff.",
+        ).unwrap();
+
+        let user_skills = read_skills_from_dir(&dir.path().join("user-skills"), SkillSource::User).unwrap();
+        assert_eq!(user_skills.len(), 1);
+        assert_eq!(user_skills[0].name, "my-skill");
+        assert_eq!(user_skills[0].source, SkillSource::User);
+
+        // Plugin skills directory
+        let plugin_skill_dir = dir.path().join("plugin-skills").join("plugin-skill");
+        std::fs::create_dir_all(&plugin_skill_dir).unwrap();
+        std::fs::write(
+            plugin_skill_dir.join("SKILL.md"),
+            "---\nname: plugin-skill\ndescription: From a plugin\nuser_invocable: true\n---\n\nPlugin stuff.",
+        ).unwrap();
+
+        let mut plugin_skills = read_skills_from_dir(&dir.path().join("plugin-skills"), SkillSource::Plugin).unwrap();
+        for s in &mut plugin_skills {
+            s.plugin_name = Some("cool-plugin".to_string());
+        }
+        assert_eq!(plugin_skills.len(), 1);
+        assert_eq!(plugin_skills[0].name, "plugin-skill");
+        assert_eq!(plugin_skills[0].source, SkillSource::Plugin);
+        assert_eq!(plugin_skills[0].plugin_name.as_deref(), Some("cool-plugin"));
+    }
+
+    #[test]
+    fn list_global_skills_reads_installed_plugin_skills() {
+        let dir = TempDir::new().unwrap();
+        let home = dir.path().to_string_lossy().to_string();
+        std::env::set_var("HOME", &home);
+
+        // Create a user skill
+        let user_skill = dir.path().join(".claude").join("skills").join("user-skill");
+        std::fs::create_dir_all(&user_skill).unwrap();
+        std::fs::write(
+            user_skill.join("SKILL.md"),
+            "---\nname: user-skill\ndescription: User skill\nuser_invocable: true\n---\n\nUser stuff.",
+        ).unwrap();
+
+        // Create an installed plugin with skills
+        let plugin_cache = dir.path().join("plugin-cache").join("cool-plugin").join("1.0.0");
+        let plugin_skill = plugin_cache.join("skills").join("plugin-skill");
+        std::fs::create_dir_all(&plugin_skill).unwrap();
+        std::fs::write(
+            plugin_skill.join("SKILL.md"),
+            "---\nname: plugin-skill\ndescription: Plugin skill\nuser_invocable: true\n---\n\nPlugin stuff.",
+        ).unwrap();
+
+        // Create installed_plugins.json pointing to the cache
+        let plugins_dir = dir.path().join(".claude").join("plugins");
+        std::fs::create_dir_all(&plugins_dir).unwrap();
+        let manifest = serde_json::json!({
+            "version": 2,
+            "plugins": {
+                "cool-plugin@marketplace": [{
+                    "scope": "user",
+                    "installPath": plugin_cache.to_string_lossy(),
+                    "version": "1.0.0"
+                }]
+            }
+        });
+        std::fs::write(
+            plugins_dir.join("installed_plugins.json"),
+            serde_json::to_string_pretty(&manifest).unwrap(),
+        ).unwrap();
+
+        let skills = list_global_skills().unwrap();
+        assert_eq!(skills.len(), 2);
+
+        let user = skills.iter().find(|s| s.name == "user-skill").unwrap();
+        assert_eq!(user.source, SkillSource::User);
+
+        let plugin = skills.iter().find(|s| s.name == "plugin-skill").unwrap();
+        assert_eq!(plugin.source, SkillSource::Plugin);
+        assert_eq!(plugin.plugin_name.as_deref(), Some("cool-plugin"));
+    }
+
+    #[test]
+    fn check_skill_generation_uses_directory_structure() {
+        let dir = TempDir::new().unwrap();
+        let skills_dir = dir.path().join(".claude").join("skills");
+
+        // Skill doesn't exist yet
+        assert!(!skills_dir.join("new-skill").join("SKILL.md").exists());
+
+        // Create the skill directory and file
+        let skill_dir = skills_dir.join("new-skill");
+        std::fs::create_dir_all(&skill_dir).unwrap();
+        std::fs::write(skill_dir.join("SKILL.md"), "test content").unwrap();
+
+        assert!(skill_dir.join("SKILL.md").exists());
     }
 }

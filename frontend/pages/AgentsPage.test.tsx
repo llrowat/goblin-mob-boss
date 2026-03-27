@@ -63,18 +63,20 @@ describe("AgentsPage", () => {
 
   const mockSkills = [
     {
-      filename: "review-pr.md",
-      name: "Review PR",
+      dir_name: "review-pr",
+      name: "review-pr",
       description: "Automates PR review",
       prompt_template: "Review the current PR for issues.",
-      is_global: true,
+      source: "user",
+      plugin_name: null,
     },
     {
-      filename: "run-tests.md",
-      name: "Run Tests",
+      dir_name: "run-tests",
+      name: "run-tests",
       description: "",
       prompt_template: "Run all tests and report failures.",
-      is_global: true,
+      source: "user",
+      plugin_name: null,
     },
   ];
 
@@ -92,7 +94,6 @@ describe("AgentsPage", () => {
       if (cmd === "list_global_agents") return Promise.resolve([]);
       if (cmd === "list_built_in_agents") return Promise.resolve([]);
       if (cmd === "list_global_skills") return Promise.resolve(mockSkills);
-      if (cmd === "get_teach_skill_command") return Promise.resolve("claude --print 'teach a skill'");
       return Promise.resolve([]);
     });
   }
@@ -473,7 +474,7 @@ describe("AgentsPage", () => {
     expect(tricksTab.getAttribute("aria-selected")).toBe("true");
 
     await waitFor(() => {
-      expect(screen.getByText("Review PR")).toBeInTheDocument();
+      expect(screen.getByText("review-pr")).toBeInTheDocument();
     });
   });
 
@@ -484,12 +485,9 @@ describe("AgentsPage", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Skills" }));
 
     await waitFor(() => {
-      expect(screen.getByText("Review PR")).toBeInTheDocument();
-      expect(screen.getByText("Run Tests")).toBeInTheDocument();
+      expect(screen.getByText("review-pr")).toBeInTheDocument();
+      expect(screen.getByText("run-tests")).toBeInTheDocument();
     });
-
-    expect(screen.getByText("/review-pr")).toBeInTheDocument();
-    expect(screen.getByText("/run-tests")).toBeInTheDocument();
   });
 
   it("shows skill description when present", async () => {
@@ -503,7 +501,7 @@ describe("AgentsPage", () => {
     });
   });
 
-  it("shows New Skill and Teach a Trick buttons", async () => {
+  it("shows New Skill and Auto-Create buttons", async () => {
     mockInvokeForSkills();
 
     render(<AgentsPage />);
@@ -511,7 +509,7 @@ describe("AgentsPage", () => {
 
     await waitFor(() => {
       expect(screen.getByText("+ New Skill")).toBeInTheDocument();
-      expect(screen.getByText("Teach a Skill")).toBeInTheDocument();
+      expect(screen.getByText("Auto-Create Skill")).toBeInTheDocument();
     });
   });
 
@@ -541,14 +539,14 @@ describe("AgentsPage", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Skills" }));
 
     await waitFor(() => {
-      expect(screen.getByText("Review PR")).toBeInTheDocument();
+      expect(screen.getByText("review-pr")).toBeInTheDocument();
     });
 
     const editButtons = screen.getAllByText("Edit");
     fireEvent.click(editButtons[0]);
 
     await waitFor(() => {
-      expect(screen.getByDisplayValue("Review PR")).toBeInTheDocument();
+      expect(screen.getByDisplayValue("review-pr")).toBeInTheDocument();
       expect(screen.getByText("Save Changes")).toBeInTheDocument();
       expect(screen.getByText("Edit Skill")).toBeInTheDocument();
     });
@@ -582,7 +580,7 @@ describe("AgentsPage", () => {
         skill: expect.objectContaining({
           name: "deploy",
           prompt_template: "Deploy to production",
-          is_global: true,
+          source: "user",
         }),
       });
     });
@@ -595,7 +593,7 @@ describe("AgentsPage", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Skills" }));
 
     await waitFor(() => {
-      expect(screen.getByText("Review PR")).toBeInTheDocument();
+      expect(screen.getByText("review-pr")).toBeInTheDocument();
     });
 
     const removeButtons = screen.getAllByText("Remove");
@@ -609,7 +607,7 @@ describe("AgentsPage", () => {
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith("delete_global_skill", {
-        filename: "review-pr.md",
+        dirName: "review-pr",
       });
     });
   });
@@ -626,44 +624,40 @@ describe("AgentsPage", () => {
     });
   });
 
-  it("shows teach command panel when Teach a Trick is clicked", async () => {
+  it("shows auto-create input when Auto-Create Skill is clicked", async () => {
     mockInvokeForSkills();
 
     render(<AgentsPage />);
     fireEvent.click(screen.getByRole("tab", { name: "Skills" }));
 
     await waitFor(() => {
-      expect(screen.getByText("Teach a Skill")).toBeInTheDocument();
+      expect(screen.getByText("Auto-Create Skill")).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByText("Teach a Skill"));
+    fireEvent.click(screen.getByText("Auto-Create Skill"));
 
-    await waitFor(() => {
-      expect(invoke).toHaveBeenCalledWith("get_teach_skill_command");
-      expect(screen.getByText("Teach a new skill")).toBeInTheDocument();
-      expect(screen.getByText("Dismiss")).toBeInTheDocument();
-    });
+    expect(screen.getByText("Describe your skill")).toBeInTheDocument();
+    expect(screen.getByText("Generate")).toBeInTheDocument();
+    expect(screen.getByText("Cancel")).toBeInTheDocument();
   });
 
-  it("dismisses teach panel when Dismiss is clicked", async () => {
+  it("hides auto-create input when Cancel is clicked", async () => {
     mockInvokeForSkills();
 
     render(<AgentsPage />);
     fireEvent.click(screen.getByRole("tab", { name: "Skills" }));
 
     await waitFor(() => {
-      expect(screen.getByText("Teach a Skill")).toBeInTheDocument();
+      expect(screen.getByText("Auto-Create Skill")).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByText("Teach a Skill"));
+    fireEvent.click(screen.getByText("Auto-Create Skill"));
+    expect(screen.getByText("Describe your skill")).toBeInTheDocument();
 
-    await waitFor(() => {
-      expect(screen.getByText("Dismiss")).toBeInTheDocument();
-    });
+    const cancelButtons = screen.getAllByText("Cancel");
+    fireEvent.click(cancelButtons[cancelButtons.length - 1]);
 
-    fireEvent.click(screen.getByText("Dismiss"));
-
-    expect(screen.queryByText("Teach a new skill")).not.toBeInTheDocument();
+    expect(screen.queryByText("Describe your skill")).not.toBeInTheDocument();
   });
 
   it("closes skill modal when Cancel is clicked", async () => {
