@@ -41,7 +41,9 @@ impl PtySessions {
 // Keep PtyBuffers as an empty struct so lib.rs compiles without changes
 pub struct PtyBuffers;
 impl PtyBuffers {
-    pub fn new() -> Self { Self }
+    pub fn new() -> Self {
+        Self
+    }
 }
 
 pub fn spawn_pty_session(
@@ -172,7 +174,8 @@ fn start_reader_thread(
                         Err(e) => {
                             let valid_up_to = e.valid_up_to();
                             // Safe: we know bytes up to valid_up_to are valid UTF-8
-                            let valid = unsafe { std::str::from_utf8_unchecked(&chunk[..valid_up_to]) };
+                            let valid =
+                                unsafe { std::str::from_utf8_unchecked(&chunk[..valid_up_to]) };
                             pending.push_str(valid);
                             // Keep the trailing incomplete bytes for the next read
                             let remainder = &chunk[valid_up_to..];

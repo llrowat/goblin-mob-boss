@@ -326,10 +326,7 @@ mod tests {
     #[test]
     fn proofs_dir_builds_correct_path() {
         let path = proofs_dir("/tmp/repo", "feat-123", 1);
-        assert_eq!(
-            path,
-            Path::new("/tmp/repo/.gmb/features/feat-123/proofs/1")
-        );
+        assert_eq!(path, Path::new("/tmp/repo/.gmb/features/feat-123/proofs/1"));
     }
 
     #[test]
@@ -460,8 +457,15 @@ mod tests {
             agent: "qa-tester".to_string(),
         }];
 
-        let prompt =
-            build_testing_prompt("Dark Mode", "Add dark mode toggle", &steps, &harness, "/tmp/proofs", None, None);
+        let prompt = build_testing_prompt(
+            "Dark Mode",
+            "Add dark mode toggle",
+            &steps,
+            &harness,
+            "/tmp/proofs",
+            None,
+            None,
+        );
 
         assert!(prompt.contains("Dark Mode"));
         assert!(prompt.contains("Add dark mode toggle"));
@@ -505,7 +509,15 @@ mod tests {
             harness_type: HarnessType::Cli,
         };
 
-        let prompt = build_testing_prompt("CLI Tool", "Add CLI command", &[], &harness, "/tmp/proofs", None, None);
+        let prompt = build_testing_prompt(
+            "CLI Tool",
+            "Add CLI command",
+            &[],
+            &harness,
+            "/tmp/proofs",
+            None,
+            None,
+        );
         assert!(prompt.contains("exercise the feature as you see fit"));
     }
 
@@ -547,7 +559,10 @@ mod tests {
 
         let result = collect_proofs(&worktree, "feat-1", 1).unwrap();
         assert!(result.all_passed);
-        assert!(result.proofs.iter().any(|p| p.step_description == "Single test"));
+        assert!(result
+            .proofs
+            .iter()
+            .any(|p| p.step_description == "Single test"));
     }
 
     #[test]
@@ -575,7 +590,10 @@ mod tests {
 
         let result = collect_proofs(&worktree, "feat-1", 1).unwrap();
         assert!(result.all_passed);
-        assert!(result.proofs.iter().any(|p| p.step_description == "Wrapped test"));
+        assert!(result
+            .proofs
+            .iter()
+            .any(|p| p.step_description == "Wrapped test"));
     }
 
     #[test]
@@ -611,7 +629,9 @@ mod tests {
             is_meta: false,
         };
         let warnings = validate_proof(&proof, 0);
-        assert!(warnings.iter().any(|w| w.contains("missing step_description")));
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("missing step_description")));
     }
 
     #[test]

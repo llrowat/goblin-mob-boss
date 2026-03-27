@@ -239,11 +239,7 @@ mod tests {
     #[test]
     fn check_completion_signal_returns_true_when_exists() {
         let dir = tempfile::TempDir::new().unwrap();
-        let signal_dir = dir
-            .path()
-            .join(".gmb")
-            .join("features")
-            .join("feat-1");
+        let signal_dir = dir.path().join(".gmb").join("features").join("feat-1");
         std::fs::create_dir_all(&signal_dir).unwrap();
         std::fs::write(signal_dir.join("execution-complete"), "done").unwrap();
         assert!(check_completion_signal(

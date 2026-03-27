@@ -66,7 +66,12 @@ pub fn build_launch_with_repo(
     (args, env, prompt)
 }
 
-fn build_prompt(feature: &Feature, mode: &ExecutionMode, repo_path: Option<&str>, commit_pattern: Option<&str>) -> String {
+fn build_prompt(
+    feature: &Feature,
+    mode: &ExecutionMode,
+    repo_path: Option<&str>,
+    commit_pattern: Option<&str>,
+) -> String {
     let tasks_section = build_tasks_section(&feature.task_specs);
     let agents_section = build_agents_section(&feature.selected_agents);
     let attachments_section = build_attachments_section(&feature.attachments);
@@ -83,10 +88,12 @@ fn build_prompt(feature: &Feature, mode: &ExecutionMode, repo_path: Option<&str>
         .unwrap_or_default();
 
     let commit_note = commit_pattern
-        .map(|pat| format!(
-            "\n- All commit messages MUST match this regex pattern: `{}`\n",
-            pat
-        ))
+        .map(|pat| {
+            format!(
+                "\n- All commit messages MUST match this regex pattern: `{}`\n",
+                pat
+            )
+        })
         .unwrap_or_default();
 
     match mode {
@@ -169,7 +176,10 @@ fn build_attachments_section(attachments: &[DocumentAttachment]) -> String {
                 attachment.name, path
             ));
         } else {
-            section.push_str(&format!("### {}\n\n{}\n\n", attachment.name, attachment.content));
+            section.push_str(&format!(
+                "### {}\n\n{}\n\n",
+                attachment.name, attachment.content
+            ));
         }
     }
     section
@@ -192,7 +202,12 @@ fn build_progress_section(repo_path: Option<&str>, feature_id: &str, specs: &[Ta
         let criteria: Vec<String> = spec
             .acceptance_criteria
             .iter()
-            .map(|c| format!(r#"        {{"criterion": "{}", "done": false}}"#, c.replace('"', "\\\"")))
+            .map(|c| {
+                format!(
+                    r#"        {{"criterion": "{}", "done": false}}"#,
+                    c.replace('"', "\\\"")
+                )
+            })
             .collect();
         let criteria_str = if criteria.is_empty() {
             "[]".to_string()
@@ -253,7 +268,8 @@ This signals the dashboard that execution is finished. If you skip this step, th
 
 fn build_tasks_section(specs: &[TaskSpec]) -> String {
     if specs.is_empty() {
-        return "## Tasks\n\nNo specific tasks defined — implement the feature as you see fit.".to_string();
+        return "## Tasks\n\nNo specific tasks defined — implement the feature as you see fit."
+            .to_string();
     }
 
     let mut section = String::from("## Tasks\n");
@@ -270,10 +286,7 @@ fn build_tasks_section(specs: &[TaskSpec]) -> String {
             }
         }
         if !spec.dependencies.is_empty() {
-            section.push_str(&format!(
-                "Dependencies: {}\n",
-                spec.dependencies.join(", ")
-            ));
+            section.push_str(&format!("Dependencies: {}\n", spec.dependencies.join(", ")));
         }
     }
     section
@@ -287,7 +300,10 @@ fn build_agents_section(agent_filenames: &[String]) -> String {
         .iter()
         .map(|f| f.strip_suffix(".md").unwrap_or(f))
         .collect();
-    format!("## Available Agents\n\nUse the following project agents: {}", names.join(", "))
+    format!(
+        "## Available Agents\n\nUse the following project agents: {}",
+        names.join(", ")
+    )
 }
 
 #[cfg(test)]
@@ -303,10 +319,7 @@ mod tests {
             vec![],
         );
         f.execution_mode = Some(mode);
-        f.selected_agents = vec![
-            "frontend-dev.md".to_string(),
-            "test-writer.md".to_string(),
-        ];
+        f.selected_agents = vec!["frontend-dev.md".to_string(), "test-writer.md".to_string()];
         f.task_specs = vec![
             TaskSpec {
                 title: "Add theme context".to_string(),
@@ -331,7 +344,9 @@ mod tests {
         let feature = make_feature(ExecutionMode::Teams);
         let (args, env, prompt) = build_launch(&feature, "System prompt content here");
 
-        assert!(env.iter().any(|(k, _)| k == "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"));
+        assert!(env
+            .iter()
+            .any(|(k, _)| k == "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"));
         assert!(!args.contains(&"--teammate-mode".to_string()));
         assert!(args.contains(&"--permission-mode".to_string()));
         assert!(args.contains(&"auto".to_string()));
@@ -393,10 +408,7 @@ mod tests {
 
     #[test]
     fn build_agents_section_strips_md_extension() {
-        let agents = vec![
-            "frontend-dev.md".to_string(),
-            "test-writer.md".to_string(),
-        ];
+        let agents = vec!["frontend-dev.md".to_string(), "test-writer.md".to_string()];
         let section = build_agents_section(&agents);
         assert!(section.contains("frontend-dev, test-writer"));
         assert!(!section.contains(".md"));
@@ -444,7 +456,8 @@ mod tests {
     #[test]
     fn prompt_includes_progress_tracking_with_repo() {
         let feature = make_feature(ExecutionMode::Subagents);
-        let (_, _, prompt) = build_launch_with_repo(&feature, "System prompt", Some("/tmp/repo"), None);
+        let (_, _, prompt) =
+            build_launch_with_repo(&feature, "System prompt", Some("/tmp/repo"), None);
         assert!(prompt.contains("CRITICAL"));
         assert!(prompt.contains("execution-complete"));
     }
@@ -465,7 +478,8 @@ mod tests {
     #[test]
     fn prompt_omits_commit_pattern_when_none() {
         let feature = make_feature(ExecutionMode::Subagents);
-        let (_, _, prompt) = build_launch_with_repo(&feature, "System prompt", Some("/tmp/repo"), None);
+        let (_, _, prompt) =
+            build_launch_with_repo(&feature, "System prompt", Some("/tmp/repo"), None);
         assert!(!prompt.contains("commit messages MUST match"));
     }
 

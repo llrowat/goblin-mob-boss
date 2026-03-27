@@ -54,16 +54,24 @@ pub fn run_validators_with_timeout(
             Ok(mut child) => {
                 match child.wait_timeout(timeout) {
                     Ok(Some(status)) => {
-                        let stdout = child.stdout.take().map(|mut s| {
-                            let mut buf = Vec::new();
-                            std::io::Read::read_to_end(&mut s, &mut buf).ok();
-                            String::from_utf8_lossy(&buf).to_string()
-                        }).unwrap_or_default();
-                        let stderr = child.stderr.take().map(|mut s| {
-                            let mut buf = Vec::new();
-                            std::io::Read::read_to_end(&mut s, &mut buf).ok();
-                            String::from_utf8_lossy(&buf).to_string()
-                        }).unwrap_or_default();
+                        let stdout = child
+                            .stdout
+                            .take()
+                            .map(|mut s| {
+                                let mut buf = Vec::new();
+                                std::io::Read::read_to_end(&mut s, &mut buf).ok();
+                                String::from_utf8_lossy(&buf).to_string()
+                            })
+                            .unwrap_or_default();
+                        let stderr = child
+                            .stderr
+                            .take()
+                            .map(|mut s| {
+                                let mut buf = Vec::new();
+                                std::io::Read::read_to_end(&mut s, &mut buf).ok();
+                                String::from_utf8_lossy(&buf).to_string()
+                            })
+                            .unwrap_or_default();
 
                         ValidatorResult {
                             command: cmd.clone(),
@@ -176,12 +184,8 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let worktree = dir.path().to_string_lossy().to_string();
 
-        let result = run_validators(
-            &worktree,
-            &["true".to_string(), "false".to_string()],
-            1,
-        )
-        .unwrap();
+        let result =
+            run_validators(&worktree, &["true".to_string(), "false".to_string()], 1).unwrap();
 
         assert!(!result.all_passed);
         assert_eq!(result.results.len(), 2);
@@ -204,12 +208,8 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let worktree = dir.path().to_string_lossy().to_string();
 
-        let result = run_validators(
-            &worktree,
-            &["echo error_msg >&2 && false".to_string()],
-            1,
-        )
-        .unwrap();
+        let result =
+            run_validators(&worktree, &["echo error_msg >&2 && false".to_string()], 1).unwrap();
 
         assert!(!result.all_passed);
         assert!(result.results[0].stderr.contains("error_msg"));
@@ -247,18 +247,17 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let worktree = dir.path().to_string_lossy().to_string();
 
-        let result = run_validators(
-            &worktree,
-            &["echo $HOME".to_string()],
-            1,
-        )
-        .unwrap();
+        let result = run_validators(&worktree, &["echo $HOME".to_string()], 1).unwrap();
 
         assert!(result.all_passed);
         // HOME should be a non-empty path (e.g. /root, /home/user)
         let home = result.results[0].stdout.trim();
         assert!(!home.is_empty(), "HOME should be set in a login shell");
-        assert!(home.starts_with('/'), "HOME should be an absolute path, got: {}", home);
+        assert!(
+            home.starts_with('/'),
+            "HOME should be an absolute path, got: {}",
+            home
+        );
     }
 
     #[test]

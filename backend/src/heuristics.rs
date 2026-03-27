@@ -53,10 +53,16 @@ pub fn analyze_tasks(tasks: &[TaskSpec]) -> ModeRecommendation {
     let task_count = tasks.len();
     if task_count >= 4 {
         teams_score += 0.25;
-        reasoning.push(format!("{} tasks — enough to benefit from parallelism.", task_count));
+        reasoning.push(format!(
+            "{} tasks — enough to benefit from parallelism.",
+            task_count
+        ));
     } else {
         teams_score -= 0.15;
-        reasoning.push(format!("Only {} tasks — limited parallelism benefit.", task_count));
+        reasoning.push(format!(
+            "Only {} tasks — limited parallelism benefit.",
+            task_count
+        ));
     }
 
     // Factor 2: Parallelism (independent tasks)

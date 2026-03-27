@@ -86,10 +86,7 @@ pub fn add_guidance_note(
 }
 
 /// List all guidance notes for a feature.
-pub fn list_guidance_notes(
-    repo_path: &str,
-    feature_id: &str,
-) -> Result<Vec<GuidanceNote>, String> {
+pub fn list_guidance_notes(repo_path: &str, feature_id: &str) -> Result<Vec<GuidanceNote>, String> {
     let notes_path = Path::new(repo_path)
         .join(".gmb")
         .join("features")
@@ -122,11 +119,7 @@ mod tests {
     use tempfile::TempDir;
 
     fn setup_feature_dir(dir: &TempDir, feature_id: &str) {
-        let feature_dir = dir
-            .path()
-            .join(".gmb")
-            .join("features")
-            .join(feature_id);
+        let feature_dir = dir.path().join(".gmb").join("features").join(feature_id);
         std::fs::create_dir_all(&feature_dir).unwrap();
     }
 
@@ -136,19 +129,35 @@ mod tests {
         let repo_path = dir.path().to_string_lossy().to_string();
         let feature_id = "feat-1";
 
-        let note = add_guidance_note(&repo_path, feature_id, "Focus on the login flow", GuidancePriority::Important).unwrap();
+        let note = add_guidance_note(
+            &repo_path,
+            feature_id,
+            "Focus on the login flow",
+            GuidancePriority::Important,
+        )
+        .unwrap();
         assert_eq!(note.content, "Focus on the login flow");
         assert_eq!(note.priority, GuidancePriority::Important);
 
         // Check guidance.md exists
-        let guidance_path = dir.path().join(".gmb").join("features").join(feature_id).join("guidance.md");
+        let guidance_path = dir
+            .path()
+            .join(".gmb")
+            .join("features")
+            .join(feature_id)
+            .join("guidance.md");
         assert!(guidance_path.exists());
         let content = std::fs::read_to_string(&guidance_path).unwrap();
         assert!(content.contains("Focus on the login flow"));
         assert!(content.contains("[IMPORTANT]"));
 
         // Check notes.json exists
-        let notes_path = dir.path().join(".gmb").join("features").join(feature_id).join("guidance-notes.json");
+        let notes_path = dir
+            .path()
+            .join(".gmb")
+            .join("features")
+            .join(feature_id)
+            .join("guidance-notes.json");
         assert!(notes_path.exists());
     }
 
@@ -158,14 +167,25 @@ mod tests {
         let repo_path = dir.path().to_string_lossy().to_string();
 
         add_guidance_note(&repo_path, "feat-1", "First note", GuidancePriority::Info).unwrap();
-        add_guidance_note(&repo_path, "feat-1", "Second note", GuidancePriority::Critical).unwrap();
+        add_guidance_note(
+            &repo_path,
+            "feat-1",
+            "Second note",
+            GuidancePriority::Critical,
+        )
+        .unwrap();
 
         let notes = list_guidance_notes(&repo_path, "feat-1").unwrap();
         assert_eq!(notes.len(), 2);
         assert_eq!(notes[0].content, "First note");
         assert_eq!(notes[1].content, "Second note");
 
-        let guidance_path = dir.path().join(".gmb").join("features").join("feat-1").join("guidance.md");
+        let guidance_path = dir
+            .path()
+            .join(".gmb")
+            .join("features")
+            .join("feat-1")
+            .join("guidance.md");
         let content = std::fs::read_to_string(&guidance_path).unwrap();
         assert!(content.contains("[NOTE]"));
         assert!(content.contains("[CRITICAL]"));
