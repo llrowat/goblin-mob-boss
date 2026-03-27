@@ -34,3 +34,6 @@ backend/gen/
 credentials.json
 
 .gmb
+
+# Claude Code local settings
+.claude/settings.local.json
