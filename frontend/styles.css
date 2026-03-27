@@ -1270,6 +1270,50 @@ body {
   color: var(--success);
 }
 
+/* Crew Tabs (Agents + Skills) */
+.crew-tabs {
+  display: flex;
+  gap: 0;
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.crew-tab {
+  padding: 8px 20px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.crew-tab:hover {
+  color: var(--text);
+}
+
+.crew-tab-active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+/* Skill Card overrides */
+.skill-card-avatar {
+  font-family: var(--font-mono);
+  font-size: 18px;
+  font-weight: 700;
+}
+
+/* Teach skill panel */
+.teach-skill-panel {
+  background: var(--panel);
+  border: 1px solid var(--accent-brass);
+  border-radius: var(--radius);
+  padding: 16px;
+}
+
 /* Agent Grid */
 .agent-grid {
   display: grid;

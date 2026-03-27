@@ -201,6 +201,126 @@ impl AgentFile {
     }
 }
 
+// ── Skill File ──
+// Represents a `~/.claude/skills/<name>/SKILL.md` file (directory-based format).
+// Skills are custom slash commands that define reusable workflow prompts.
+// Can also come from plugins at `~/.claude/plugins/marketplaces/<marketplace>/plugins/<plugin>/skills/<name>/SKILL.md`.
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SkillSource {
+    User,
+    Plugin,
+}
+
+impl Default for SkillSource {
+    fn default() -> Self {
+        SkillSource::User
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SkillFile {
+    /// Directory name on disk — used for file operations (delete, save).
+    pub dir_name: String,
+    /// Display name from YAML frontmatter (may differ from dir_name).
+    pub name: String,
+    #[serde(default)]
+    pub description: String,
+    pub prompt_template: String,
+    /// Where this skill was loaded from.
+    #[serde(default)]
+    pub source: SkillSource,
+    /// For plugin skills, which plugin they came from.
+    #[serde(default)]
+    pub plugin_name: Option<String>,
+}
+
+impl SkillFile {
+    /// Parse a `SKILL.md` file.
+    /// Skills have YAML frontmatter with `name`, `description`, and optionally `user_invocable`.
+    /// The body is the prompt template.
+    pub fn parse(dir_name: &str, content: &str) -> Self {
+        let content = content.trim();
+
+        if !content.starts_with("---") {
+            // No frontmatter — entire content is the prompt template
+            return Self {
+                dir_name: dir_name.to_string(),
+                name: dir_name.to_string(),
+                description: String::new(),
+                prompt_template: content.to_string(),
+                source: SkillSource::User,
+                plugin_name: None,
+            };
+        }
+
+        // Split on second "---"
+        let rest = &content[3..];
+        if let Some(end) = rest.find("\n---") {
+            let frontmatter = &rest[..end];
+            let body = rest[end + 4..].trim();
+
+            let mut name = String::new();
+            let mut description = String::new();
+
+            for line in frontmatter.lines() {
+                let line = line.trim();
+                if line.is_empty() {
+                    continue;
+                }
+                if let Some((key, value)) = line.split_once(':') {
+                    let key = key.trim();
+                    let value = value.trim().trim_matches('"').trim_matches('\'');
+                    match key {
+                        "name" => name = value.to_string(),
+                        "description" => description = value.to_string(),
+                        _ => {}
+                    }
+                }
+            }
+
+            if name.is_empty() {
+                name = dir_name.to_string();
+            }
+
+            Self {
+                dir_name: dir_name.to_string(),
+                name,
+                description,
+                prompt_template: body.to_string(),
+                source: SkillSource::User,
+                plugin_name: None,
+            }
+        } else {
+            // Malformed frontmatter — treat as plain content
+            Self {
+                dir_name: dir_name.to_string(),
+                name: dir_name.to_string(),
+                description: String::new(),
+                prompt_template: content.to_string(),
+                source: SkillSource::User,
+                plugin_name: None,
+            }
+        }
+    }
+
+    /// Serialize to SKILL.md with YAML frontmatter.
+    pub fn to_markdown(&self) -> String {
+        let mut out = String::new();
+        out.push_str("---\n");
+        out.push_str(&format!("name: {}\n", self.dir_name));
+        if !self.description.is_empty() {
+            out.push_str(&format!("description: {}\n", self.description));
+        }
+        out.push_str("user_invocable: true\n");
+        out.push_str("---\n\n");
+        out.push_str(&self.prompt_template);
+        out.push('\n');
+        out
+    }
+}
+
 // ── Execution Mode ──
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -2286,5 +2406,108 @@ You are enabled by default."#;
         }"#;
         let feature: Feature = serde_json::from_str(json).unwrap();
         assert!(feature.attachments.is_empty());
+    }
+
+    // ── SkillFile Tests ──
+
+    #[test]
+    fn skill_file_parse_with_frontmatter() {
+        let content = r#"---
+name: review-pr
+description: Automates PR review workflow
+user_invocable: true
+---
+
+Review the current PR and check for security issues, performance problems, and code style."#;
+
+        let skill = SkillFile::parse("review-pr", content);
+        assert_eq!(skill.name, "review-pr");
+        assert_eq!(skill.description, "Automates PR review workflow");
+        assert!(skill.prompt_template.contains("Review the current PR"));
+    }
+
+    #[test]
+    fn skill_file_parse_without_frontmatter() {
+        let content = "Run all tests and report failures with context.";
+        let skill = SkillFile::parse("run-tests", content);
+        assert_eq!(skill.name, "run-tests");
+        assert_eq!(skill.description, "");
+        assert_eq!(skill.prompt_template, content);
+    }
+
+    #[test]
+    fn skill_file_parse_malformed_frontmatter() {
+        let content = "---\nname: \"Broken\"\nNo closing delimiter here.";
+        let skill = SkillFile::parse("broken", content);
+        assert_eq!(skill.name, "broken");
+        assert!(skill.prompt_template.contains("---"));
+    }
+
+    #[test]
+    fn skill_file_roundtrip() {
+        let skill = SkillFile {
+            dir_name: "deploy".to_string(),
+            name: "deploy".to_string(),
+            description: "Deploy to production".to_string(),
+            prompt_template: "Run the deploy pipeline for $ARGUMENTS.".to_string(),
+            source: SkillSource::User,
+            plugin_name: None,
+        };
+        let md = skill.to_markdown();
+        assert!(md.contains("name: deploy"));
+        assert!(md.contains("description: Deploy to production"));
+        assert!(md.contains("user_invocable: true"));
+        assert!(md.contains("$ARGUMENTS"));
+
+        let parsed = SkillFile::parse("deploy", &md);
+        assert_eq!(parsed.dir_name, "deploy");
+        assert_eq!(parsed.name, "deploy");
+        assert_eq!(parsed.description, "Deploy to production");
+        assert_eq!(parsed.prompt_template, "Run the deploy pipeline for $ARGUMENTS.");
+    }
+
+    #[test]
+    fn skill_file_roundtrip_no_description() {
+        let skill = SkillFile {
+            dir_name: "quick-fix".to_string(),
+            name: "quick-fix".to_string(),
+            description: String::new(),
+            prompt_template: "Fix the issue.".to_string(),
+            source: SkillSource::User,
+            plugin_name: None,
+        };
+        let md = skill.to_markdown();
+        assert!(!md.contains("description:"));
+        let parsed = SkillFile::parse("quick-fix", &md);
+        assert_eq!(parsed.dir_name, "quick-fix");
+        assert_eq!(parsed.name, "quick-fix");
+        assert_eq!(parsed.prompt_template, "Fix the issue.");
+    }
+
+    #[test]
+    fn skill_file_name_differs_from_dir_name() {
+        let content = "---\nname: security-review\ndescription: Reviews code\n---\n\nCheck for vulns.";
+        let skill = SkillFile::parse("evaluate-code-changes-for", content);
+        assert_eq!(skill.dir_name, "evaluate-code-changes-for");
+        assert_eq!(skill.name, "security-review");
+    }
+
+    #[test]
+    fn skill_file_serializes_json() {
+        let skill = SkillFile {
+            dir_name: "test".to_string(),
+            name: "test".to_string(),
+            description: "desc".to_string(),
+            prompt_template: "Run tests".to_string(),
+            source: SkillSource::Plugin,
+            plugin_name: Some("my-plugin".to_string()),
+        };
+        let json = serde_json::to_string(&skill).unwrap();
+        let parsed: SkillFile = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.dir_name, "test");
+        assert_eq!(parsed.name, "test");
+        assert_eq!(parsed.source, SkillSource::Plugin);
+        assert_eq!(parsed.plugin_name.as_deref(), Some("my-plugin"));
+        assert_eq!(parsed.prompt_template, "Run tests");
     }
 }

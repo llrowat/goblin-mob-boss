@@ -25,7 +25,7 @@ Goblin Mob Boss (GMB) is a desktop app that helps you use [Claude Code](https://
 Without GMB, getting good results from Claude Code agents means manually wrangling agent files, crafting prompts with the right context, deciding how to split work, and managing branches across repos. GMB turns that into a guided workflow:
 
 - **Simplifies context injection** — Attach design specs, API schemas, and reference docs. GMB includes them in both planning and execution prompts so agents start with full context.
-- **Manages agents** — Visual editor for `.claude/agents/*.md` files with built-in templates. No more hand-editing YAML frontmatter.
+- **Manages agents & skills** — Visual editor for agents and skills with built-in templates and auto-generation. No more hand-editing YAML frontmatter.
 - **Forces planning** — Every feature goes through an interactive planning phase with Claude before any code is written. The planner breaks work into task specs, assigns agents, and can ask you clarifying questions.
 - **Suggests execution modes** — GMB analyzes your task dependency graph and recommends the right approach:
   - **Agent Teams** — Multiple Claude Code instances running in parallel, each with its own agent identity. Best for large features with independent workstreams.
@@ -38,9 +38,9 @@ Without GMB, getting good results from Claude Code agents means manually wrangli
 |:---:|:---:|
 | ![Features](screenshots/home.png) | ![Planning](screenshots/feature-detail.png) |
 
-| Agents | Repositories |
+| Agents & Skills | Repositories |
 |:---:|:---:|
-| ![Agents](screenshots/agents.png) | ![Repositories](screenshots/repos.png) |
+| ![Agents & Skills](screenshots/agents.png) | ![Repositories](screenshots/repos.png) |
 
 | System Map |
 |:---:|
@@ -50,7 +50,7 @@ Without GMB, getting good results from Claude Code agents means manually wrangli
 
 1. **Register repos** — Point GMB at your local git repositories. Configure base branches, validators (tests, linters), and PR commands.
 
-2. **Configure agents** — Agents are `.claude/agents/*.md` files with YAML frontmatter (name, tools, model, system prompt, role). Use the built-in form editor or add agents from the template library with one click.
+2. **Configure agents & skills** — Agents (`.claude/agents/*.md`) define who does the work; skills (`.claude/skills/<name>/SKILL.md`) define reusable workflows. Use the built-in form editor, add from templates, or let Claude auto-generate skills from a description.
 
 3. **Start a feature** — Describe what you want to build, select repos, optionally attach docs (design specs, API schemas, reference files). GMB creates a feature branch and provisions a git worktree per repo.
 
@@ -74,12 +74,16 @@ Without GMB, getting good results from Claude Code agents means manually wrangli
 - Document attachments included in both planning and execution prompts
 - Feature lifecycle tracking: Ideation → Configuring → Executing → Testing → Ready → Pushed → Complete
 
-### Agents
-- Agents defined as `.claude/agents/*.md` with YAML frontmatter
+### Agents & Skills
+- **Agents** defined as `.claude/agents/*.md` with YAML frontmatter
 - Form-based editor with color picker, role selector, tools, model, and system prompt
 - Built-in agent templates (Frontend Dev, Backend Dev, Test Engineer, Code Reviewer, etc.)
 - Quality-role agents automatically included as verification steps in every plan
 - Per-repo and global agents
+- **Skills** defined as `.claude/skills/<name>/SKILL.md` — reusable workflows
+- Create skills manually or auto-generate them with Claude (describe what you want, Claude writes the SKILL.md)
+- Skills from installed plugins are discovered and shown alongside user-created skills
+- Tabbed Agents + Skills UI
 
 ### System Map
 - Map your service topology: backends, frontends, workers, databases, queues, caches, external services
