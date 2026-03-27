@@ -3962,56 +3962,132 @@ pub fn save_repo_hooks(repo_path: String, hooks: RepoHooks) -> Result<(), String
 /// Return the list of built-in hook templates.
 #[tauri::command]
 pub fn list_hook_templates() -> Vec<HookTemplate> {
-    vec![
-        HookTemplate {
-            id: "lint-on-write".into(),
-            name: "Lint on file change".into(),
-            description: "Run your linter after Claude edits or creates a file".into(),
-            event: "PostToolUse".into(),
-            matcher: "Edit|Write".into(),
-            command: "npm run lint --fix".into(),
-        },
-        HookTemplate {
-            id: "format-on-write".into(),
-            name: "Format on file change".into(),
-            description: "Auto-format files after Claude edits or creates them".into(),
-            event: "PostToolUse".into(),
-            matcher: "Edit|Write".into(),
-            command: "npx prettier --write".into(),
-        },
-        HookTemplate {
-            id: "test-after-bash".into(),
-            name: "Run tests after shell commands".into(),
-            description: "Automatically run your test suite after Claude executes shell commands".into(),
-            event: "PostToolUse".into(),
-            matcher: "Bash".into(),
-            command: "npm test".into(),
-        },
-        HookTemplate {
-            id: "block-force-push".into(),
-            name: "Block force push".into(),
-            description: "Prevent Claude from running git push --force".into(),
-            event: "PreToolUse".into(),
-            matcher: "Bash".into(),
-            command: "if echo \"$CLAUDE_TOOL_INPUT\" | grep -q 'push.*--force\\|push.*-f'; then echo 'Force push blocked' >&2; exit 2; fi".into(),
-        },
-        HookTemplate {
-            id: "notify-on-stop".into(),
-            name: "Notify when done".into(),
-            description: "Send a desktop notification when Claude finishes its response".into(),
-            event: "Stop".into(),
-            matcher: "".into(),
-            command: "osascript -e 'display notification \"Claude is done\" with title \"Goblin Mob Boss\"'".into(),
-        },
-        HookTemplate {
-            id: "env-setup".into(),
-            name: "Load environment on start".into(),
-            description: "Source a .env file or set up environment variables when a session starts".into(),
-            event: "SessionStart".into(),
-            matcher: "startup".into(),
-            command: "if [ -f .env ]; then export $(cat .env | grep -v '^#' | xargs); fi".into(),
-        },
-    ]
+    templates::built_in_hook_templates()
+}
+
+/// Generate a hook from a natural language description using Claude.
+/// Spawns Claude in the background, writes output to ~/.claude/.gmb/hook-generation-output.json.
+/// Frontend polls via `check_hook_generation`.
+#[tauri::command]
+pub fn generate_hook(description: String) -> Result<(), String> {
+    use std::io::Write as IoWrite;
+
+    let prompt = format!(
+        r#"Generate a Claude Code hook based on this description:
+
+{description}
+
+Respond with ONLY a single JSON object (no markdown fences, no explanation) in this exact format:
+{{
+  "name": "short-name",
+  "description": "One-line description",
+  "event": "EVENT_TYPE",
+  "matcher": "TOOL_REGEX_OR_EMPTY",
+  "command": "SHELL_COMMAND"
+}}
+
+Rules:
+- event must be one of: PreToolUse, PostToolUse, UserPromptSubmit, SessionStart, Stop, Notification, SubagentStop
+- matcher is a regex matching tool names (e.g. "Bash", "Edit|Write", "Read") — leave empty string for events that don't match tools
+- PreToolUse hooks can block actions by exiting with code 2 and printing a message to stderr
+- command should be a valid shell command; use $CLAUDE_TOOL_INPUT and $CLAUDE_TOOL_NAME env vars when relevant
+- Keep the command concise and portable (POSIX sh compatible where possible)
+- For blocking hooks (PreToolUse), use: if <condition>; then echo 'message' >&2; exit 2; fi"#,
+        description = description,
+    );
+
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .map_err(|_| "Could not determine home directory".to_string())?;
+
+    let log_dir = std::path::Path::new(&home).join(".claude").join(".gmb");
+    let _ = std::fs::create_dir_all(&log_dir);
+    let output_path = log_dir.join("hook-generation-output.json");
+
+    // Remove stale output file so polling starts fresh
+    let _ = std::fs::remove_file(&output_path);
+
+    let out_file = std::fs::File::create(&output_path)
+        .map_err(|e| format!("Failed to create output file: {e}"))?;
+    let err_file = out_file
+        .try_clone()
+        .map_err(|e| format!("Failed to clone file handle: {e}"))?;
+
+    let mut cmd = std::process::Command::new("claude");
+    apply_user_path(&mut cmd);
+    cmd.arg("--print")
+        .arg("--output-format")
+        .arg("text")
+        .stdin(std::process::Stdio::piped())
+        .stdout(out_file)
+        .stderr(err_file)
+        .current_dir(&home);
+
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("Failed to start Claude: {e}"))?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        std::thread::spawn(move || {
+            let _ = stdin.write_all(prompt.as_bytes());
+        });
+    }
+
+    Ok(())
+}
+
+/// Check if hook generation is complete and return the result if so.
+/// Returns None if still in progress, or the generated JSON string if done.
+#[tauri::command]
+pub fn check_hook_generation() -> Result<Option<String>, String> {
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .map_err(|_| "Could not determine home directory".to_string())?;
+
+    let output_path = std::path::Path::new(&home)
+        .join(".claude")
+        .join(".gmb")
+        .join("hook-generation-output.json");
+
+    if !output_path.exists() {
+        return Ok(None);
+    }
+
+    let content =
+        std::fs::read_to_string(&output_path).map_err(|e| format!("Failed to read output: {e}"))?;
+
+    // If the content is empty, still generating
+    if content.trim().is_empty() {
+        return Ok(None);
+    }
+
+    // Try to find a JSON object in the output (Claude may include extra text)
+    let trimmed = content.trim();
+    if let Some(start) = trimmed.find('{') {
+        if let Some(end) = trimmed.rfind('}') {
+            let json_str = &trimmed[start..=end];
+            // Validate it's valid JSON
+            if serde_json::from_str::<serde_json::Value>(json_str).is_ok() {
+                return Ok(Some(json_str.to_string()));
+            }
+        }
+    }
+
+    // Content exists but no valid JSON yet — might still be streaming
+    // Check if file was modified recently (within 5 seconds)
+    if let Ok(metadata) = std::fs::metadata(&output_path) {
+        if let Ok(modified) = metadata.modified() {
+            if modified.elapsed().map_or(false, |d| d.as_secs() < 5) {
+                return Ok(None); // Still writing
+            }
+        }
+    }
+
+    // File is stale and has no valid JSON — generation failed
+    Err(format!(
+        "Hook generation failed — Claude's output didn't contain valid JSON: {}",
+        &content[..content.len().min(200)]
+    ))
 }
 
 // ── Agent History Commands ──

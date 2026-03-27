@@ -97,6 +97,12 @@ Without GMB, getting good results from Claude Code agents means manually wrangli
 - Interactive SVG visualization with drag-and-drop layout
 - Auto-discovery mode: Claude scans your repos to find services and connections
 
+### Hooks
+- Per-repo hook management via `.claude/settings.json`
+- 15+ built-in hook templates organized by category (quality, safety, workflow, notifications)
+- Auto-create hooks with Claude — describe what you want, Claude generates the event, matcher, and command
+- Preview generated hooks before applying
+
 ### Validation & Git
 - Per-repo validators (tests, linters) run in isolated worktrees
 - Git worktrees per feature for concurrent development without checkout conflicts

@@ -147,6 +147,158 @@ You are best-effort QA. Your goal is to catch obvious functional regressions and
     ]
 }
 
+// ── Built-in Hook Templates ──
+// Pre-built hooks for common Claude Code workflows, grouped by category.
+
+/// Return the built-in hook templates.
+pub fn built_in_hook_templates() -> Vec<crate::models::HookTemplate> {
+    use crate::models::HookTemplate;
+    vec![
+        // ── Quality ──
+        HookTemplate {
+            id: "lint-on-write".into(),
+            name: "Lint on file change".into(),
+            description: "Run your linter after Claude edits or creates a file".into(),
+            event: "PostToolUse".into(),
+            matcher: "Edit|Write".into(),
+            command: "npm run lint --fix".into(),
+            category: "quality".into(),
+        },
+        HookTemplate {
+            id: "format-on-write".into(),
+            name: "Format on file change".into(),
+            description: "Auto-format files after Claude edits or creates them".into(),
+            event: "PostToolUse".into(),
+            matcher: "Edit|Write".into(),
+            command: "npx prettier --write".into(),
+            category: "quality".into(),
+        },
+        HookTemplate {
+            id: "typecheck-on-write".into(),
+            name: "Type-check on file change".into(),
+            description: "Run the TypeScript compiler after file edits to catch type errors early"
+                .into(),
+            event: "PostToolUse".into(),
+            matcher: "Edit|Write".into(),
+            command: "npx tsc --noEmit".into(),
+            category: "quality".into(),
+        },
+        HookTemplate {
+            id: "test-after-bash".into(),
+            name: "Run tests after shell commands".into(),
+            description: "Automatically run your test suite after Claude executes shell commands"
+                .into(),
+            event: "PostToolUse".into(),
+            matcher: "Bash".into(),
+            command: "npm test".into(),
+            category: "quality".into(),
+        },
+        HookTemplate {
+            id: "clippy-on-write".into(),
+            name: "Run Clippy on file change".into(),
+            description: "Run cargo clippy after Rust file edits to catch lint warnings".into(),
+            event: "PostToolUse".into(),
+            matcher: "Edit|Write".into(),
+            command: "cargo clippy --quiet 2>&1 | head -20".into(),
+            category: "quality".into(),
+        },
+        // ── Safety ──
+        HookTemplate {
+            id: "block-force-push".into(),
+            name: "Block force push".into(),
+            description: "Prevent Claude from running git push --force".into(),
+            event: "PreToolUse".into(),
+            matcher: "Bash".into(),
+            command: "if echo \"$CLAUDE_TOOL_INPUT\" | grep -q 'push.*--force\\|push.*-f'; then echo 'Force push blocked' >&2; exit 2; fi".into(),
+            category: "safety".into(),
+        },
+        HookTemplate {
+            id: "block-main-commit".into(),
+            name: "Block commits to main".into(),
+            description: "Prevent Claude from committing directly to main or master".into(),
+            event: "PreToolUse".into(),
+            matcher: "Bash".into(),
+            command: "if echo \"$CLAUDE_TOOL_INPUT\" | grep -q 'git commit'; then branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null); if [ \"$branch\" = \"main\" ] || [ \"$branch\" = \"master\" ]; then echo \"Cannot commit to $branch\" >&2; exit 2; fi; fi".into(),
+            category: "safety".into(),
+        },
+        HookTemplate {
+            id: "block-env-read".into(),
+            name: "Block .env file reads".into(),
+            description: "Prevent Claude from reading .env files that may contain secrets".into(),
+            event: "PreToolUse".into(),
+            matcher: "Read".into(),
+            command: "if echo \"$CLAUDE_TOOL_INPUT\" | grep -qE '\\.env($|\\.)'; then echo 'Reading .env files is blocked' >&2; exit 2; fi".into(),
+            category: "safety".into(),
+        },
+        HookTemplate {
+            id: "block-rm-rf".into(),
+            name: "Block recursive deletes".into(),
+            description: "Prevent Claude from running rm -rf or similar destructive commands".into(),
+            event: "PreToolUse".into(),
+            matcher: "Bash".into(),
+            command: "if echo \"$CLAUDE_TOOL_INPUT\" | grep -qE 'rm\\s+(-[a-zA-Z]*r[a-zA-Z]*f|--recursive)'; then echo 'Recursive delete blocked' >&2; exit 2; fi".into(),
+            category: "safety".into(),
+        },
+        // ── Workflow ──
+        HookTemplate {
+            id: "env-setup".into(),
+            name: "Load environment on start".into(),
+            description: "Source a .env file or set up environment variables when a session starts"
+                .into(),
+            event: "SessionStart".into(),
+            matcher: "startup".into(),
+            command: "if [ -f .env ]; then export $(cat .env | grep -v '^#' | xargs); fi".into(),
+            category: "workflow".into(),
+        },
+        HookTemplate {
+            id: "git-status-on-stop".into(),
+            name: "Show git status when done".into(),
+            description: "Print a git status summary when Claude finishes, so you can see what changed".into(),
+            event: "Stop".into(),
+            matcher: "".into(),
+            command: "echo '--- Changes ---' && git diff --stat 2>/dev/null || true".into(),
+            category: "workflow".into(),
+        },
+        HookTemplate {
+            id: "auto-stage".into(),
+            name: "Auto-stage edited files".into(),
+            description: "Automatically git-add files after Claude edits them".into(),
+            event: "PostToolUse".into(),
+            matcher: "Edit|Write".into(),
+            command: "git add -N . 2>/dev/null || true".into(),
+            category: "workflow".into(),
+        },
+        // ── Notifications ──
+        HookTemplate {
+            id: "notify-on-stop".into(),
+            name: "Notify when done".into(),
+            description: "Send a desktop notification when Claude finishes its response".into(),
+            event: "Stop".into(),
+            matcher: "".into(),
+            command: "osascript -e 'display notification \"Claude is done\" with title \"Goblin Mob Boss\"'".into(),
+            category: "notifications".into(),
+        },
+        HookTemplate {
+            id: "notify-linux".into(),
+            name: "Notify when done (Linux)".into(),
+            description: "Send a desktop notification on Linux when Claude finishes".into(),
+            event: "Stop".into(),
+            matcher: "".into(),
+            command: "notify-send 'Goblin Mob Boss' 'Claude is done' 2>/dev/null || true".into(),
+            category: "notifications".into(),
+        },
+        HookTemplate {
+            id: "log-tool-usage".into(),
+            name: "Log tool usage".into(),
+            description: "Append a line to a log file every time Claude uses a tool".into(),
+            event: "PostToolUse".into(),
+            matcher: "".into(),
+            command: "echo \"$(date +%H:%M:%S) $CLAUDE_TOOL_NAME\" >> .claude-tool-log.txt".into(),
+            category: "notifications".into(),
+        },
+    ]
+}
+
 // ── Built-in Skills ──
 // Default skill definitions that users can add to their ~/.claude/skills/.
 
@@ -573,5 +725,67 @@ mod tests {
         let frontend_task = &full_stack.task_templates[1];
         assert!(backend_task.dependencies.is_empty());
         assert!(frontend_task.dependencies.is_empty());
+    }
+
+    #[test]
+    fn built_in_hook_templates_returns_templates() {
+        let templates = built_in_hook_templates();
+        assert!(templates.len() >= 15);
+    }
+
+    #[test]
+    fn built_in_hook_templates_have_valid_fields() {
+        let templates = built_in_hook_templates();
+        for t in &templates {
+            assert!(!t.id.is_empty(), "Template has empty id");
+            assert!(!t.name.is_empty(), "Template has empty name");
+            assert!(!t.description.is_empty(), "Template has empty description");
+            assert!(!t.event.is_empty(), "Template has empty event");
+            assert!(!t.command.is_empty(), "Template has empty command");
+            assert!(!t.category.is_empty(), "Template has empty category");
+        }
+    }
+
+    #[test]
+    fn built_in_hook_templates_have_valid_events() {
+        let valid_events = [
+            "PreToolUse",
+            "PostToolUse",
+            "UserPromptSubmit",
+            "SessionStart",
+            "Stop",
+            "Notification",
+            "SubagentStop",
+        ];
+        let templates = built_in_hook_templates();
+        for t in &templates {
+            assert!(
+                valid_events.contains(&t.event.as_str()),
+                "Invalid event '{}' in template '{}'",
+                t.event,
+                t.id
+            );
+        }
+    }
+
+    #[test]
+    fn built_in_hook_templates_have_unique_ids() {
+        let templates = built_in_hook_templates();
+        let mut ids: Vec<&str> = templates.iter().map(|t| t.id.as_str()).collect();
+        let count = ids.len();
+        ids.sort();
+        ids.dedup();
+        assert_eq!(ids.len(), count, "Duplicate template IDs found");
+    }
+
+    #[test]
+    fn built_in_hook_templates_cover_all_categories() {
+        let templates = built_in_hook_templates();
+        let categories: std::collections::HashSet<&str> =
+            templates.iter().map(|t| t.category.as_str()).collect();
+        assert!(categories.contains("quality"));
+        assert!(categories.contains("safety"));
+        assert!(categories.contains("workflow"));
+        assert!(categories.contains("notifications"));
     }
 }

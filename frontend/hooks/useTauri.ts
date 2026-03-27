@@ -378,6 +378,12 @@ export function useTauri() {
     listHookTemplates: () =>
       invoke<HookTemplate[]>("list_hook_templates"),
 
+    generateHook: (description: string) =>
+      invoke<void>("generate_hook", { description }),
+
+    checkHookGeneration: () =>
+      invoke<string | null>("check_hook_generation"),
+
     // Agent History
     getAgentSummaries: () =>
       invoke<AgentPerformanceSummary[]>("get_agent_summaries"),

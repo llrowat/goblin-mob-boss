@@ -22,6 +22,7 @@ const SAMPLE_TEMPLATES: HookTemplate[] = [
     event: "PostToolUse",
     matcher: "Edit|Write",
     command: "npm run lint --fix",
+    category: "quality",
   },
   {
     id: "test-on-stop",
@@ -30,6 +31,16 @@ const SAMPLE_TEMPLATES: HookTemplate[] = [
     event: "Stop",
     matcher: "",
     command: "npm test",
+    category: "quality",
+  },
+  {
+    id: "block-force-push",
+    name: "Block force push",
+    description: "Prevent force pushes",
+    event: "PreToolUse",
+    matcher: "Bash",
+    command: "exit 2",
+    category: "safety",
   },
 ];
 
@@ -296,5 +307,118 @@ describe("HooksEditor", () => {
     await waitFor(() => {
       expect(screen.getByText("(1 rule)")).toBeInTheDocument();
     });
+  });
+
+  it("shows Auto-Create button", async () => {
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "get_repo_hooks") return Promise.resolve(EMPTY_HOOKS);
+      if (cmd === "list_hook_templates") return Promise.resolve([]);
+      return Promise.resolve(undefined);
+    });
+
+    renderWithProviders();
+
+    await waitFor(() => {
+      expect(screen.getByText("Auto-Create")).toBeInTheDocument();
+    });
+  });
+
+  it("shows generate form when Auto-Create is clicked", async () => {
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "get_repo_hooks") return Promise.resolve(EMPTY_HOOKS);
+      if (cmd === "list_hook_templates") return Promise.resolve([]);
+      return Promise.resolve(undefined);
+    });
+
+    renderWithProviders();
+
+    await waitFor(() => {
+      expect(screen.getByText("Auto-Create")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText("Auto-Create"));
+
+    expect(screen.getByText("Describe your hook")).toBeInTheDocument();
+    expect(screen.getByText("Generate")).toBeInTheDocument();
+    expect(screen.getByText("Cancel")).toBeInTheDocument();
+  });
+
+  it("disables Generate button when description is empty", async () => {
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "get_repo_hooks") return Promise.resolve(EMPTY_HOOKS);
+      if (cmd === "list_hook_templates") return Promise.resolve([]);
+      return Promise.resolve(undefined);
+    });
+
+    renderWithProviders();
+
+    await waitFor(() => {
+      expect(screen.getByText("Auto-Create")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText("Auto-Create"));
+
+    expect(screen.getByText("Generate")).toBeDisabled();
+  });
+
+  it("hides generate form when Cancel is clicked", async () => {
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "get_repo_hooks") return Promise.resolve(EMPTY_HOOKS);
+      if (cmd === "list_hook_templates") return Promise.resolve([]);
+      return Promise.resolve(undefined);
+    });
+
+    renderWithProviders();
+
+    await waitFor(() => {
+      expect(screen.getByText("Auto-Create")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText("Auto-Create"));
+    expect(screen.getByText("Describe your hook")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("Cancel"));
+    expect(screen.queryByText("Describe your hook")).not.toBeInTheDocument();
+  });
+
+  it("groups templates by category", async () => {
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "get_repo_hooks") return Promise.resolve(EMPTY_HOOKS);
+      if (cmd === "list_hook_templates") return Promise.resolve(SAMPLE_TEMPLATES);
+      return Promise.resolve(undefined);
+    });
+
+    renderWithProviders();
+
+    await waitFor(() => {
+      expect(screen.getByText("+ Template")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText("+ Template"));
+
+    // Should see category headers
+    expect(screen.getByText("Quality")).toBeInTheDocument();
+    expect(screen.getByText("Safety")).toBeInTheDocument();
+  });
+
+  it("hides templates and custom panels when Auto-Create is clicked", async () => {
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "get_repo_hooks") return Promise.resolve(EMPTY_HOOKS);
+      if (cmd === "list_hook_templates") return Promise.resolve(SAMPLE_TEMPLATES);
+      return Promise.resolve(undefined);
+    });
+
+    renderWithProviders();
+
+    await waitFor(() => {
+      expect(screen.getByText("+ Template")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText("+ Template"));
+    expect(screen.getByText("Lint on save")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("Auto-Create"));
+    expect(screen.queryByText("Lint on save")).not.toBeInTheDocument();
+    expect(screen.getByText("Describe your hook")).toBeInTheDocument();
   });
 });

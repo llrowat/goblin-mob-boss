@@ -459,6 +459,15 @@ export interface HookTemplate {
   event: string;
   matcher: string;
   command: string;
+  category?: string;
+}
+
+export interface GeneratedHook {
+  name: string;
+  description: string;
+  event: string;
+  matcher: string;
+  command: string;
 }
 
 export const HOOK_EVENTS = [

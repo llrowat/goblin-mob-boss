@@ -1145,6 +1145,8 @@ pub struct HookTemplate {
     pub event: String,
     pub matcher: String,
     pub command: String,
+    #[serde(default)]
+    pub category: String,
 }
 
 // ── Agent History ──

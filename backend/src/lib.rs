@@ -145,6 +145,8 @@ pub fn run() {
             commands::get_repo_hooks,
             commands::save_repo_hooks,
             commands::list_hook_templates,
+            commands::generate_hook,
+            commands::check_hook_generation,
             // Agent History
             commands::get_agent_summaries,
             commands::get_agent_history,
