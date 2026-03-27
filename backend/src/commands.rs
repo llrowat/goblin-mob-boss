@@ -2939,6 +2939,15 @@ pub fn delete_system_map(state: State<AppState>, map_id: String) -> Result<(), S
     maps.remove(&map_id).ok_or("System map not found")?;
     drop(maps);
     state.save_system_maps();
+
+    // Clean up discovery artifacts (logs, prompt files, result JSON)
+    let discovery_dir = Path::new(&state.gmb_path)
+        .join("discoveries")
+        .join(&map_id);
+    if discovery_dir.exists() {
+        let _ = std::fs::remove_dir_all(&discovery_dir);
+    }
+
     Ok(())
 }
 
