@@ -80,10 +80,16 @@ Without GMB, getting good results from Claude Code agents means manually wrangli
 - Built-in agent templates (Frontend Dev, Backend Dev, Test Engineer, Code Reviewer, etc.)
 - Quality-role agents automatically included as verification steps in every plan
 - Per-repo and global agents
+- **Agent track record** — performance history (success rate, task categories, avg duration) shown on each agent card and injected into planning prompts so Claude makes better agent assignments
 - **Skills** defined as `.claude/skills/<name>/SKILL.md` — reusable workflows
 - Create skills manually or auto-generate them with Claude (describe what you want, Claude writes the SKILL.md)
 - Skills from installed plugins are discovered and shown alongside user-created skills
 - Tabbed Agents + Skills UI
+
+### Contextual Help & Onboarding
+- Expandable "What is this?" help sections on key concepts: execution modes, agents, skills, validators, planning, functional testing, system maps
+- Enhanced onboarding walkthrough with concept explanations at each step
+- Progressive disclosure — beginners get guidance, power users can collapse it
 
 ### System Map
 - Map your service topology: backends, frontends, workers, databases, queues, caches, external services

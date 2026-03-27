@@ -473,6 +473,37 @@ export const HOOK_EVENTS = [
 
 export type HookEventName = typeof HOOK_EVENTS[number]["value"];
 
+// ── Agent History ──
+
+export interface AgentTaskRecord {
+  agent: string;
+  feature_id: string;
+  feature_name: string;
+  task_title: string;
+  task_category: string;
+  succeeded: boolean;
+  duration_secs: number | null;
+  validators_passed: boolean | null;
+  execution_mode: ExecutionMode | null;
+  recorded_at: string;
+}
+
+export interface CategoryCount {
+  category: string;
+  count: number;
+  success_count: number;
+}
+
+export interface AgentPerformanceSummary {
+  agent: string;
+  total_tasks: number;
+  successful_tasks: number;
+  success_rate: number;
+  top_categories: CategoryCount[];
+  avg_duration_secs: number | null;
+  last_active: string | null;
+}
+
 // ── Heuristics ──
 
 export interface TaskNode {

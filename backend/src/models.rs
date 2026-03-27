@@ -1108,15 +1108,31 @@ pub struct RepoHooks {
     pub pre_tool_use: Vec<HookRule>,
     #[serde(rename = "PostToolUse", default, skip_serializing_if = "Vec::is_empty")]
     pub post_tool_use: Vec<HookRule>,
-    #[serde(rename = "UserPromptSubmit", default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(
+        rename = "UserPromptSubmit",
+        default,
+        skip_serializing_if = "Vec::is_empty"
+    )]
     pub user_prompt_submit: Vec<HookRule>,
-    #[serde(rename = "Notification", default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(
+        rename = "Notification",
+        default,
+        skip_serializing_if = "Vec::is_empty"
+    )]
     pub notification: Vec<HookRule>,
     #[serde(rename = "Stop", default, skip_serializing_if = "Vec::is_empty")]
     pub stop: Vec<HookRule>,
-    #[serde(rename = "SubagentStop", default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(
+        rename = "SubagentStop",
+        default,
+        skip_serializing_if = "Vec::is_empty"
+    )]
     pub subagent_stop: Vec<HookRule>,
-    #[serde(rename = "SessionStart", default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(
+        rename = "SessionStart",
+        default,
+        skip_serializing_if = "Vec::is_empty"
+    )]
     pub session_start: Vec<HookRule>,
 }
 
@@ -1129,6 +1145,59 @@ pub struct HookTemplate {
     pub event: String,
     pub matcher: String,
     pub command: String,
+}
+
+// ── Agent History ──
+// Tracks agent performance across features for the reevaluation loop.
+// Recorded when a feature completes — one entry per agent per task.
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentTaskRecord {
+    /// Agent filename (without .md).
+    pub agent: String,
+    /// Feature ID this task belonged to.
+    pub feature_id: String,
+    /// Feature name for display.
+    pub feature_name: String,
+    /// What the task was.
+    pub task_title: String,
+    /// Category of work (e.g. "frontend", "backend", "testing", "infrastructure").
+    #[serde(default)]
+    pub task_category: String,
+    /// Whether the task succeeded (acceptance criteria met, no validator failures).
+    pub succeeded: bool,
+    /// Duration in seconds from feature launch to completion (approximate).
+    #[serde(default)]
+    pub duration_secs: Option<u64>,
+    /// Whether validators passed on the feature.
+    #[serde(default)]
+    pub validators_passed: Option<bool>,
+    /// The execution mode used.
+    #[serde(default)]
+    pub execution_mode: Option<ExecutionMode>,
+    pub recorded_at: DateTime<Utc>,
+}
+
+/// Aggregated performance summary for a single agent.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentPerformanceSummary {
+    pub agent: String,
+    pub total_tasks: u32,
+    pub successful_tasks: u32,
+    pub success_rate: f32,
+    /// Top task categories this agent has handled, sorted by frequency.
+    pub top_categories: Vec<CategoryCount>,
+    /// Average duration in seconds (only for tasks with recorded duration).
+    pub avg_duration_secs: Option<f64>,
+    /// Most recent task record timestamp.
+    pub last_active: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CategoryCount {
+    pub category: String,
+    pub count: u32,
+    pub success_count: u32,
 }
 
 #[cfg(test)]
@@ -1257,7 +1326,8 @@ mod tests {
             "feature/x-1234".to_string(),
             vec![],
         );
-        feature.launched_command = Some("cd /tmp && claude --append-system-prompt 'hello'".to_string());
+        feature.launched_command =
+            Some("cd /tmp && claude --append-system-prompt 'hello'".to_string());
         let json = serde_json::to_string(&feature).unwrap();
         assert!(json.contains("launched_command"));
         let parsed: Feature = serde_json::from_str(&json).unwrap();
@@ -2132,7 +2202,10 @@ You are enabled by default."#;
         assert_eq!(parsed.feedback, Some("Split tasks".to_string()));
         assert_eq!(parsed.tasks.len(), 1);
         assert_eq!(parsed.tasks[0].title, "Auth");
-        assert_eq!(parsed.execution_mode.as_ref().unwrap().recommended, ExecutionMode::Teams);
+        assert_eq!(
+            parsed.execution_mode.as_ref().unwrap().recommended,
+            ExecutionMode::Teams
+        );
     }
 
     #[test]
@@ -2200,7 +2273,10 @@ You are enabled by default."#;
         let parsed: Feature = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.plan_history.len(), 2);
         assert_eq!(parsed.plan_history[0].trigger, "revision");
-        assert_eq!(parsed.plan_history[0].feedback.as_deref(), Some("Add tests"));
+        assert_eq!(
+            parsed.plan_history[0].feedback.as_deref(),
+            Some("Add tests")
+        );
         assert_eq!(parsed.plan_history[0].tasks.len(), 1);
         assert_eq!(parsed.plan_history[1].trigger, "answer_round");
         assert!(parsed.plan_history[1].feedback.is_none());
@@ -2463,7 +2539,10 @@ Review the current PR and check for security issues, performance problems, and c
         assert_eq!(parsed.dir_name, "deploy");
         assert_eq!(parsed.name, "deploy");
         assert_eq!(parsed.description, "Deploy to production");
-        assert_eq!(parsed.prompt_template, "Run the deploy pipeline for $ARGUMENTS.");
+        assert_eq!(
+            parsed.prompt_template,
+            "Run the deploy pipeline for $ARGUMENTS."
+        );
     }
 
     #[test]
@@ -2486,7 +2565,8 @@ Review the current PR and check for security issues, performance problems, and c
 
     #[test]
     fn skill_file_name_differs_from_dir_name() {
-        let content = "---\nname: security-review\ndescription: Reviews code\n---\n\nCheck for vulns.";
+        let content =
+            "---\nname: security-review\ndescription: Reviews code\n---\n\nCheck for vulns.";
         let skill = SkillFile::parse("evaluate-code-changes-for", content);
         assert_eq!(skill.dir_name, "evaluate-code-changes-for");
         assert_eq!(skill.name, "security-review");

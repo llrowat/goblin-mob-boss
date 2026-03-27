@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useTauri } from "../hooks/useTauri";
 import { AddRepoModal } from "../components/AddRepoModal";
 import { HooksEditor } from "../components/HooksEditor";
+import { ContextualHelp, HELP_CONTENT } from "../components/ContextualHelp";
 import type { Repository } from "../types";
 
 
@@ -110,6 +111,7 @@ export function ReposPage() {
                 </div>
                 <div className="form-group">
                   <label className="form-label">Validators</label>
+                  <ContextualHelp title="What are validators?">{HELP_CONTENT.validators}</ContextualHelp>
                   <textarea
                     className="form-textarea"
                     value={editValidators}

@@ -144,6 +144,9 @@ pub fn run() {
             commands::get_repo_hooks,
             commands::save_repo_hooks,
             commands::list_hook_templates,
+            // Agent History
+            commands::get_agent_summaries,
+            commands::get_agent_history,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

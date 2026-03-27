@@ -2462,3 +2462,233 @@ body {
   align-items: center;
   text-decoration: none;
 }
+
+/* ── Contextual Help ── */
+
+.contextual-help {
+  margin-bottom: 12px;
+}
+
+.contextual-help-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 12px;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.contextual-help-toggle:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.contextual-help-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.contextual-help-chevron {
+  font-size: 10px;
+  transition: transform 0.15s;
+}
+
+.contextual-help-chevron[data-open="true"] {
+  transform: rotate(180deg);
+}
+
+.contextual-help-body {
+  margin-top: 8px;
+  padding: 12px 16px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+.contextual-help-body p {
+  margin-bottom: 8px;
+}
+
+.contextual-help-body p:last-child {
+  margin-bottom: 0;
+}
+
+.contextual-help-body code {
+  background: var(--bg);
+  padding: 1px 5px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.contextual-help-body strong {
+  color: var(--text);
+}
+
+/* ── Agent Performance ── */
+
+.agent-perf-bar {
+  margin: 8px 0;
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+}
+
+.agent-perf-empty {
+  border-top: none;
+  padding: 2px 0;
+}
+
+.agent-perf-empty .agent-perf-label {
+  font-size: 11px;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.agent-perf-stats {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.agent-perf-label {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.agent-perf-rate {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.agent-perf-track {
+  height: 4px;
+  background: var(--bg);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+
+.agent-perf-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+.agent-perf-categories {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.agent-perf-category-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 2px 6px;
+  font-size: 10px;
+  color: var(--text-secondary);
+}
+
+.agent-perf-category-count {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.agent-perf-detail {
+  padding: 12px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.agent-perf-detail h4 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.agent-perf-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+  gap: 8px;
+}
+
+.agent-perf-stat-block {
+  text-align: center;
+  padding: 8px;
+  background: var(--bg);
+  border-radius: var(--radius-sm);
+}
+
+.agent-perf-stat-value {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.agent-perf-stat-label {
+  font-size: 10px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.agent-perf-last-active {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* ── Enhanced Onboarding ── */
+
+.onboarding-explainer {
+  font-size: 14px;
+  color: var(--text-secondary);
+  max-width: 600px;
+  margin: 8px auto 0;
+  text-align: center;
+  line-height: 1.6;
+}
+
+.onboarding-step-detail {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 4px;
+  line-height: 1.5;
+}
+
+.onboarding-optional-badge {
+  display: inline-block;
+  font-size: 10px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 1px 6px;
+  margin-left: 8px;
+  color: var(--text-secondary);
+  font-weight: 400;
+  vertical-align: middle;
+}

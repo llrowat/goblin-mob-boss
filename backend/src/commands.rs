@@ -124,7 +124,9 @@ pub fn detect_repo_info(path: String) -> Result<serde_json::Value, String> {
     let has_claude_md = has_claude_md_file(&path);
     let is_empty = git::is_repo_empty(&path);
     let commit_pattern = git::detect_commit_pattern(&path);
-    Ok(serde_json::json!({ "name": name, "base_branch": base_branch, "has_claude_md": has_claude_md, "is_empty": is_empty, "commit_pattern": commit_pattern }))
+    Ok(
+        serde_json::json!({ "name": name, "base_branch": base_branch, "has_claude_md": has_claude_md, "is_empty": is_empty, "commit_pattern": commit_pattern }),
+    )
 }
 
 /// Check whether a CLAUDE.md file exists at the repo root.
@@ -156,7 +158,10 @@ pub fn generate_claude_md(path: String) -> Result<(), String> {
         return Err("Path is not a git repository".to_string());
     }
     if git::is_repo_empty(&path) {
-        return Err("Cannot generate CLAUDE.md for an empty repository — there's nothing to analyze yet".to_string());
+        return Err(
+            "Cannot generate CLAUDE.md for an empty repository — there's nothing to analyze yet"
+                .to_string(),
+        );
     }
 
     let prompt = r#"Analyze this codebase and generate a lean CLAUDE.md file in the project root. Keep it focused — only include what an AI coding agent actually needs to work here. No filler, no generic advice.
@@ -436,7 +441,13 @@ pub fn start_feature(
         }
     }
 
-    let mut feature = Feature::new(repo_ids, name, description, branch_name, attachments.unwrap_or_default());
+    let mut feature = Feature::new(
+        repo_ids,
+        name,
+        description,
+        branch_name,
+        attachments.unwrap_or_default(),
+    );
 
     // Create worktrees for each repo so features can run in parallel
     for repo in &resolved_repos {
@@ -505,7 +516,11 @@ pub fn start_feature(
 
     // Exclude disabled agents from ideation
     let enabled_agents: Vec<&AgentFile> = all_agents.iter().filter(|a| a.enabled).collect();
-    let agent_list: String = enabled_agents.iter().map(|a| format_agent(a)).collect::<Vec<_>>().join("\n");
+    let agent_list: String = enabled_agents
+        .iter()
+        .map(|a| format_agent(a))
+        .collect::<Vec<_>>()
+        .join("\n");
     let quality_agent_list: String = enabled_agents
         .iter()
         .filter(|a| a.role == "quality")
@@ -522,14 +537,22 @@ pub fn start_feature(
             let repo_id_set: std::collections::HashSet<&String> = feature.repo_ids.iter().collect();
             maps.values().find(|m| {
                 m.services.iter().any(|s| {
-                    s.repo_id.as_ref().map_or(false, |rid| repo_id_set.contains(rid))
+                    s.repo_id
+                        .as_ref()
+                        .map_or(false, |rid| repo_id_set.contains(rid))
                 })
             })
         };
-        chosen_map.map(|m| format_map_context(m)).unwrap_or_default()
+        chosen_map
+            .map(|m| format_map_context(m))
+            .unwrap_or_default()
     };
 
-    let system_prompt = prompts::ideation_system_prompt_with_architecture(&repo_map, &agent_list, &architecture_context);
+    let system_prompt = prompts::ideation_system_prompt_with_architecture(
+        &repo_map,
+        &agent_list,
+        &architecture_context,
+    );
     std::fs::write(ideation_dir.join("system-prompt.md"), &system_prompt)
         .map_err(|e| format!("Failed to write system prompt: {}", e))?;
 
@@ -584,9 +607,7 @@ pub fn get_plan_history(
     feature_id: String,
 ) -> Result<Vec<PlanSnapshot>, String> {
     let features = state.features.lock().unwrap();
-    let feature = features
-        .get(&feature_id)
-        .ok_or("Feature not found")?;
+    let feature = features.get(&feature_id).ok_or("Feature not found")?;
     Ok(feature.plan_history.clone())
 }
 
@@ -668,7 +689,10 @@ pub fn get_ideation_prompt(state: State<AppState>, feature_id: String) -> Result
 }
 
 #[tauri::command]
-pub fn get_ideation_user_prompt(state: State<AppState>, feature_id: String) -> Result<String, String> {
+pub fn get_ideation_user_prompt(
+    state: State<AppState>,
+    feature_id: String,
+) -> Result<String, String> {
     let features = state.features.lock().unwrap();
     let feature = features
         .get(&feature_id)
@@ -813,7 +837,11 @@ pub fn poll_ideation_result(
                 }
             },
             Err(e) => {
-                log::warn!("Failed to read questions.json for feature {}: {}", feature_id, e);
+                log::warn!(
+                    "Failed to read questions.json for feature {}: {}",
+                    feature_id,
+                    e
+                );
             }
         }
     }
@@ -898,7 +926,10 @@ pub fn configure_launch(
     feature.execution_rationale = Some(execution_rationale);
     feature.selected_agents = selected_agents;
     feature.task_specs = task_specs;
-    feature.log_activity(format!("Launch configured in {:?} mode", execution_mode), "info");
+    feature.log_activity(
+        format!("Launch configured in {:?} mode", execution_mode),
+        "info",
+    );
     if let Some(h) = test_harness {
         feature.test_harness = Some(h);
     }
@@ -940,7 +971,11 @@ pub fn detect_available_shells() -> Vec<(String, String)> {
             ("fish", "Fish"),
         ]
     };
-    let which_cmd = if cfg!(target_os = "windows") { "where" } else { "which" };
+    let which_cmd = if cfg!(target_os = "windows") {
+        "where"
+    } else {
+        "which"
+    };
     candidates
         .into_iter()
         .filter(|(cmd, _)| {
@@ -981,8 +1016,12 @@ pub fn get_launch_command(state: State<AppState>, feature_id: String) -> Result<
         .map(|s| s.as_str())
         .unwrap_or(&repo.path);
 
-    let (args, env, _prompt) =
-        launch::build_launch_with_repo(&feature, &system_prompt_content, Some(&repo.path), repo.commit_pattern.as_deref());
+    let (args, env, _prompt) = launch::build_launch_with_repo(
+        &feature,
+        &system_prompt_content,
+        Some(&repo.path),
+        repo.commit_pattern.as_deref(),
+    );
 
     // Build the full command string
     let env_prefix: String = env
@@ -1035,8 +1074,12 @@ pub fn start_launch_pty(
         .map(|s| s.as_str())
         .unwrap_or(&repo.path);
 
-    let (args, env, _prompt) =
-        launch::build_launch_with_repo(&feature, &system_prompt_content, Some(&repo.path), repo.commit_pattern.as_deref());
+    let (args, env, _prompt) = launch::build_launch_with_repo(
+        &feature,
+        &system_prompt_content,
+        Some(&repo.path),
+        repo.commit_pattern.as_deref(),
+    );
 
     // Pre-seed the progress file so Claude has a concrete file to update
     // and the UI immediately sees the task list. This dramatically improves
@@ -1051,7 +1094,11 @@ pub fn start_launch_pty(
 
     // Wrap command in user's preferred shell (e.g. tmux)
     let prefs = state.preferences.lock().unwrap().clone();
-    let shell = if prefs.shell.is_empty() { default_shell() } else { prefs.shell.clone() };
+    let shell = if prefs.shell.is_empty() {
+        default_shell()
+    } else {
+        prefs.shell.clone()
+    };
     let (cmd, cmd_args) = wrap_in_shell(&shell, &args);
 
     pty::spawn_pty_session(
@@ -1146,10 +1193,7 @@ pub fn mark_feature_ready(state: State<AppState>, feature_id: String) -> Result<
                     .join("progress.json");
                 read_task_progress(&progress_path)
             })
-            .map(|p| {
-                !p.tasks.is_empty()
-                    && p.tasks.iter().all(|t| t.status == TaskStatus::Done)
-            })
+            .map(|p| !p.tasks.is_empty() && p.tasks.iter().all(|t| t.status == TaskStatus::Done))
             .unwrap_or(false)
     };
 
@@ -1159,7 +1203,10 @@ pub fn mark_feature_ready(state: State<AppState>, feature_id: String) -> Result<
         }
         feature.status = FeatureStatus::Ready;
     } else {
-        feature.log_activity("Execution ended before all tasks completed — returned to planning", "warning");
+        feature.log_activity(
+            "Execution ended before all tasks completed — returned to planning",
+            "warning",
+        );
         feature.status = FeatureStatus::Ideation;
     }
 
@@ -1205,6 +1252,9 @@ pub fn complete_feature(state: State<AppState>, feature_id: String) -> Result<Fe
     let updated = feature.clone();
     drop(features);
     state.save_features();
+
+    // Record agent performance history
+    state.record_feature_outcome(&updated);
 
     // Delete worktrees (best-effort)
     let repos = state.repositories.lock().unwrap();
@@ -1359,8 +1409,7 @@ pub fn start_functional_testing(
         .unwrap_or(&repo.path);
 
     // Ensure proofs directory
-    let proofs_path =
-        functional_testing::ensure_proofs_dir(work_dir, &feature_id, attempt)?;
+    let proofs_path = functional_testing::ensure_proofs_dir(work_dir, &feature_id, attempt)?;
     let proofs_path_str = proofs_path.to_string_lossy().to_string();
 
     // Build prior feedback for re-test rounds
@@ -1537,7 +1586,10 @@ pub fn complete_functional_testing(
     feature_id: String,
 ) -> Result<Feature, String> {
     let features = state.features.lock().unwrap();
-    let feature = features.get(&feature_id).ok_or("Feature not found")?.clone();
+    let feature = features
+        .get(&feature_id)
+        .ok_or("Feature not found")?
+        .clone();
     drop(features);
 
     let repo = get_primary_repo(&state, &feature)?;
@@ -1557,7 +1609,11 @@ pub fn complete_functional_testing(
     harness::stop_harness(&harness_mgr, &feature_id);
 
     let all_passed = result.all_passed;
-    let fail_count = result.proofs.iter().filter(|p| !p.passed && !p.is_meta).count();
+    let fail_count = result
+        .proofs
+        .iter()
+        .filter(|p| !p.passed && !p.is_meta)
+        .count();
     feature.functional_test_results.push(result);
 
     if all_passed {
@@ -1578,7 +1634,10 @@ pub fn complete_functional_testing(
             ),
             timestamp: Utc::now(),
         });
-        feature.log_activity(format!("Testing failed after {} attempts", feature.testing_attempt), "error");
+        feature.log_activity(
+            format!("Testing failed after {} attempts", feature.testing_attempt),
+            "error",
+        );
     } else {
         // Loop back to executing — implementer needs to fix issues
         feature.status = FeatureStatus::Executing;
@@ -1590,7 +1649,13 @@ pub fn complete_functional_testing(
             ),
             timestamp: Utc::now(),
         });
-        feature.log_activity(format!("Testing attempt {} failed — looping back for fixes", attempt), "warning");
+        feature.log_activity(
+            format!(
+                "Testing attempt {} failed — looping back for fixes",
+                attempt
+            ),
+            "warning",
+        );
     }
 
     feature.pty_session_id = None;
@@ -1615,10 +1680,7 @@ pub fn get_functional_test_results(
 
 /// Mark a feature as entering the testing phase (without spawning a PTY — for auto-transitions).
 #[tauri::command]
-pub fn mark_feature_testing(
-    state: State<AppState>,
-    feature_id: String,
-) -> Result<Feature, String> {
+pub fn mark_feature_testing(state: State<AppState>, feature_id: String) -> Result<Feature, String> {
     let mut features = state.features.lock().unwrap();
     let feature = features.get_mut(&feature_id).ok_or("Feature not found")?;
     if feature.status != FeatureStatus::Testing {
@@ -1703,13 +1765,21 @@ pub fn relaunch_with_fix_context(
         system_prompt.push_str(&fix_context);
     }
 
-    let (args, env, _prompt) =
-        launch::build_launch_with_repo(&feature, &system_prompt, Some(&repo.path), repo.commit_pattern.as_deref());
+    let (args, env, _prompt) = launch::build_launch_with_repo(
+        &feature,
+        &system_prompt,
+        Some(&repo.path),
+        repo.commit_pattern.as_deref(),
+    );
 
     let session_id = format!("fix-{}-{}", feature_id, feature.testing_attempt);
 
     let prefs = state.preferences.lock().unwrap().clone();
-    let shell = if prefs.shell.is_empty() { default_shell() } else { prefs.shell.clone() };
+    let shell = if prefs.shell.is_empty() {
+        default_shell()
+    } else {
+        prefs.shell.clone()
+    };
     let (cmd, cmd_args) = wrap_in_shell(&shell, &args);
 
     pty::spawn_pty_session(
@@ -1746,7 +1816,10 @@ pub fn poll_testing_status(
     feature_id: String,
 ) -> Result<TestingStatus, String> {
     let features = state.features.lock().unwrap();
-    let feature = features.get(&feature_id).ok_or("Feature not found")?.clone();
+    let feature = features
+        .get(&feature_id)
+        .ok_or("Feature not found")?
+        .clone();
     drop(features);
 
     let harness_status = harness::get_harness_status(&harness_mgr, &feature_id);
@@ -1774,8 +1847,7 @@ pub fn poll_testing_status(
         .get(&repo.id)
         .map(|s| s.as_str())
         .unwrap_or(&repo.path);
-    let proofs_dir =
-        functional_testing::proofs_dir(work_dir, &feature_id, feature.testing_attempt);
+    let proofs_dir = functional_testing::proofs_dir(work_dir, &feature_id, feature.testing_attempt);
     let completion_signal = proofs_dir.join("testing-complete").exists();
     let results_exist = proofs_dir.join("results.json").exists();
 
@@ -1799,7 +1871,10 @@ pub fn start_test_harness(
     feature_id: String,
 ) -> Result<(), String> {
     let features = state.features.lock().unwrap();
-    let feature = features.get(&feature_id).ok_or("Feature not found")?.clone();
+    let feature = features
+        .get(&feature_id)
+        .ok_or("Feature not found")?
+        .clone();
     drop(features);
 
     let test_harness = feature
@@ -1933,7 +2008,10 @@ pub fn push_feature_repo(
         Ok(false) => {} // nothing to commit
         Err(e) => {
             let hint = if e.to_string().contains("branch") || e.to_string().contains("ref") {
-                format!(" (hint: check that branch '{}' exists and is valid)", feature.branch)
+                format!(
+                    " (hint: check that branch '{}' exists and is valid)",
+                    feature.branch
+                )
             } else {
                 String::new()
             };
@@ -1961,16 +2039,20 @@ pub fn push_feature_repo(
         f.repo_push_status.insert(repo_id, push_status.clone());
 
         match &push_status {
-            RepoPushStatus::Pushed => f.log_activity(format!("Pushed {} to origin", repo.name), "success"),
-            RepoPushStatus::Failed => f.log_activity(format!("Push failed for {}", repo.name), "error"),
+            RepoPushStatus::Pushed => {
+                f.log_activity(format!("Pushed {} to origin", repo.name), "success")
+            }
+            RepoPushStatus::Failed => {
+                f.log_activity(format!("Push failed for {}", repo.name), "error")
+            }
             _ => {}
         }
 
         // If all repos are pushed, promote feature status to Pushed
         let all_repo_ids = f.effective_repo_ids();
-        let all_pushed = all_repo_ids.iter().all(|rid| {
-            f.repo_push_status.get(rid) == Some(&RepoPushStatus::Pushed)
-        });
+        let all_pushed = all_repo_ids
+            .iter()
+            .all(|rid| f.repo_push_status.get(rid) == Some(&RepoPushStatus::Pushed));
         if all_pushed {
             f.status = FeatureStatus::Pushed;
         }
@@ -2016,7 +2098,10 @@ pub fn push_feature(state: State<AppState>, feature_id: String) -> Result<String
             Ok(false) => {} // nothing to commit
             Err(e) => {
                 let hint = if e.to_string().contains("branch") || e.to_string().contains("ref") {
-                    format!(" (hint: check that branch '{}' exists and is valid)", feature.branch)
+                    format!(
+                        " (hint: check that branch '{}' exists and is valid)",
+                        feature.branch
+                    )
                 } else {
                     String::new()
                 };
@@ -2043,9 +2128,9 @@ pub fn push_feature(state: State<AppState>, feature_id: String) -> Result<String
         f.updated_at = Utc::now();
 
         let all_repo_ids = f.effective_repo_ids();
-        let all_pushed = all_repo_ids.iter().all(|rid| {
-            f.repo_push_status.get(rid) == Some(&RepoPushStatus::Pushed)
-        });
+        let all_pushed = all_repo_ids
+            .iter()
+            .all(|rid| f.repo_push_status.get(rid) == Some(&RepoPushStatus::Pushed));
         if all_pushed {
             f.status = FeatureStatus::Pushed;
         }
@@ -2054,9 +2139,12 @@ pub fn push_feature(state: State<AppState>, feature_id: String) -> Result<String
     state.save_features();
 
     // If any repo failed to push, return error
-    let any_failed = repos
-        .iter()
-        .any(|r| feature.effective_repo_ids().contains(&r.id) && outputs.iter().any(|o| o.contains(&format!("Failed to push in {}", r.name))));
+    let any_failed = repos.iter().any(|r| {
+        feature.effective_repo_ids().contains(&r.id)
+            && outputs
+                .iter()
+                .any(|o| o.contains(&format!("Failed to push in {}", r.name)))
+    });
     if any_failed {
         return Err(outputs.join("\n"));
     }
@@ -2101,8 +2189,13 @@ fn ensure_ideation_prompts(
 ) -> Result<(std::path::PathBuf, std::path::PathBuf), String> {
     let repo = get_primary_repo(state, feature)?;
     let all_repos = get_all_repos(state, feature)?;
-    let all_repos_snapshot: Vec<Repository> =
-        state.repositories.lock().unwrap().values().cloned().collect();
+    let all_repos_snapshot: Vec<Repository> = state
+        .repositories
+        .lock()
+        .unwrap()
+        .values()
+        .cloned()
+        .collect();
 
     let feature_dir = Path::new(&repo.path)
         .join(".gmb")
@@ -2112,41 +2205,50 @@ fn ensure_ideation_prompts(
     let system_prompt_path = feature_dir.join("system-prompt.md");
     let user_prompt_path = feature_dir.join("user-prompt.md");
 
-    if !system_prompt_path.exists() || !user_prompt_path.exists() {
-        std::fs::create_dir_all(&tasks_dir)
-            .map_err(|e| format!("Failed to create feature dir: {}", e))?;
+    std::fs::create_dir_all(&tasks_dir)
+        .map_err(|e| format!("Failed to create feature dir: {}", e))?;
 
-        let repo_map = generate_multi_repo_context_with_similar(&all_repos, &all_repos_snapshot);
-        let (agent_list, quality_agent_list) = build_agent_lists(&all_repos);
+    let repo_map = generate_multi_repo_context_with_similar(&all_repos, &all_repos_snapshot);
+    let (agent_list, quality_agent_list) = build_agent_lists(&all_repos);
 
-        if !system_prompt_path.exists() {
-            let architecture_context = {
-                let maps = state.system_maps.lock().unwrap();
-                let repo_id_set: std::collections::HashSet<&String> = feature.repo_ids.iter().collect();
-                let matching_map = maps.values().find(|m| {
-                    m.services.iter().any(|s| {
-                        s.repo_id.as_ref().map_or(false, |rid| repo_id_set.contains(rid))
-                    })
-                });
-                matching_map.map(|m| format_map_context(m)).unwrap_or_default()
-            };
-            let system_prompt = prompts::ideation_system_prompt_with_architecture(&repo_map, &agent_list, &architecture_context);
-            std::fs::write(&system_prompt_path, &system_prompt)
-                .map_err(|e| format!("Failed to write system prompt: {}", e))?;
-        }
-        if !user_prompt_path.exists() {
-            let ft_enabled = state.preferences.lock().unwrap().functional_testing_enabled;
-            let user_prompt = prompts::ideation_user_prompt_full(
-                &feature.description,
-                &tasks_dir.to_string_lossy(),
-                &agent_list,
-                &quality_agent_list,
-                ft_enabled,
-                &feature.attachments,
-            );
-            std::fs::write(&user_prompt_path, &user_prompt)
-                .map_err(|e| format!("Failed to write user prompt: {}", e))?;
-        }
+    // Always regenerate system prompt so agent history stays fresh
+    {
+        let architecture_context = {
+            let maps = state.system_maps.lock().unwrap();
+            let repo_id_set: std::collections::HashSet<&String> = feature.repo_ids.iter().collect();
+            let matching_map = maps.values().find(|m| {
+                m.services.iter().any(|s| {
+                    s.repo_id
+                        .as_ref()
+                        .map_or(false, |rid| repo_id_set.contains(rid))
+                })
+            });
+            matching_map
+                .map(|m| format_map_context(m))
+                .unwrap_or_default()
+        };
+        let agent_history = state.format_agent_history_for_prompt();
+        let system_prompt = prompts::ideation_system_prompt_full(
+            &repo_map,
+            &agent_list,
+            &architecture_context,
+            &agent_history,
+        );
+        std::fs::write(&system_prompt_path, &system_prompt)
+            .map_err(|e| format!("Failed to write system prompt: {}", e))?;
+    }
+    if !user_prompt_path.exists() {
+        let ft_enabled = state.preferences.lock().unwrap().functional_testing_enabled;
+        let user_prompt = prompts::ideation_user_prompt_full(
+            &feature.description,
+            &tasks_dir.to_string_lossy(),
+            &agent_list,
+            &quality_agent_list,
+            ft_enabled,
+            &feature.attachments,
+        );
+        std::fs::write(&user_prompt_path, &user_prompt)
+            .map_err(|e| format!("Failed to write user prompt: {}", e))?;
     }
 
     Ok((system_prompt_path, user_prompt_path))
@@ -2186,15 +2288,21 @@ fn build_agent_lists(repos: &[Repository]) -> (String, String) {
             format!(": {}", a.description)
         };
         format!(
-            "- **{}** ({}){}", a.name,
-            a.filename.strip_suffix(".md").unwrap_or(&a.filename), desc
+            "- **{}** ({}){}",
+            a.name,
+            a.filename.strip_suffix(".md").unwrap_or(&a.filename),
+            desc
         )
     };
 
     // Exclude disabled agents from ideation
     let enabled_agents: Vec<&AgentFile> = all_agents.iter().filter(|a| a.enabled).collect();
 
-    let agent_list = enabled_agents.iter().map(|a| format_agent(a)).collect::<Vec<_>>().join("\n");
+    let agent_list = enabled_agents
+        .iter()
+        .map(|a| format_agent(a))
+        .collect::<Vec<_>>()
+        .join("\n");
 
     let quality_list = enabled_agents
         .iter()
@@ -2262,27 +2370,28 @@ fn spawn_ideation_process(
     let log_file_path = feature_dir.join("claude-ideation.log");
     let log_file = std::fs::File::create(&log_file_path)
         .map_err(|e| format!("Failed to create log file: {}", e))?;
-    let stderr_file = log_file.try_clone()
+    let stderr_file = log_file
+        .try_clone()
         .map_err(|e| format!("Failed to clone log file handle: {}", e))?;
 
     // Combine system context + user prompt into a single stdin payload
     // to avoid passing large strings as CLI arguments
-    let full_prompt = format!(
-        "{}\n\n---\n\n{}",
-        system_prompt, user_prompt
-    );
+    let full_prompt = format!("{}\n\n---\n\n{}", system_prompt, user_prompt);
 
     let mut cmd = std::process::Command::new("claude");
     apply_user_path(&mut cmd);
     cmd.arg("--print")
-        .arg("--permission-mode").arg("bypassPermissions")
-        .arg("--allowedTools").arg("Read,Glob,Grep,Write")
+        .arg("--permission-mode")
+        .arg("bypassPermissions")
+        .arg("--allowedTools")
+        .arg("Read,Glob,Grep,Write")
         .stdin(std::process::Stdio::piped())
         .stdout(log_file)
         .stderr(stderr_file)
         .current_dir(work_dir);
 
-    let mut child = cmd.spawn()
+    let mut child = cmd
+        .spawn()
         .map_err(|e| format!("Failed to start Claude: {}", e))?;
 
     // Write prompt to stdin, then close it so Claude begins processing
@@ -2300,23 +2409,24 @@ fn spawn_ideation_process(
     let error_path = feature_dir.join("ideation-error.txt");
     // Clean up any previous error file
     let _ = std::fs::remove_file(&error_path);
-    std::thread::spawn(move || {
-        match child.wait() {
-            Ok(status) => {
-                if !status.success() {
-                    let code = status.code().unwrap_or(-1);
-                    let _ = std::fs::write(
-                        &error_path,
-                        format!("Claude exited with code {}. Check claude-ideation.log for details.", code),
-                    );
-                }
-            }
-            Err(e) => {
+    std::thread::spawn(move || match child.wait() {
+        Ok(status) => {
+            if !status.success() {
+                let code = status.code().unwrap_or(-1);
                 let _ = std::fs::write(
                     &error_path,
-                    format!("Failed to wait for Claude process: {}", e),
+                    format!(
+                        "Claude exited with code {}. Check claude-ideation.log for details.",
+                        code
+                    ),
                 );
             }
+        }
+        Err(e) => {
+            let _ = std::fs::write(
+                &error_path,
+                format!("Failed to wait for Claude process: {}", e),
+            );
         }
     });
 
@@ -2327,10 +2437,7 @@ fn spawn_ideation_process(
 /// Claude runs with --print, writes plan.json, then exits.
 /// Frontend polls plan.json to detect completion.
 #[tauri::command]
-pub fn run_ideation(
-    state: State<AppState>,
-    feature_id: String,
-) -> Result<(), String> {
+pub fn run_ideation(state: State<AppState>, feature_id: String) -> Result<(), String> {
     let features = state.features.lock().unwrap();
     let feature = features
         .get(&feature_id)
@@ -2366,7 +2473,12 @@ pub fn run_ideation(
         let _ = std::fs::remove_file(&plan_path);
     }
 
-    spawn_ideation_process(&feature_dir, work_dir, &system_prompt_content, &user_prompt_content)
+    spawn_ideation_process(
+        &feature_dir,
+        work_dir,
+        &system_prompt_content,
+        &user_prompt_content,
+    )
 }
 
 /// Check if the ideation process wrote an error file (indicating it crashed or failed).
@@ -2460,7 +2572,12 @@ pub fn revise_ideation(
         state.save_features();
     }
 
-    spawn_ideation_process(&feature_dir, work_dir, &system_prompt_content, &revised_prompt)
+    spawn_ideation_process(
+        &feature_dir,
+        work_dir,
+        &system_prompt_content,
+        &revised_prompt,
+    )
 }
 
 /// Submit answers to planning questions and resume ideation.
@@ -2765,7 +2882,9 @@ pub fn poll_task_progress(
         let newly_done: Vec<(u32, String)> = p
             .tasks
             .iter()
-            .filter(|t| t.status == TaskStatus::Done && !feature.logged_task_completions.contains(&t.task))
+            .filter(|t| {
+                t.status == TaskStatus::Done && !feature.logged_task_completions.contains(&t.task)
+            })
             .map(|t| (t.task, t.title.clone()))
             .collect();
         if !newly_done.is_empty() {
@@ -2773,7 +2892,10 @@ pub fn poll_task_progress(
             if let Some(f) = features.get_mut(&feature_id) {
                 for (task_num, title) in &newly_done {
                     if !f.logged_task_completions.contains(task_num) {
-                        f.log_activity(format!("Task {} completed: {}", task_num, title), "success");
+                        f.log_activity(
+                            format!("Task {} completed: {}", task_num, title),
+                            "success",
+                        );
                         f.logged_task_completions.push(*task_num);
                     }
                 }
@@ -2831,7 +2953,11 @@ pub fn analyze_feature_execution(
         .join("progress.json");
     let task_progress = read_task_progress(&progress_path);
 
-    Ok(analytics::analyze_execution(&feature, &changed_files, task_progress.as_ref()))
+    Ok(analytics::analyze_execution(
+        &feature,
+        &changed_files,
+        task_progress.as_ref(),
+    ))
 }
 
 // ── Guidance Commands ──
@@ -2973,9 +3099,7 @@ pub fn start_map_discovery(
     drop(repos_lock);
 
     // Create discovery directory in ~/.gmb
-    let discovery_dir = Path::new(&state.gmb_path)
-        .join("discoveries")
-        .join(&map_id);
+    let discovery_dir = Path::new(&state.gmb_path).join("discoveries").join(&map_id);
     std::fs::create_dir_all(&discovery_dir)
         .map_err(|e| format!("Failed to create discovery dir: {}", e))?;
 
@@ -2986,8 +3110,7 @@ pub fn start_map_discovery(
         let repo_context = generate_context_pack_string(&repo.path);
         let output_file = discovery_dir.join(format!("{}.json", repo.id));
 
-        let system_prompt =
-            prompts::map_discovery_system_prompt(&repo.name, &repo_context);
+        let system_prompt = prompts::map_discovery_system_prompt(&repo.name, &repo_context);
         let user_prompt =
             prompts::map_discovery_user_prompt(&repo.name, &output_file.to_string_lossy());
 
@@ -3011,14 +3134,15 @@ pub fn start_map_discovery(
 
     // For multiple repos, show parallel invocations
     let full_command = if commands.len() == 1 {
-        format!("# Exploring {} for map: {}\n{}", repos[0].name, map_name, commands[0])
+        format!(
+            "# Exploring {} for map: {}\n{}",
+            repos[0].name, map_name, commands[0]
+        )
     } else {
         let parts: Vec<String> = repos
             .iter()
             .zip(commands.iter())
-            .map(|(repo, cmd)| {
-                format!("# Exploring {}\n{}", repo.name, cmd)
-            })
+            .map(|(repo, cmd)| format!("# Exploring {}\n{}", repo.name, cmd))
             .collect();
         format!(
             "# Sending {} scouts for map: {}\n{}",
@@ -3065,9 +3189,7 @@ pub fn start_discovery_pty(
     drop(repos_lock);
 
     // Create discovery directory
-    let discovery_dir = Path::new(&state.gmb_path)
-        .join("discoveries")
-        .join(&map_id);
+    let discovery_dir = Path::new(&state.gmb_path).join("discoveries").join(&map_id);
     std::fs::create_dir_all(&discovery_dir)
         .map_err(|e| format!("Failed to create discovery dir: {}", e))?;
 
@@ -3077,8 +3199,7 @@ pub fn start_discovery_pty(
         let repo_context = generate_context_pack_string(&repo.path);
         let output_file = discovery_dir.join(format!("{}.json", repo.id));
 
-        let system_prompt =
-            prompts::map_discovery_system_prompt(&repo.name, &repo_context);
+        let system_prompt = prompts::map_discovery_system_prompt(&repo.name, &repo_context);
         let user_prompt =
             prompts::map_discovery_user_prompt(&repo.name, &output_file.to_string_lossy());
 
@@ -3115,15 +3236,19 @@ fn spawn_discovery_process(
     let mut cmd = std::process::Command::new("claude");
     apply_user_path(&mut cmd);
     cmd.arg("--print")
-        .arg("--permission-mode").arg("bypassPermissions")
-        .arg("--allowedTools").arg("Read,Glob,Grep,Write")
-        .arg("--append-system-prompt").arg(system_prompt)
+        .arg("--permission-mode")
+        .arg("bypassPermissions")
+        .arg("--allowedTools")
+        .arg("Read,Glob,Grep,Write")
+        .arg("--append-system-prompt")
+        .arg(system_prompt)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .current_dir(work_dir);
 
-    let mut child = cmd.spawn()
+    let mut child = cmd
+        .spawn()
         .map_err(|e| format!("Failed to start Claude: {}", e))?;
 
     // Write user prompt to stdin
@@ -3151,9 +3276,7 @@ pub fn poll_map_discovery(
     map_id: String,
     repo_ids: Vec<String>,
 ) -> Result<serde_json::Value, String> {
-    let discovery_dir = Path::new(&state.gmb_path)
-        .join("discoveries")
-        .join(&map_id);
+    let discovery_dir = Path::new(&state.gmb_path).join("discoveries").join(&map_id);
 
     let mut found = 0u32;
     let total = repo_ids.len() as u32;
@@ -3249,7 +3372,8 @@ pub fn poll_map_discovery(
         let mut seen: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
         let mut deduped_services: Vec<MapService> = Vec::new();
         // Track old-id -> canonical-id so connections can be remapped.
-        let mut id_remap: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        let mut id_remap: std::collections::HashMap<String, String> =
+            std::collections::HashMap::new();
 
         for svc in all_services.drain(..) {
             let key = svc.name.to_lowercase();
@@ -3261,7 +3385,8 @@ pub fn poll_map_discovery(
                     && svc.service_type != ServiceType::External
                 {
                     deduped_services[idx].service_type = svc.service_type.clone();
-                    deduped_services[idx].color = service_type_color(&deduped_services[idx].service_type);
+                    deduped_services[idx].color =
+                        service_type_color(&deduped_services[idx].service_type);
                     // Also prefer the more specific runtime/framework if available
                     if !svc.runtime.is_empty() && deduped_services[idx].runtime.is_empty() {
                         deduped_services[idx].runtime = svc.runtime.clone();
@@ -3289,10 +3414,10 @@ pub fn poll_map_discovery(
 
         // Deduplicate connections (same from+to pair)
         {
-            let mut seen_conns: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
-            all_connections.retain(|c| {
-                seen_conns.insert((c.from_service.clone(), c.to_service.clone()))
-            });
+            let mut seen_conns: std::collections::HashSet<(String, String)> =
+                std::collections::HashSet::new();
+            all_connections
+                .retain(|c| seen_conns.insert((c.from_service.clone(), c.to_service.clone())));
         }
 
         all_services = deduped_services;
@@ -3408,46 +3533,72 @@ fn infer_service_type_from_properties(svc: &MapService) -> ServiceType {
     let framework = svc.framework.to_lowercase();
 
     // Database indicators
-    if name.contains("postgres") || name.contains("mysql") || name.contains("mongo")
-        || name.contains("sqlite") || name.contains("dynamo") || name.contains("database")
-        || name.contains("db") || name.contains("cockroach") || name.contains("mariadb")
+    if name.contains("postgres")
+        || name.contains("mysql")
+        || name.contains("mongo")
+        || name.contains("sqlite")
+        || name.contains("dynamo")
+        || name.contains("database")
+        || name.contains("db")
+        || name.contains("cockroach")
+        || name.contains("mariadb")
     {
         return ServiceType::Database;
     }
 
     // Cache indicators
-    if name.contains("redis") || name.contains("memcache") || name.contains("cache")
+    if name.contains("redis")
+        || name.contains("memcache")
+        || name.contains("cache")
         || name.contains("valkey")
     {
         return ServiceType::Cache;
     }
 
     // Queue indicators
-    if name.contains("queue") || name.contains("rabbit") || name.contains("kafka")
-        || name.contains("sqs") || name.contains("nats") || name.contains("pulsar")
+    if name.contains("queue")
+        || name.contains("rabbit")
+        || name.contains("kafka")
+        || name.contains("sqs")
+        || name.contains("nats")
+        || name.contains("pulsar")
     {
         return ServiceType::Queue;
     }
 
     // Gateway indicators
-    if name.contains("gateway") || name.contains("proxy") || name.contains("nginx")
-        || name.contains("envoy") || name.contains("ingress") || name.contains("load balancer")
+    if name.contains("gateway")
+        || name.contains("proxy")
+        || name.contains("nginx")
+        || name.contains("envoy")
+        || name.contains("ingress")
+        || name.contains("load balancer")
     {
         return ServiceType::Gateway;
     }
 
     // Worker indicators
-    if name.contains("worker") || name.contains("cron") || name.contains("job")
-        || name.contains("scheduler") || name.contains("consumer")
+    if name.contains("worker")
+        || name.contains("cron")
+        || name.contains("job")
+        || name.contains("scheduler")
+        || name.contains("consumer")
     {
         return ServiceType::Worker;
     }
 
     // Frontend indicators
-    if name.contains("frontend") || name.contains("web app") || name.contains("ui")
-        || name.contains("dashboard") || name.contains("client")
-        || framework.contains("react") || framework.contains("vue") || framework.contains("angular")
-        || framework.contains("next") || framework.contains("nuxt") || framework.contains("svelte")
+    if name.contains("frontend")
+        || name.contains("web app")
+        || name.contains("ui")
+        || name.contains("dashboard")
+        || name.contains("client")
+        || framework.contains("react")
+        || framework.contains("vue")
+        || framework.contains("angular")
+        || framework.contains("next")
+        || framework.contains("nuxt")
+        || framework.contains("svelte")
     {
         return ServiceType::Frontend;
     }
@@ -3480,11 +3631,18 @@ fn wrap_in_shell(shell: &str, args: &[String]) -> (String, Vec<String>) {
         _ => {
             // bash, zsh, fish, etc. — wrap in a login shell so the user's
             // profile/rc environment is loaded (PATH, aliases, etc.)
-            let full_cmd = args.iter().map(|a| shell_quote(a)).collect::<Vec<_>>().join(" ");
+            let full_cmd = args
+                .iter()
+                .map(|a| shell_quote(a))
+                .collect::<Vec<_>>()
+                .join(" ");
             if shell.contains("powershell") {
                 (shell.to_string(), vec!["-Command".to_string(), full_cmd])
             } else {
-                (shell.to_string(), vec!["-l".to_string(), "-c".to_string(), full_cmd])
+                (
+                    shell.to_string(),
+                    vec!["-l".to_string(), "-c".to_string(), full_cmd],
+                )
             }
         }
     }
@@ -3596,8 +3754,7 @@ fn generate_multi_repo_context_with_similar(
     let mut context = if repos.len() == 1 {
         generate_context_pack_string(&repos[0].path)
     } else {
-        let mut c =
-            String::from("# Repositories\n\nThis feature spans multiple repositories:\n\n");
+        let mut c = String::from("# Repositories\n\nThis feature spans multiple repositories:\n\n");
         for repo in repos {
             c.push_str(&format!("## {} (`{}`)\n\n", repo.name, repo.path));
             c.push_str(&generate_context_pack_string(&repo.path));
@@ -3614,8 +3771,7 @@ fn generate_multi_repo_context_with_similar(
 
     for repo in repos {
         for sim_id in &repo.similar_repo_ids {
-            if !feature_repo_ids.contains(sim_id.as_str()) && similar_seen.insert(sim_id.as_str())
-            {
+            if !feature_repo_ids.contains(sim_id.as_str()) && similar_seen.insert(sim_id.as_str()) {
                 if let Some(sim_repo) = all_repos.iter().find(|r| r.id == *sim_id) {
                     similar_repos.push(sim_repo);
                 }
@@ -3666,9 +3822,22 @@ fn format_map_context(map: &SystemMap) -> String {
     if !map.connections.is_empty() {
         out.push_str("\nConnections:\n");
         for conn in &map.connections {
-            let from_name = map.services.iter().find(|s| s.id == conn.from_service).map(|s| s.name.as_str()).unwrap_or("?");
-            let to_name = map.services.iter().find(|s| s.id == conn.to_service).map(|s| s.name.as_str()).unwrap_or("?");
-            let mut line = format!("  - {} → {} ({:?})", from_name, to_name, conn.connection_type);
+            let from_name = map
+                .services
+                .iter()
+                .find(|s| s.id == conn.from_service)
+                .map(|s| s.name.as_str())
+                .unwrap_or("?");
+            let to_name = map
+                .services
+                .iter()
+                .find(|s| s.id == conn.to_service)
+                .map(|s| s.name.as_str())
+                .unwrap_or("?");
+            let mut line = format!(
+                "  - {} → {} ({:?})",
+                from_name, to_name, conn.connection_type
+            );
             if !conn.label.is_empty() {
                 line.push_str(&format!(": {}", conn.label));
             }
@@ -3737,8 +3906,8 @@ pub fn get_repo_hooks(repo_path: String) -> Result<RepoHooks, String> {
     if !settings_path.exists() {
         return Ok(RepoHooks::default());
     }
-    let content =
-        std::fs::read_to_string(&settings_path).map_err(|e| format!("Failed to read settings: {e}"))?;
+    let content = std::fs::read_to_string(&settings_path)
+        .map_err(|e| format!("Failed to read settings: {e}"))?;
     let parsed: serde_json::Value =
         serde_json::from_str(&content).map_err(|e| format!("Invalid JSON in settings: {e}"))?;
     match parsed.get("hooks") {
@@ -3759,8 +3928,8 @@ pub fn save_repo_hooks(repo_path: String, hooks: RepoHooks) -> Result<(), String
 
     // Load existing settings or start fresh.
     let mut settings: serde_json::Value = if settings_path.exists() {
-        let content =
-            std::fs::read_to_string(&settings_path).map_err(|e| format!("Failed to read settings: {e}"))?;
+        let content = std::fs::read_to_string(&settings_path)
+            .map_err(|e| format!("Failed to read settings: {e}"))?;
         serde_json::from_str(&content).map_err(|e| format!("Invalid JSON in settings: {e}"))?
     } else {
         serde_json::json!({})
@@ -3838,6 +4007,29 @@ pub fn list_hook_templates() -> Vec<HookTemplate> {
             command: "if [ -f .env ]; then export $(cat .env | grep -v '^#' | xargs); fi".into(),
         },
     ]
+}
+
+// ── Agent History Commands ──
+
+#[tauri::command]
+pub fn get_agent_summaries(state: State<AppState>) -> Vec<crate::models::AgentPerformanceSummary> {
+    state.get_agent_summaries()
+}
+
+#[tauri::command]
+pub fn get_agent_history(
+    state: State<AppState>,
+    agent: Option<String>,
+) -> Vec<crate::models::AgentTaskRecord> {
+    let history = state.agent_history.lock().unwrap();
+    match agent {
+        Some(name) => history
+            .iter()
+            .filter(|r| r.agent == name)
+            .cloned()
+            .collect(),
+        None => history.clone(),
+    }
 }
 
 #[cfg(test)]
@@ -4010,7 +4202,9 @@ mod tests {
     fn read_task_progress_parses_valid_json() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("progress.json");
-        std::fs::write(&path, r#"{
+        std::fs::write(
+            &path,
+            r#"{
             "tasks": [
                 {
                     "task": 1,
@@ -4022,7 +4216,9 @@ mod tests {
                     ]
                 }
             ]
-        }"#).unwrap();
+        }"#,
+        )
+        .unwrap();
         let result = read_task_progress(&path).unwrap();
         assert_eq!(result.tasks.len(), 1);
         assert_eq!(result.tasks[0].task, 1);
@@ -4080,8 +4276,7 @@ mod tests {
         );
 
         let all_repos = vec![feature_repo.clone(), similar_repo, unrelated_repo];
-        let context =
-            generate_multi_repo_context_with_similar(&[feature_repo], &all_repos);
+        let context = generate_multi_repo_context_with_similar(&[feature_repo], &all_repos);
 
         assert!(context.contains("Similar Repositories (Pattern Hints)"));
         assert!(context.contains("other-service"));
@@ -4127,8 +4322,7 @@ mod tests {
         repo.id = "self-ref".to_string();
 
         // When a repo lists itself as similar, it should not appear in hints
-        let context =
-            generate_multi_repo_context_with_similar(&[repo.clone()], &[repo]);
+        let context = generate_multi_repo_context_with_similar(&[repo.clone()], &[repo]);
         assert!(!context.contains("Similar Repositories"));
     }
 
@@ -4136,25 +4330,49 @@ mod tests {
 
     #[test]
     fn parse_service_type_all_variants() {
-        assert!(matches!(parse_service_type("backend"), ServiceType::Backend));
-        assert!(matches!(parse_service_type("frontend"), ServiceType::Frontend));
+        assert!(matches!(
+            parse_service_type("backend"),
+            ServiceType::Backend
+        ));
+        assert!(matches!(
+            parse_service_type("frontend"),
+            ServiceType::Frontend
+        ));
         assert!(matches!(parse_service_type("worker"), ServiceType::Worker));
-        assert!(matches!(parse_service_type("gateway"), ServiceType::Gateway));
-        assert!(matches!(parse_service_type("database"), ServiceType::Database));
+        assert!(matches!(
+            parse_service_type("gateway"),
+            ServiceType::Gateway
+        ));
+        assert!(matches!(
+            parse_service_type("database"),
+            ServiceType::Database
+        ));
         assert!(matches!(parse_service_type("queue"), ServiceType::Queue));
         assert!(matches!(parse_service_type("cache"), ServiceType::Cache));
-        assert!(matches!(parse_service_type("external"), ServiceType::External));
+        assert!(matches!(
+            parse_service_type("external"),
+            ServiceType::External
+        ));
     }
 
     #[test]
     fn parse_service_type_case_insensitive() {
-        assert!(matches!(parse_service_type("Backend"), ServiceType::Backend));
-        assert!(matches!(parse_service_type("FRONTEND"), ServiceType::Frontend));
+        assert!(matches!(
+            parse_service_type("Backend"),
+            ServiceType::Backend
+        ));
+        assert!(matches!(
+            parse_service_type("FRONTEND"),
+            ServiceType::Frontend
+        ));
     }
 
     #[test]
     fn parse_service_type_defaults_to_backend() {
-        assert!(matches!(parse_service_type("unknown"), ServiceType::Backend));
+        assert!(matches!(
+            parse_service_type("unknown"),
+            ServiceType::Backend
+        ));
         assert!(matches!(parse_service_type(""), ServiceType::Backend));
     }
 
@@ -4162,19 +4380,43 @@ mod tests {
 
     #[test]
     fn parse_connection_type_all_variants() {
-        assert!(matches!(parse_connection_type("rest"), ConnectionType::Rest));
-        assert!(matches!(parse_connection_type("grpc"), ConnectionType::Grpc));
-        assert!(matches!(parse_connection_type("graphql"), ConnectionType::Graphql));
-        assert!(matches!(parse_connection_type("websocket"), ConnectionType::Websocket));
-        assert!(matches!(parse_connection_type("event"), ConnectionType::Event));
-        assert!(matches!(parse_connection_type("shared_db"), ConnectionType::SharedDb));
-        assert!(matches!(parse_connection_type("file_system"), ConnectionType::FileSystem));
+        assert!(matches!(
+            parse_connection_type("rest"),
+            ConnectionType::Rest
+        ));
+        assert!(matches!(
+            parse_connection_type("grpc"),
+            ConnectionType::Grpc
+        ));
+        assert!(matches!(
+            parse_connection_type("graphql"),
+            ConnectionType::Graphql
+        ));
+        assert!(matches!(
+            parse_connection_type("websocket"),
+            ConnectionType::Websocket
+        ));
+        assert!(matches!(
+            parse_connection_type("event"),
+            ConnectionType::Event
+        ));
+        assert!(matches!(
+            parse_connection_type("shared_db"),
+            ConnectionType::SharedDb
+        ));
+        assert!(matches!(
+            parse_connection_type("file_system"),
+            ConnectionType::FileSystem
+        ));
         assert!(matches!(parse_connection_type("ipc"), ConnectionType::Ipc));
     }
 
     #[test]
     fn parse_connection_type_defaults_to_rest() {
-        assert!(matches!(parse_connection_type("unknown"), ConnectionType::Rest));
+        assert!(matches!(
+            parse_connection_type("unknown"),
+            ConnectionType::Rest
+        ));
         assert!(matches!(parse_connection_type(""), ConnectionType::Rest));
     }
 
@@ -4220,7 +4462,11 @@ mod tests {
 
     #[test]
     fn wrap_in_shell_zsh_wraps_in_login_shell() {
-        let args = vec!["claude".to_string(), "--prompt".to_string(), "do stuff".to_string()];
+        let args = vec![
+            "claude".to_string(),
+            "--prompt".to_string(),
+            "do stuff".to_string(),
+        ];
         let (cmd, cmd_args) = wrap_in_shell("zsh", &args);
         assert_eq!(cmd, "zsh");
         assert_eq!(cmd_args[0], "-l");
@@ -4247,7 +4493,11 @@ mod tests {
 
     #[test]
     fn wrap_in_shell_tmux_wraps_in_new_session() {
-        let args = vec!["claude".to_string(), "--prompt".to_string(), "test".to_string()];
+        let args = vec![
+            "claude".to_string(),
+            "--prompt".to_string(),
+            "test".to_string(),
+        ];
         let (cmd, cmd_args) = wrap_in_shell("tmux", &args);
         assert_eq!(cmd, "tmux");
         assert_eq!(cmd_args[0], "new-session");
@@ -4339,7 +4589,9 @@ mod tests {
     fn plan_json_parses_as_ideation_result_for_snapshot() {
         let dir = TempDir::new().unwrap();
         let plan_path = dir.path().join("plan.json");
-        std::fs::write(&plan_path, r#"{
+        std::fs::write(
+            &plan_path,
+            r#"{
             "tasks": [
                 {
                     "title": "Add auth",
@@ -4354,14 +4606,19 @@ mod tests {
                 "rationale": "Parallel tasks",
                 "confidence": 0.9
             }
-        }"#).unwrap();
+        }"#,
+        )
+        .unwrap();
 
         let data = std::fs::read_to_string(&plan_path).unwrap();
         let result: IdeationResult = serde_json::from_str(&data).unwrap();
         assert_eq!(result.tasks.len(), 1);
         assert_eq!(result.tasks[0].title, "Add auth");
         assert!(result.execution_mode.is_some());
-        assert_eq!(result.execution_mode.as_ref().unwrap().recommended, ExecutionMode::Teams);
+        assert_eq!(
+            result.execution_mode.as_ref().unwrap().recommended,
+            ExecutionMode::Teams
+        );
     }
 
     #[test]
@@ -4417,7 +4674,10 @@ mod tests {
         assert_eq!(tasks[0]["title"], "Add auth");
         assert_eq!(tasks[0]["status"], "pending");
         assert_eq!(tasks[0]["acceptance_criteria"].as_array().unwrap().len(), 2);
-        assert_eq!(tasks[0]["acceptance_criteria"][0]["criterion"], "Login works");
+        assert_eq!(
+            tasks[0]["acceptance_criteria"][0]["criterion"],
+            "Login works"
+        );
         assert_eq!(tasks[0]["acceptance_criteria"][0]["done"], false);
         assert_eq!(tasks[1]["task"], 2);
         assert_eq!(tasks[1]["acceptance_criteria"].as_array().unwrap().len(), 0);
@@ -4479,22 +4739,45 @@ mod tests {
     #[test]
     fn infer_service_type_database_keywords() {
         let svc = MapService {
-            id: "1".into(), name: "PostgreSQL".into(), service_type: ServiceType::External,
-            repo_id: Some("r1".into()), runtime: "".into(), framework: "".into(),
-            description: "".into(), owns_data: vec![], position: (0.0, 0.0), color: "".into(),
+            id: "1".into(),
+            name: "PostgreSQL".into(),
+            service_type: ServiceType::External,
+            repo_id: Some("r1".into()),
+            runtime: "".into(),
+            framework: "".into(),
+            description: "".into(),
+            owns_data: vec![],
+            position: (0.0, 0.0),
+            color: "".into(),
         };
-        assert_eq!(infer_service_type_from_properties(&svc), ServiceType::Database);
+        assert_eq!(
+            infer_service_type_from_properties(&svc),
+            ServiceType::Database
+        );
 
-        let svc2 = MapService { name: "user-db".into(), ..svc.clone() };
-        assert_eq!(infer_service_type_from_properties(&svc2), ServiceType::Database);
+        let svc2 = MapService {
+            name: "user-db".into(),
+            ..svc.clone()
+        };
+        assert_eq!(
+            infer_service_type_from_properties(&svc2),
+            ServiceType::Database
+        );
     }
 
     #[test]
     fn infer_service_type_cache_keywords() {
         let svc = MapService {
-            id: "1".into(), name: "Redis".into(), service_type: ServiceType::External,
-            repo_id: Some("r1".into()), runtime: "".into(), framework: "".into(),
-            description: "".into(), owns_data: vec![], position: (0.0, 0.0), color: "".into(),
+            id: "1".into(),
+            name: "Redis".into(),
+            service_type: ServiceType::External,
+            repo_id: Some("r1".into()),
+            runtime: "".into(),
+            framework: "".into(),
+            description: "".into(),
+            owns_data: vec![],
+            position: (0.0, 0.0),
+            color: "".into(),
         };
         assert_eq!(infer_service_type_from_properties(&svc), ServiceType::Cache);
     }
@@ -4502,9 +4785,16 @@ mod tests {
     #[test]
     fn infer_service_type_queue_keywords() {
         let svc = MapService {
-            id: "1".into(), name: "RabbitMQ".into(), service_type: ServiceType::External,
-            repo_id: Some("r1".into()), runtime: "".into(), framework: "".into(),
-            description: "".into(), owns_data: vec![], position: (0.0, 0.0), color: "".into(),
+            id: "1".into(),
+            name: "RabbitMQ".into(),
+            service_type: ServiceType::External,
+            repo_id: Some("r1".into()),
+            runtime: "".into(),
+            framework: "".into(),
+            description: "".into(),
+            owns_data: vec![],
+            position: (0.0, 0.0),
+            color: "".into(),
         };
         assert_eq!(infer_service_type_from_properties(&svc), ServiceType::Queue);
     }
@@ -4512,51 +4802,101 @@ mod tests {
     #[test]
     fn infer_service_type_gateway_keywords() {
         let svc = MapService {
-            id: "1".into(), name: "API Gateway".into(), service_type: ServiceType::External,
-            repo_id: Some("r1".into()), runtime: "".into(), framework: "".into(),
-            description: "".into(), owns_data: vec![], position: (0.0, 0.0), color: "".into(),
+            id: "1".into(),
+            name: "API Gateway".into(),
+            service_type: ServiceType::External,
+            repo_id: Some("r1".into()),
+            runtime: "".into(),
+            framework: "".into(),
+            description: "".into(),
+            owns_data: vec![],
+            position: (0.0, 0.0),
+            color: "".into(),
         };
-        assert_eq!(infer_service_type_from_properties(&svc), ServiceType::Gateway);
+        assert_eq!(
+            infer_service_type_from_properties(&svc),
+            ServiceType::Gateway
+        );
     }
 
     #[test]
     fn infer_service_type_worker_keywords() {
         let svc = MapService {
-            id: "1".into(), name: "email-worker".into(), service_type: ServiceType::External,
-            repo_id: Some("r1".into()), runtime: "".into(), framework: "".into(),
-            description: "".into(), owns_data: vec![], position: (0.0, 0.0), color: "".into(),
+            id: "1".into(),
+            name: "email-worker".into(),
+            service_type: ServiceType::External,
+            repo_id: Some("r1".into()),
+            runtime: "".into(),
+            framework: "".into(),
+            description: "".into(),
+            owns_data: vec![],
+            position: (0.0, 0.0),
+            color: "".into(),
         };
-        assert_eq!(infer_service_type_from_properties(&svc), ServiceType::Worker);
+        assert_eq!(
+            infer_service_type_from_properties(&svc),
+            ServiceType::Worker
+        );
     }
 
     #[test]
     fn infer_service_type_frontend_by_framework() {
         let svc = MapService {
-            id: "1".into(), name: "Admin Panel".into(), service_type: ServiceType::External,
-            repo_id: Some("r1".into()), runtime: "node".into(), framework: "React".into(),
-            description: "".into(), owns_data: vec![], position: (0.0, 0.0), color: "".into(),
+            id: "1".into(),
+            name: "Admin Panel".into(),
+            service_type: ServiceType::External,
+            repo_id: Some("r1".into()),
+            runtime: "node".into(),
+            framework: "React".into(),
+            description: "".into(),
+            owns_data: vec![],
+            position: (0.0, 0.0),
+            color: "".into(),
         };
-        assert_eq!(infer_service_type_from_properties(&svc), ServiceType::Frontend);
+        assert_eq!(
+            infer_service_type_from_properties(&svc),
+            ServiceType::Frontend
+        );
     }
 
     #[test]
     fn infer_service_type_backend_with_runtime() {
         let svc = MapService {
-            id: "1".into(), name: "auth-service".into(), service_type: ServiceType::External,
-            repo_id: Some("r1".into()), runtime: "node".into(), framework: "express".into(),
-            description: "".into(), owns_data: vec![], position: (0.0, 0.0), color: "".into(),
+            id: "1".into(),
+            name: "auth-service".into(),
+            service_type: ServiceType::External,
+            repo_id: Some("r1".into()),
+            runtime: "node".into(),
+            framework: "express".into(),
+            description: "".into(),
+            owns_data: vec![],
+            position: (0.0, 0.0),
+            color: "".into(),
         };
-        assert_eq!(infer_service_type_from_properties(&svc), ServiceType::Backend);
+        assert_eq!(
+            infer_service_type_from_properties(&svc),
+            ServiceType::Backend
+        );
     }
 
     #[test]
     fn infer_service_type_defaults_to_backend() {
         let svc = MapService {
-            id: "1".into(), name: "mystery-service".into(), service_type: ServiceType::External,
-            repo_id: Some("r1".into()), runtime: "".into(), framework: "".into(),
-            description: "".into(), owns_data: vec![], position: (0.0, 0.0), color: "".into(),
+            id: "1".into(),
+            name: "mystery-service".into(),
+            service_type: ServiceType::External,
+            repo_id: Some("r1".into()),
+            runtime: "".into(),
+            framework: "".into(),
+            description: "".into(),
+            owns_data: vec![],
+            position: (0.0, 0.0),
+            color: "".into(),
         };
-        assert_eq!(infer_service_type_from_properties(&svc), ServiceType::Backend);
+        assert_eq!(
+            infer_service_type_from_properties(&svc),
+            ServiceType::Backend
+        );
     }
 
     // ── Hooks Tests ──
@@ -4580,7 +4920,8 @@ mod tests {
         std::fs::write(
             claude_dir.join("settings.json"),
             r#"{"permissions": {"allow": ["Bash"]}}"#,
-        ).unwrap();
+        )
+        .unwrap();
         let result = get_repo_hooks(dir.path().to_string_lossy().to_string());
         assert!(result.is_ok());
         let hooks = result.unwrap();
@@ -4604,7 +4945,8 @@ mod tests {
                     ]
                 }
             }"#,
-        ).unwrap();
+        )
+        .unwrap();
         let result = get_repo_hooks(dir.path().to_string_lossy().to_string());
         assert!(result.is_ok());
         let hooks = result.unwrap();
@@ -4644,7 +4986,8 @@ mod tests {
         std::fs::write(
             claude_dir.join("settings.json"),
             r#"{"permissions": {"allow": ["Bash"]}, "hooks": {"Stop": []}}"#,
-        ).unwrap();
+        )
+        .unwrap();
 
         let mut hooks = RepoHooks::default();
         hooks.stop.push(HookRule {
@@ -4663,7 +5006,10 @@ mod tests {
         // Original permissions key is preserved.
         assert_eq!(parsed["permissions"]["allow"][0], "Bash");
         // Hooks are updated.
-        assert_eq!(parsed["hooks"]["Stop"][0]["hooks"][0]["command"], "echo done");
+        assert_eq!(
+            parsed["hooks"]["Stop"][0]["hooks"][0]["command"],
+            "echo done"
+        );
     }
 
     #[test]
@@ -4697,5 +5043,4 @@ mod tests {
             assert!(!t.event.is_empty());
         }
     }
-
 }

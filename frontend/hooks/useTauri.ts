@@ -28,6 +28,8 @@ import type {
   DocumentAttachment,
   RepoHooks,
   HookTemplate,
+  AgentPerformanceSummary,
+  AgentTaskRecord,
 } from "../types";
 
 export function useTauri() {
@@ -372,5 +374,12 @@ export function useTauri() {
 
     listHookTemplates: () =>
       invoke<HookTemplate[]>("list_hook_templates"),
+
+    // Agent History
+    getAgentSummaries: () =>
+      invoke<AgentPerformanceSummary[]>("get_agent_summaries"),
+
+    getAgentHistory: (agent?: string) =>
+      invoke<AgentTaskRecord[]>("get_agent_history", { agent: agent || null }),
   };
 }

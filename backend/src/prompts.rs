@@ -1,9 +1,6 @@
 /// System prompt context for ideation — appended via --append-system-prompt.
 /// Contains repository context, system architecture, and available agents.
-pub fn ideation_system_prompt(
-    repo_map: &str,
-    available_agents: &str,
-) -> String {
+pub fn ideation_system_prompt(repo_map: &str, available_agents: &str) -> String {
     ideation_system_prompt_with_architecture(repo_map, available_agents, "")
 }
 
@@ -12,6 +9,16 @@ pub fn ideation_system_prompt_with_architecture(
     repo_map: &str,
     available_agents: &str,
     architecture_context: &str,
+) -> String {
+    ideation_system_prompt_full(repo_map, available_agents, architecture_context, "")
+}
+
+/// System prompt with optional architecture context and agent performance history.
+pub fn ideation_system_prompt_full(
+    repo_map: &str,
+    available_agents: &str,
+    architecture_context: &str,
+    agent_history: &str,
 ) -> String {
     let arch_section = if architecture_context.is_empty() {
         String::new()
@@ -29,6 +36,12 @@ Use this to understand how the feature fits into the broader system.
         )
     };
 
+    let history_section = if agent_history.is_empty() {
+        String::new()
+    } else {
+        agent_history.to_string()
+    };
+
     format!(
         r#"## Repository Overview
 
@@ -39,10 +52,12 @@ Use this to understand how the feature fits into the broader system.
 The user has these agents configured:
 
 {available_agents}
-"#,
+
+{history_section}"#,
         repo_map = repo_map,
         arch_section = arch_section,
         available_agents = available_agents,
+        history_section = history_section,
     )
 }
 
@@ -57,7 +72,13 @@ pub fn ideation_user_prompt(
     available_agents: &str,
     quality_agents: &str,
 ) -> String {
-    ideation_user_prompt_with_testing(description, tasks_dir, available_agents, quality_agents, false)
+    ideation_user_prompt_with_testing(
+        description,
+        tasks_dir,
+        available_agents,
+        quality_agents,
+        false,
+    )
 }
 
 pub fn ideation_user_prompt_with_testing(
@@ -68,7 +89,12 @@ pub fn ideation_user_prompt_with_testing(
     functional_testing_enabled: bool,
 ) -> String {
     ideation_user_prompt_full(
-        description, tasks_dir, available_agents, quality_agents, functional_testing_enabled, &[],
+        description,
+        tasks_dir,
+        available_agents,
+        quality_agents,
+        functional_testing_enabled,
+        &[],
     )
 }
 
@@ -272,7 +298,12 @@ pub fn ideation_user_prompt_with_answers(
     answers: &[crate::models::PlanningAnswer],
 ) -> String {
     ideation_user_prompt_with_answers_and_testing(
-        description, tasks_dir, available_agents, quality_agents, answers, false,
+        description,
+        tasks_dir,
+        available_agents,
+        quality_agents,
+        answers,
+        false,
     )
 }
 
@@ -285,7 +316,13 @@ pub fn ideation_user_prompt_with_answers_and_testing(
     functional_testing_enabled: bool,
 ) -> String {
     ideation_user_prompt_with_answers_full(
-        description, tasks_dir, available_agents, quality_agents, answers, functional_testing_enabled, &[],
+        description,
+        tasks_dir,
+        available_agents,
+        quality_agents,
+        answers,
+        functional_testing_enabled,
+        &[],
     )
 }
 
@@ -299,7 +336,12 @@ pub fn ideation_user_prompt_with_answers_full(
     attachments: &[crate::models::DocumentAttachment],
 ) -> String {
     let base = ideation_user_prompt_full(
-        description, tasks_dir, available_agents, quality_agents, functional_testing_enabled, attachments,
+        description,
+        tasks_dir,
+        available_agents,
+        quality_agents,
+        functional_testing_enabled,
+        attachments,
     );
 
     let mut answers_section = String::from("\n\n---\n\n## User's Answers to Your Questions\n\n");
@@ -528,7 +570,8 @@ mod tests {
             question: "Q?".to_string(),
             answer: "A".to_string(),
         }];
-        let prompt = ideation_user_prompt_with_answers("my feature", "/tasks", "agents", "", &answers);
+        let prompt =
+            ideation_user_prompt_with_answers("my feature", "/tasks", "agents", "", &answers);
         assert!(prompt.contains("my feature"));
         assert!(prompt.contains("PLANNING MODE"));
         assert!(prompt.contains("questions.json"));
@@ -559,7 +602,8 @@ mod tests {
             question: "Q?".to_string(),
             answer: "A".to_string(),
         }];
-        let prompt = ideation_user_prompt_with_answers("desc", "/tasks", "agents", quality, &answers);
+        let prompt =
+            ideation_user_prompt_with_answers("desc", "/tasks", "agents", quality, &answers);
         assert!(prompt.contains("Code Quality Verification"));
         assert!(prompt.contains("User's Answers to Your Questions"));
     }
@@ -607,10 +651,44 @@ mod tests {
             answer: "A".to_string(),
         }];
         let prompt = ideation_user_prompt_with_answers_full(
-            "desc", "/tasks", "agents", "", &answers, false, &attachments,
+            "desc",
+            "/tasks",
+            "agents",
+            "",
+            &answers,
+            false,
+            &attachments,
         );
         assert!(prompt.contains("Attached Documents"));
         assert!(prompt.contains("Important spec content"));
         assert!(prompt.contains("User's Answers to Your Questions"));
+    }
+
+    // ── Agent History Injection Tests ──
+
+    #[test]
+    fn system_prompt_full_includes_agent_history_when_present() {
+        let history = "## Agent Track Record\n\n- **frontend-dev**: 5/6 tasks succeeded (83%)\n";
+        let prompt = ideation_system_prompt_full("repo map", "agents list", "", history);
+        assert!(prompt.contains("Agent Track Record"));
+        assert!(prompt.contains("frontend-dev"));
+        assert!(prompt.contains("83%"));
+    }
+
+    #[test]
+    fn system_prompt_full_omits_history_when_empty() {
+        let prompt = ideation_system_prompt_full("repo map", "agents list", "", "");
+        assert!(!prompt.contains("Agent Track Record"));
+    }
+
+    #[test]
+    fn system_prompt_full_includes_both_architecture_and_history() {
+        let arch = "Service A -> Service B via REST";
+        let history = "## Agent Track Record\n\n- **backend-dev**: 3/3 tasks\n";
+        let prompt = ideation_system_prompt_full("repo", "agents", arch, history);
+        assert!(prompt.contains("System Architecture"));
+        assert!(prompt.contains("Service A"));
+        assert!(prompt.contains("Agent Track Record"));
+        assert!(prompt.contains("backend-dev"));
     }
 }

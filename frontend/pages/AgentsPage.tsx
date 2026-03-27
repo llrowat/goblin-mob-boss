@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import { useTauri } from "../hooks/useTauri";
-import type { AgentFile, SkillFile } from "../types";
+import type { AgentFile, AgentPerformanceSummary, SkillFile } from "../types";
+import { AgentPerformanceBar } from "../components/AgentPerformance";
+import { ContextualHelp, HELP_CONTENT } from "../components/ContextualHelp";
 
 
 const PRESET_COLORS = [
@@ -102,9 +104,11 @@ function AgentsTab() {
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [builtInAgents, setBuiltInAgents] = useState<AgentFile[]>([]);
   const [addingBuiltIn, setAddingBuiltIn] = useState<string | null>(null);
+  const [perfSummaries, setPerfSummaries] = useState<AgentPerformanceSummary[]>([]);
 
   useEffect(() => {
     tauri.listBuiltInAgents().then(setBuiltInAgents).catch(() => setBuiltInAgents([]));
+    tauri.getAgentSummaries().then(setPerfSummaries).catch(() => setPerfSummaries([]));
   }, []);
 
   const loadAgents = () => {
@@ -213,6 +217,8 @@ function AgentsTab() {
     <>
       {error && !modalMode && <div className="error-banner">{error}</div>}
 
+      <ContextualHelp title="How do agents work?">{HELP_CONTENT.agents}</ContextualHelp>
+
       <div style={{ marginBottom: 20 }}>
         <button className="btn btn-primary" onClick={openCreate}>
           + Add Agent
@@ -222,18 +228,23 @@ function AgentsTab() {
       {/* Global agents */}
       {agents.length > 0 && (
         <div className="agent-grid">
-          {agents.map((agent) => (
-            <AgentCard
-              key={agent.filename}
-              agent={agent}
-              onEdit={() => openEdit(agent)}
-              onRemove={() => setDeleteConfirm(agent.filename)}
-              onConfirmDelete={() => handleRemove(agent.filename)}
-              deleteConfirm={deleteConfirm === agent.filename}
-              onCancelDelete={() => setDeleteConfirm(null)}
-              onToggleEnabled={() => handleToggleEnabled(agent)}
-            />
-          ))}
+          {agents.map((agent) => {
+            const agentKey = agent.filename.replace(/\.md$/, "");
+            const perf = perfSummaries.find((s) => s.agent === agentKey);
+            return (
+              <AgentCard
+                key={agent.filename}
+                agent={agent}
+                perfSummary={perf}
+                onEdit={() => openEdit(agent)}
+                onRemove={() => setDeleteConfirm(agent.filename)}
+                onConfirmDelete={() => handleRemove(agent.filename)}
+                deleteConfirm={deleteConfirm === agent.filename}
+                onCancelDelete={() => setDeleteConfirm(null)}
+                onToggleEnabled={() => handleToggleEnabled(agent)}
+              />
+            );
+          })}
         </div>
       )}
 
@@ -399,6 +410,8 @@ function SkillsTab() {
     <>
       {error && !modalMode && <div className="error-banner">{error}</div>}
 
+      <ContextualHelp title="How do skills work?">{HELP_CONTENT.skills}</ContextualHelp>
+
       <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
         <button className="btn btn-primary" onClick={openCreate}>
           + New Skill
@@ -501,6 +514,7 @@ function SkillsTab() {
 
 function AgentCard({
   agent,
+  perfSummary,
   onEdit,
   onRemove,
   onConfirmDelete,
@@ -509,6 +523,7 @@ function AgentCard({
   onToggleEnabled,
 }: {
   agent: AgentFile;
+  perfSummary?: AgentPerformanceSummary;
   onEdit: () => void;
   onRemove: (() => void) | undefined;
   onConfirmDelete: (() => void) | undefined;
@@ -563,6 +578,7 @@ function AgentCard({
             {agent.description}
           </div>
         )}
+        <AgentPerformanceBar summary={perfSummary} />
         <div className="agent-card-prompt">{agent.system_prompt}</div>
         {(agent.tools || agent.model) && (
           <div
