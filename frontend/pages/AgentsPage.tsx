@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useTauri } from "../hooks/useTauri";
+import { ClauseOutput } from "../components/ClauseOutput";
 import type { AgentFile, SkillFile } from "../types";
 
 
@@ -452,6 +453,9 @@ function SkillsTab() {
           <p style={{ color: "var(--text-secondary)", margin: 0 }}>
             Claude is crafting your skill...
           </p>
+          <div style={{ textAlign: "left", marginTop: 12 }}>
+            <ClauseOutput processType="skill" active={generating} />
+          </div>
         </div>
       )}
 
