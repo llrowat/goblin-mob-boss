@@ -13,6 +13,7 @@ import { useToast } from "../hooks/useToast";
 
 interface HooksEditorProps {
   repoPath: string;
+  onHooksChanged?: () => void;
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -24,7 +25,7 @@ const CATEGORY_LABELS: Record<string, string> = {
 
 const EMPTY_HANDLER: HookHandler = { type: "command", command: "" };
 
-export function HooksEditor({ repoPath }: HooksEditorProps) {
+export function HooksEditor({ repoPath, onHooksChanged }: HooksEditorProps) {
   const tauri = useTauri();
   const { addToast } = useToast();
 
@@ -67,6 +68,7 @@ export function HooksEditor({ repoPath }: HooksEditorProps) {
       await tauri.saveRepoHooks(repoPath, updated);
       setHooks(updated);
       addToast("Hooks saved", "success");
+      onHooksChanged?.();
     } catch (e) {
       addToast(`Failed to save hooks: ${e}`, "error");
     }

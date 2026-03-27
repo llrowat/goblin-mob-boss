@@ -43,11 +43,23 @@ describe("ReposPage", () => {
     },
   ];
 
-  function mockInvokeForRepos(repos = mockRepos) {
-    vi.mocked(invoke).mockImplementation((cmd: string) => {
+  const HOOKS_WITH_RULES = {
+    PostToolUse: [
+      { matcher: "Edit|Write", hooks: [{ type: "command", command: "npm run lint" }] },
+    ],
+  };
+
+  function mockInvokeForRepos(repos = mockRepos, hookOverrides: Record<string, unknown> = {}) {
+    vi.mocked(invoke).mockImplementation((cmd: string, args?: unknown) => {
       if (cmd === "list_repositories") return Promise.resolve(repos);
       if (cmd === "update_repository") return Promise.resolve(undefined);
       if (cmd === "remove_repository") return Promise.resolve(undefined);
+      if (cmd === "get_repo_hooks") {
+        const repoPath = (args as { repoPath: string })?.repoPath;
+        if (repoPath && hookOverrides[repoPath]) return Promise.resolve(hookOverrides[repoPath]);
+        return Promise.resolve({});
+      }
+      if (cmd === "list_hook_templates") return Promise.resolve([]);
       return Promise.resolve(undefined);
     });
   }
@@ -362,5 +374,58 @@ describe("ReposPage", () => {
 
     // The checkbox should be checked since repo-2 is in similar_repo_ids
     expect(checkboxes[0]).toBeChecked();
+  });
+
+  it("shows 'no hooks' nudge for repos without hooks", async () => {
+    mockInvokeForRepos();
+
+    render(<ReposPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("frontend-app")).toBeInTheDocument();
+    });
+
+    // Both repos have no hooks, so both should show the nudge
+    const nudges = await screen.findAllByText("No hooks configured — add one?");
+    expect(nudges).toHaveLength(2);
+  });
+
+  it("shows hook count on button when hooks exist", async () => {
+    mockInvokeForRepos(mockRepos, {
+      "/home/user/projects/frontend-app": HOOKS_WITH_RULES,
+    });
+
+    render(<ReposPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("frontend-app")).toBeInTheDocument();
+    });
+
+    // frontend-app has 1 hook rule
+    await waitFor(() => {
+      expect(screen.getByText("(1)")).toBeInTheDocument();
+    });
+
+    // backend-api has no hooks — should show nudge
+    expect(screen.getByText("No hooks configured — add one?")).toBeInTheDocument();
+  });
+
+  it("hides nudge and expands hooks editor when nudge is clicked", async () => {
+    mockInvokeForRepos();
+
+    render(<ReposPage />);
+
+    await waitFor(() => {
+      const nudges = screen.getAllByText("No hooks configured — add one?");
+      expect(nudges.length).toBeGreaterThan(0);
+    });
+
+    const nudges = screen.getAllByText("No hooks configured — add one?");
+    fireEvent.click(nudges[0]);
+
+    // After clicking, the hooks editor loading state should appear
+    await waitFor(() => {
+      expect(screen.getByText("Loading hooks...")).toBeInTheDocument();
+    });
   });
 });

@@ -2463,6 +2463,23 @@ body {
   text-decoration: none;
 }
 
+/* ── Repo Hook Nudge ── */
+
+.repo-no-hooks-nudge {
+  font-size: 12px;
+  color: var(--accent-brass);
+  cursor: pointer;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  background: rgba(var(--accent-brass-rgb, 180, 150, 60), 0.08);
+  border: 1px dashed rgba(var(--accent-brass-rgb, 180, 150, 60), 0.3);
+  transition: background 0.15s;
+}
+
+.repo-no-hooks-nudge:hover {
+  background: rgba(var(--accent-brass-rgb, 180, 150, 60), 0.15);
+}
+
 /* ── Contextual Help ── */
 
 .contextual-help {

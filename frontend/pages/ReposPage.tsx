@@ -3,7 +3,7 @@ import { useTauri } from "../hooks/useTauri";
 import { AddRepoModal } from "../components/AddRepoModal";
 import { HooksEditor } from "../components/HooksEditor";
 import { ContextualHelp, HELP_CONTENT } from "../components/ContextualHelp";
-import type { Repository } from "../types";
+import type { Repository, RepoHooks } from "../types";
 
 
 export function ReposPage() {
@@ -20,12 +20,39 @@ export function ReposPage() {
   const [editSimilarRepoIds, setEditSimilarRepoIds] = useState<string[]>([]);
   const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
   const [expandedHooksId, setExpandedHooksId] = useState<string | null>(null);
+  const [hookCounts, setHookCounts] = useState<Record<string, number>>({});
+
+  const countRules = (h: RepoHooks): number =>
+    Object.values(h).reduce(
+      (sum, rules) => sum + (Array.isArray(rules) ? rules.length : 0),
+      0,
+    );
 
   const loadRepos = () => {
     tauri.listRepositories().then(setRepos);
   };
 
-  useEffect(loadRepos, []);
+  const loadHookCounts = (repoList: Repository[]) => {
+    Promise.all(
+      repoList.map((r) =>
+        tauri
+          .getRepoHooks(r.path)
+          .then((h) => ({ id: r.id, count: countRules(h) }))
+          .catch(() => ({ id: r.id, count: 0 })),
+      ),
+    ).then((results) => {
+      const counts: Record<string, number> = {};
+      for (const r of results) counts[r.id] = r.count;
+      setHookCounts(counts);
+    });
+  };
+
+  useEffect(() => {
+    tauri.listRepositories().then((repoList) => {
+      setRepos(repoList);
+      loadHookCounts(repoList);
+    });
+  }, []);
 
   const handleEdit = (repo: Repository) => {
     setEditingId(repo.id);
@@ -270,7 +297,7 @@ export function ReposPage() {
                     </span>
                   )}
                 </div>
-                <div style={{ marginTop: 6 }}>
+                <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 8 }}>
                   <button
                     className="btn btn-secondary btn-sm"
                     style={{ fontSize: 11, padding: "2px 8px" }}
@@ -281,10 +308,29 @@ export function ReposPage() {
                     }
                   >
                     {expandedHooksId === repo.id ? "Hide Hooks" : "Hooks"}
+                    {(hookCounts[repo.id] ?? -1) > 0 && (
+                      <span style={{ marginLeft: 4, opacity: 0.7 }}>
+                        ({hookCounts[repo.id]})
+                      </span>
+                    )}
                   </button>
+                  {hookCounts[repo.id] === 0 && expandedHooksId !== repo.id && (
+                    <span
+                      className="repo-no-hooks-nudge"
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => setExpandedHooksId(repo.id)}
+                      onKeyDown={(e) => e.key === "Enter" && setExpandedHooksId(repo.id)}
+                    >
+                      No hooks configured — add one?
+                    </span>
+                  )}
                 </div>
                 {expandedHooksId === repo.id && (
-                  <HooksEditor repoPath={repo.path} />
+                  <HooksEditor
+                    repoPath={repo.path}
+                    onHooksChanged={() => loadHookCounts(repos)}
+                  />
                 )}
               </>
             )}
