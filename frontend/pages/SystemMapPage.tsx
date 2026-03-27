@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useTauri } from "../hooks/useTauri";
 import { useCommandDisplay, CommandDisplayButton, CommandDisplayContent } from "../components/CommandDisplay";
+import { ClauseOutput } from "../components/ClauseOutput";
 import type {
   SystemMap,
   MapService,
@@ -1702,6 +1703,11 @@ export function SystemMapPage() {
           <CommandDisplayButton {...discoveryCmdDisplay} />
         </div>
         <CommandDisplayContent {...discoveryCmdDisplay} />
+        <ClauseOutput
+          processType="discovery"
+          processId={activeMapId ?? undefined}
+          active={exploring}
+        />
       </div>
     );
   }

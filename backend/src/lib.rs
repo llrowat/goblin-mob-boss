@@ -144,6 +144,8 @@ pub fn run() {
             commands::get_repo_hooks,
             commands::save_repo_hooks,
             commands::list_hook_templates,
+            // Process Log Transparency
+            commands::read_process_log,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

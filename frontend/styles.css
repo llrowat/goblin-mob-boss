@@ -1093,6 +1093,28 @@ body {
   overflow-y: auto;
 }
 
+/* Clause output (background process log viewer) */
+.clause-output {
+  margin-top: 8px;
+}
+
+.clause-output-log {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 250px;
+  overflow-y: auto;
+  margin-top: 8px;
+  color: var(--text-secondary);
+}
+
 /* Empty state */
 .empty-state {
   text-align: center;

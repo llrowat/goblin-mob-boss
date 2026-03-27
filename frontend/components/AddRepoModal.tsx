@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useTauri } from "../hooks/useTauri";
 import { CommandDisplay } from "./CommandDisplay";
+import { ClauseOutput } from "./ClauseOutput";
 import type { Repository } from "../types";
 
 interface Props {
@@ -224,6 +225,11 @@ export function AddRepoModal({ onClose, onAdded }: Props) {
                       </div>
                     </div>
                     <CommandDisplay command={claudeMdCommand} />
+                    <ClauseOutput
+                      processType="claude-md"
+                      repoPath={path.trim()}
+                      active={generatingClaudeMd}
+                    />
                   </div>
                 ) : (
                   <div

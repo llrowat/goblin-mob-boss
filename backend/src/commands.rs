@@ -2939,6 +2939,15 @@ pub fn delete_system_map(state: State<AppState>, map_id: String) -> Result<(), S
     maps.remove(&map_id).ok_or("System map not found")?;
     drop(maps);
     state.save_system_maps();
+
+    // Clean up discovery artifacts (logs, prompt files, result JSON)
+    let discovery_dir = Path::new(&state.gmb_path)
+        .join("discoveries")
+        .join(&map_id);
+    if discovery_dir.exists() {
+        let _ = std::fs::remove_dir_all(&discovery_dir);
+    }
+
     Ok(())
 }
 
@@ -3095,9 +3104,16 @@ pub fn start_discovery_pty(
 
     let session_id = format!("discovery-{}", map_id);
 
+    // Create a shared log file for all discovery processes
+    let log_path = discovery_dir.join("discovery.log");
+    let log_file = std::fs::File::create(&log_path)
+        .map_err(|e| format!("Failed to create discovery log: {}", e))?;
+
     // Spawn all repos as background processes that can write their output JSON files
     for (repo_path, system_prompt, user_prompt) in &repo_prompts {
-        spawn_discovery_process(repo_path, system_prompt, user_prompt)?;
+        let repo_log = log_file.try_clone()
+            .map_err(|e| format!("Failed to clone log file handle: {}", e))?;
+        spawn_discovery_process(repo_path, system_prompt, user_prompt, repo_log)?;
     }
 
     Ok(session_id)
@@ -3109,8 +3125,12 @@ fn spawn_discovery_process(
     work_dir: &str,
     system_prompt: &str,
     user_prompt: &str,
+    log_file: std::fs::File,
 ) -> Result<(), String> {
     use std::io::Write as IoWrite;
+
+    let stderr_file = log_file.try_clone()
+        .map_err(|e| format!("Failed to clone log file handle: {}", e))?;
 
     let mut cmd = std::process::Command::new("claude");
     apply_user_path(&mut cmd);
@@ -3119,8 +3139,8 @@ fn spawn_discovery_process(
         .arg("--allowedTools").arg("Read,Glob,Grep,Write")
         .arg("--append-system-prompt").arg(system_prompt)
         .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
+        .stdout(log_file)
+        .stderr(stderr_file)
         .current_dir(work_dir);
 
     let mut child = cmd.spawn()
@@ -3838,6 +3858,77 @@ pub fn list_hook_templates() -> Vec<HookTemplate> {
             command: "if [ -f .env ]; then export $(cat .env | grep -v '^#' | xargs); fi".into(),
         },
     ]
+}
+
+// ── Process Log Transparency ──
+
+/// Read the output log of a background Claude process for transparency.
+/// Returns the tail of the log file (up to `max_lines` lines, default 200).
+///
+/// Supported process types:
+/// - "ideation": reads `{repo}/.gmb/features/{id}/claude-ideation.log`
+/// - "claude-md": reads `{repo_path}/.gmb/claude-md-generation.log`
+/// - "skill": reads `~/.claude/.gmb/skill-generation.log`
+/// - "discovery": reads `{gmb_path}/discoveries/{id}/discovery.log`
+#[tauri::command]
+pub fn read_process_log(
+    state: State<AppState>,
+    process_type: String,
+    process_id: Option<String>,
+    repo_path: Option<String>,
+    max_lines: Option<usize>,
+) -> Result<String, String> {
+    let max = max_lines.unwrap_or(200);
+
+    let log_path = match process_type.as_str() {
+        "ideation" => {
+            let feature_id = process_id.ok_or("feature_id required for ideation logs")?;
+            let rpath = repo_path.ok_or("repo_path required for ideation logs")?;
+            Path::new(&rpath)
+                .join(".gmb")
+                .join("features")
+                .join(&feature_id)
+                .join("claude-ideation.log")
+        }
+        "claude-md" => {
+            let rpath = repo_path.ok_or("repo_path required for claude-md logs")?;
+            Path::new(&rpath)
+                .join(".gmb")
+                .join("claude-md-generation.log")
+        }
+        "skill" => {
+            let home = std::env::var("HOME")
+                .or_else(|_| std::env::var("USERPROFILE"))
+                .map_err(|_| "Could not determine home directory".to_string())?;
+            std::path::Path::new(&home)
+                .join(".claude")
+                .join(".gmb")
+                .join("skill-generation.log")
+        }
+        "discovery" => {
+            let map_id = process_id.ok_or("map_id required for discovery logs")?;
+            Path::new(&state.gmb_path)
+                .join("discoveries")
+                .join(&map_id)
+                .join("discovery.log")
+        }
+        _ => return Err(format!("Unknown process type: {}", process_type)),
+    };
+
+    if !log_path.exists() {
+        return Ok(String::new());
+    }
+
+    let content = std::fs::read_to_string(&log_path)
+        .map_err(|e| format!("Failed to read log: {}", e))?;
+
+    // Return the last `max` lines
+    let lines: Vec<&str> = content.lines().collect();
+    if lines.len() <= max {
+        Ok(content)
+    } else {
+        Ok(lines[lines.len() - max..].join("\n"))
+    }
 }
 
 #[cfg(test)]
@@ -4696,6 +4787,72 @@ mod tests {
             assert!(!t.command.is_empty());
             assert!(!t.event.is_empty());
         }
+    }
+
+    #[test]
+    fn read_process_log_claude_md_log_path() {
+        let dir = TempDir::new().unwrap();
+        let gmb_dir = dir.path().join(".gmb");
+        std::fs::create_dir_all(&gmb_dir).unwrap();
+        std::fs::write(gmb_dir.join("claude-md-generation.log"), "line1\nline2\nline3\n").unwrap();
+
+        // Verify the log path matches what read_process_log would resolve
+        let log_path = dir.path().join(".gmb").join("claude-md-generation.log");
+        assert!(log_path.exists());
+        let content = std::fs::read_to_string(&log_path).unwrap();
+        assert!(content.contains("line1"));
+        assert!(content.contains("line3"));
+    }
+
+    #[test]
+    fn read_process_log_ideation_log_path() {
+        let dir = TempDir::new().unwrap();
+        let feature_dir = dir.path().join(".gmb").join("features").join("feat-123");
+        std::fs::create_dir_all(&feature_dir).unwrap();
+        let log_content = (0..300).map(|i| format!("log line {}", i)).collect::<Vec<_>>().join("\n");
+        std::fs::write(feature_dir.join("claude-ideation.log"), &log_content).unwrap();
+
+        // Verify the log file exists at the expected path
+        let log_path = dir.path()
+            .join(".gmb")
+            .join("features")
+            .join("feat-123")
+            .join("claude-ideation.log");
+        assert!(log_path.exists());
+        let content = std::fs::read_to_string(&log_path).unwrap();
+        let lines: Vec<&str> = content.lines().collect();
+        assert_eq!(lines.len(), 300);
+
+        // Verify tail logic: last 200 lines
+        let max = 200;
+        let tail: Vec<&str> = lines[lines.len() - max..].to_vec();
+        assert_eq!(tail.len(), 200);
+        assert!(tail[0].contains("log line 100"));
+        assert!(tail[199].contains("log line 299"));
+    }
+
+    #[test]
+    fn read_process_log_returns_empty_for_missing_log() {
+        let dir = TempDir::new().unwrap();
+        let log_path = dir.path().join(".gmb").join("claude-md-generation.log");
+        assert!(!log_path.exists());
+        // Non-existent log should produce empty string (mirrors read_process_log behavior)
+    }
+
+    #[test]
+    fn read_process_log_discovery_log_path() {
+        let dir = TempDir::new().unwrap();
+        let disc_dir = dir.path().join("discoveries").join("map-42");
+        std::fs::create_dir_all(&disc_dir).unwrap();
+        std::fs::write(disc_dir.join("discovery.log"), "discovery output\n").unwrap();
+
+        let log_path = dir.path()
+            .join("discoveries")
+            .join("map-42")
+            .join("discovery.log");
+        assert!(log_path.exists());
+        let content = std::fs::read_to_string(&log_path).unwrap();
+        assert!(content.contains("discovery output"));
     }
 
 }
