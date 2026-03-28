@@ -401,7 +401,7 @@ describe("ReposPage", () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText("(1)")).toBeInTheDocument();
+      expect(screen.getByText("1")).toBeInTheDocument();
     });
   });
 

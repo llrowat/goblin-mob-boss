@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useTauri } from "../hooks/useTauri";
+import { ContextualHelp, HELP_CONTENT } from "./ContextualHelp";
 import type {
   RepoHooks,
   HookRule,
@@ -420,6 +421,8 @@ export function HooksEditor({ repoPath, onHooksChanged }: HooksEditorProps) {
       )}
 
       {/* Existing hooks */}
+      <ContextualHelp title="What are hooks?">{HELP_CONTENT.hooks}</ContextualHelp>
+
       {ruleCount === 0 && !showAdd ? (
         <div style={{ fontSize: 12, color: "var(--muted)", padding: "4px 0" }}>
           No hooks wired up yet.

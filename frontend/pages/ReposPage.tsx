@@ -297,24 +297,22 @@ export function ReposPage() {
                     </span>
                   )}
                 </div>
-                <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 8 }}>
-                  <button
-                    className="btn btn-secondary btn-sm"
-                    style={{ fontSize: 11, padding: "2px 8px" }}
-                    onClick={() =>
-                      setExpandedHooksId(
-                        expandedHooksId === repo.id ? null : repo.id,
-                      )
-                    }
-                  >
-                    {expandedHooksId === repo.id ? "Hide Hooks" : "Hooks"}
-                    {(hookCounts[repo.id] ?? -1) > 0 && (
-                      <span style={{ marginLeft: 4, opacity: 0.7 }}>
-                        ({hookCounts[repo.id]})
-                      </span>
-                    )}
-                  </button>
-                </div>
+                <button
+                  className="hooks-toggle"
+                  onClick={() =>
+                    setExpandedHooksId(
+                      expandedHooksId === repo.id ? null : repo.id,
+                    )
+                  }
+                >
+                  <span className={`hooks-toggle-chevron${expandedHooksId === repo.id ? " open" : ""}`}>&#9656;</span>
+                  Hooks
+                  {(hookCounts[repo.id] ?? -1) > 0 && (
+                    <span className="hooks-toggle-count">
+                      {hookCounts[repo.id]}
+                    </span>
+                  )}
+                </button>
                 {expandedHooksId === repo.id && (
                   <HooksEditor
                     repoPath={repo.path}

@@ -136,6 +136,25 @@ export const HELP_CONTENT = {
     </>
   ),
 
+  hooks: (
+    <>
+      <p>
+        Hooks are shell commands that run automatically in response to Claude
+        Code events — before or after tool calls, when a session starts or
+        stops, or when the user submits a prompt.
+      </p>
+      <p>
+        Use them to enforce rules (block dangerous commands), maintain quality
+        (run linters after edits), or integrate with your workflow (notify
+        Slack when a session finishes).
+      </p>
+      <p>
+        Hooks are stored per-repo in{" "}
+        <code>.claude/settings.json</code> and run in the repo's directory.
+      </p>
+    </>
+  ),
+
   systemMap: (
     <>
       <p>
