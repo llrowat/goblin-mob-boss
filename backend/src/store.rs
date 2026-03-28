@@ -1,4 +1,7 @@
-use crate::models::{AgentFile, Feature, Preferences, Repository, SkillFile, SkillSource, SystemMap};
+use crate::models::{
+    AgentFile, AgentPerformanceSummary, AgentTaskRecord, CategoryCount, Feature, Preferences,
+    Repository, SkillFile, SkillSource, SystemMap,
+};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Mutex;
@@ -7,6 +10,7 @@ pub struct AppState {
     pub repositories: Mutex<HashMap<String, Repository>>,
     pub features: Mutex<HashMap<String, Feature>>,
     pub system_maps: Mutex<HashMap<String, SystemMap>>,
+    pub agent_history: Mutex<Vec<AgentTaskRecord>>,
     pub preferences: Mutex<Preferences>,
     pub config_path: String,
     /// Dedicated path for system map storage (`~/.gmb`).
@@ -19,6 +23,7 @@ impl AppState {
             repositories: Mutex::new(HashMap::new()),
             features: Mutex::new(HashMap::new()),
             system_maps: Mutex::new(HashMap::new()),
+            agent_history: Mutex::new(Vec::new()),
             preferences: Mutex::new(Preferences::default()),
             config_path,
             gmb_path,
@@ -27,6 +32,7 @@ impl AppState {
         state.load_repos();
         state.load_features();
         state.load_system_maps();
+        state.load_agent_history();
         state.load_preferences();
         state
     }
@@ -259,6 +265,171 @@ impl AppState {
         }
     }
 
+    // ── Agent History persistence ──
+
+    fn load_agent_history(&self) {
+        let records = self.load_json_list::<AgentTaskRecord>("agent_history.json");
+        let mut history = self.agent_history.lock().unwrap();
+        *history = records;
+    }
+
+    pub fn save_agent_history(&self) {
+        let history = self.agent_history.lock().unwrap();
+        self.save_json_list("agent_history.json", &history.as_slice());
+    }
+
+    /// Record task outcomes for all agents involved in a completed feature.
+    pub fn record_feature_outcome(&self, feature: &Feature) {
+        let now = chrono::Utc::now();
+        let duration_secs = {
+            let created = feature.created_at;
+            let elapsed = now.signed_duration_since(created);
+            if elapsed.num_seconds() > 0 {
+                Some(elapsed.num_seconds() as u64)
+            } else {
+                None
+            }
+        };
+
+        let validators_passed = if feature.status == crate::models::FeatureStatus::Complete
+            || feature.status == crate::models::FeatureStatus::Pushed
+        {
+            Some(true)
+        } else if feature.status == crate::models::FeatureStatus::Failed {
+            Some(false)
+        } else {
+            None
+        };
+
+        let mut history = self.agent_history.lock().unwrap();
+
+        for task in &feature.task_specs {
+            let category = infer_task_category(&task.title, &task.description);
+            history.push(AgentTaskRecord {
+                agent: task.agent.clone(),
+                feature_id: feature.id.clone(),
+                feature_name: feature.name.clone(),
+                task_title: task.title.clone(),
+                task_category: category,
+                succeeded: feature.status != crate::models::FeatureStatus::Failed,
+                duration_secs,
+                validators_passed,
+                execution_mode: feature.execution_mode.clone(),
+                recorded_at: now,
+            });
+        }
+        drop(history);
+        self.save_agent_history();
+    }
+
+    /// Build a performance summary for each agent that has history.
+    pub fn get_agent_summaries(&self) -> Vec<AgentPerformanceSummary> {
+        let history = self.agent_history.lock().unwrap();
+        let mut by_agent: HashMap<String, Vec<&AgentTaskRecord>> = HashMap::new();
+
+        for record in history.iter() {
+            by_agent
+                .entry(record.agent.clone())
+                .or_default()
+                .push(record);
+        }
+
+        let mut summaries: Vec<AgentPerformanceSummary> = by_agent
+            .into_iter()
+            .map(|(agent, records)| {
+                let total = records.len() as u32;
+                let successful = records.iter().filter(|r| r.succeeded).count() as u32;
+                let success_rate = if total > 0 {
+                    successful as f32 / total as f32
+                } else {
+                    0.0
+                };
+
+                // Category breakdown
+                let mut cat_map: HashMap<String, (u32, u32)> = HashMap::new();
+                for r in &records {
+                    let entry = cat_map.entry(r.task_category.clone()).or_default();
+                    entry.0 += 1;
+                    if r.succeeded {
+                        entry.1 += 1;
+                    }
+                }
+                let mut top_categories: Vec<CategoryCount> = cat_map
+                    .into_iter()
+                    .filter(|(cat, _)| !cat.is_empty())
+                    .map(|(cat, (count, success))| CategoryCount {
+                        category: cat,
+                        count,
+                        success_count: success,
+                    })
+                    .collect();
+                top_categories.sort_by(|a, b| b.count.cmp(&a.count));
+                top_categories.truncate(5);
+
+                // Average duration
+                let durations: Vec<u64> = records.iter().filter_map(|r| r.duration_secs).collect();
+                let avg_duration_secs = if durations.is_empty() {
+                    None
+                } else {
+                    Some(durations.iter().sum::<u64>() as f64 / durations.len() as f64)
+                };
+
+                let last_active = records.iter().map(|r| r.recorded_at).max();
+
+                // Distinct feature count
+                let mut feature_ids: Vec<&str> = records.iter().map(|r| r.feature_id.as_str()).collect();
+                feature_ids.sort();
+                feature_ids.dedup();
+                let feature_count = feature_ids.len() as u32;
+
+                AgentPerformanceSummary {
+                    agent,
+                    total_tasks: total,
+                    successful_tasks: successful,
+                    success_rate,
+                    top_categories,
+                    avg_duration_secs,
+                    last_active,
+                    feature_count,
+                }
+            })
+            .collect();
+
+        summaries.sort_by(|a, b| b.total_tasks.cmp(&a.total_tasks));
+        summaries
+    }
+
+    /// Format agent history as context for injection into ideation prompts.
+    pub fn format_agent_history_for_prompt(&self) -> String {
+        let summaries = self.get_agent_summaries();
+        if summaries.is_empty() {
+            return String::new();
+        }
+
+        let mut out = String::from("## Agent Track Record\n\nBased on prior feature completions, here is each agent's performance history. Use this to inform agent assignments — prefer agents with strong track records for the relevant task types.\n\n");
+
+        for s in &summaries {
+            out.push_str(&format!(
+                "- **{}**: {}/{} tasks succeeded ({:.0}% success rate)",
+                s.agent,
+                s.successful_tasks,
+                s.total_tasks,
+                s.success_rate * 100.0
+            ));
+            if !s.top_categories.is_empty() {
+                let cats: Vec<String> = s
+                    .top_categories
+                    .iter()
+                    .map(|c| format!("{} ({}/{})", c.category, c.success_count, c.count))
+                    .collect();
+                out.push_str(&format!(". Specialties: {}", cats.join(", ")));
+            }
+            out.push('\n');
+        }
+        out.push('\n');
+        out
+    }
+
     pub fn save_preferences(&self) {
         let prefs = self.preferences.lock().unwrap();
         let path = self.json_path("preferences.json");
@@ -285,6 +456,89 @@ impl AppState {
             let _ = std::fs::write(&path, &data);
         }
     }
+}
+
+/// Infer a task category from its title and description using keyword matching.
+fn infer_task_category(title: &str, description: &str) -> String {
+    let combined = format!("{} {}", title, description).to_lowercase();
+
+    let categories = [
+        (
+            "frontend",
+            &[
+                "frontend",
+                "ui",
+                "component",
+                "react",
+                "css",
+                "style",
+                "layout",
+                "page",
+                "form",
+                "modal",
+                "button",
+                "display",
+            ][..],
+        ),
+        (
+            "backend",
+            &[
+                "backend",
+                "api",
+                "endpoint",
+                "server",
+                "handler",
+                "route",
+                "database",
+                "query",
+                "migration",
+                "schema",
+            ],
+        ),
+        (
+            "testing",
+            &[
+                "test",
+                "spec",
+                "coverage",
+                "assert",
+                "mock",
+                "fixture",
+                "qa",
+                "verify",
+                "validation",
+            ],
+        ),
+        (
+            "infrastructure",
+            &[
+                "ci", "cd", "deploy", "docker", "config", "env", "build", "pipeline", "devops",
+                "infra",
+            ],
+        ),
+        (
+            "documentation",
+            &["doc", "readme", "comment", "changelog", "guide"],
+        ),
+        (
+            "refactoring",
+            &[
+                "refactor",
+                "cleanup",
+                "restructure",
+                "rename",
+                "extract",
+                "simplify",
+            ],
+        ),
+    ];
+
+    for (category, keywords) in &categories {
+        if keywords.iter().any(|kw| combined.contains(kw)) {
+            return category.to_string();
+        }
+    }
+    "general".to_string()
 }
 
 // ── Agent File Operations ──
@@ -427,10 +681,8 @@ pub fn list_global_skills() -> Result<Vec<SkillFile>, String> {
                                 {
                                     let skills_dir = Path::new(install_path).join("skills");
                                     if skills_dir.exists() {
-                                        let mut plugin_skills = read_skills_from_dir(
-                                            &skills_dir,
-                                            SkillSource::Plugin,
-                                        )?;
+                                        let mut plugin_skills =
+                                            read_skills_from_dir(&skills_dir, SkillSource::Plugin)?;
                                         for s in &mut plugin_skills {
                                             s.plugin_name = Some(plugin_name.clone());
                                         }
@@ -496,8 +748,7 @@ pub fn delete_global_skill(dir_name: &str) -> Result<(), String> {
     let skills_dir = global_skills_dir()?;
     let skill_dir = skills_dir.join(dir_name);
     if skill_dir.exists() {
-        std::fs::remove_dir_all(&skill_dir)
-            .map_err(|e| format!("Failed to delete skill: {}", e))
+        std::fs::remove_dir_all(&skill_dir).map_err(|e| format!("Failed to delete skill: {}", e))
     } else {
         Err("Skill not found".to_string())
     }
@@ -521,6 +772,7 @@ mod tests {
             repositories: Mutex::new(HashMap::new()),
             features: Mutex::new(HashMap::new()),
             system_maps: Mutex::new(HashMap::new()),
+            agent_history: Mutex::new(Vec::new()),
             preferences: Mutex::new(Preferences::default()),
             config_path,
             gmb_path,
@@ -968,9 +1220,11 @@ mod tests {
         std::fs::write(
             user_skill_dir.join("SKILL.md"),
             "---\nname: my-skill\ndescription: My skill\nuser_invocable: true\n---\n\nDo stuff.",
-        ).unwrap();
+        )
+        .unwrap();
 
-        let user_skills = read_skills_from_dir(&dir.path().join("user-skills"), SkillSource::User).unwrap();
+        let user_skills =
+            read_skills_from_dir(&dir.path().join("user-skills"), SkillSource::User).unwrap();
         assert_eq!(user_skills.len(), 1);
         assert_eq!(user_skills[0].name, "my-skill");
         assert_eq!(user_skills[0].source, SkillSource::User);
@@ -983,7 +1237,8 @@ mod tests {
             "---\nname: plugin-skill\ndescription: From a plugin\nuser_invocable: true\n---\n\nPlugin stuff.",
         ).unwrap();
 
-        let mut plugin_skills = read_skills_from_dir(&dir.path().join("plugin-skills"), SkillSource::Plugin).unwrap();
+        let mut plugin_skills =
+            read_skills_from_dir(&dir.path().join("plugin-skills"), SkillSource::Plugin).unwrap();
         for s in &mut plugin_skills {
             s.plugin_name = Some("cool-plugin".to_string());
         }
@@ -1008,7 +1263,11 @@ mod tests {
         ).unwrap();
 
         // Create an installed plugin with skills
-        let plugin_cache = dir.path().join("plugin-cache").join("cool-plugin").join("1.0.0");
+        let plugin_cache = dir
+            .path()
+            .join("plugin-cache")
+            .join("cool-plugin")
+            .join("1.0.0");
         let plugin_skill = plugin_cache.join("skills").join("plugin-skill");
         std::fs::create_dir_all(&plugin_skill).unwrap();
         std::fs::write(
@@ -1032,7 +1291,8 @@ mod tests {
         std::fs::write(
             plugins_dir.join("installed_plugins.json"),
             serde_json::to_string_pretty(&manifest).unwrap(),
-        ).unwrap();
+        )
+        .unwrap();
 
         let skills = list_global_skills().unwrap();
         assert_eq!(skills.len(), 2);
@@ -1059,5 +1319,219 @@ mod tests {
         std::fs::write(skill_dir.join("SKILL.md"), "test content").unwrap();
 
         assert!(skill_dir.join("SKILL.md").exists());
+    }
+
+    // ── Agent History Tests ──
+
+    #[test]
+    fn save_and_load_agent_history_roundtrip() {
+        let dir = TempDir::new().unwrap();
+        let state = make_state(&dir);
+
+        let record = AgentTaskRecord {
+            agent: "frontend-dev".to_string(),
+            feature_id: "feat-1".to_string(),
+            feature_name: "Auth Feature".to_string(),
+            task_title: "Build login page".to_string(),
+            task_category: "frontend".to_string(),
+            succeeded: true,
+            duration_secs: Some(3600),
+            validators_passed: Some(true),
+            execution_mode: Some(crate::models::ExecutionMode::Teams),
+            recorded_at: chrono::Utc::now(),
+        };
+
+        {
+            let mut history = state.agent_history.lock().unwrap();
+            history.push(record);
+        }
+        state.save_agent_history();
+
+        assert!(dir.path().join("agent_history.json").exists());
+
+        let state2 = make_state(&dir);
+        state2.load_agent_history();
+        let history = state2.agent_history.lock().unwrap();
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].agent, "frontend-dev");
+        assert!(history[0].succeeded);
+    }
+
+    #[test]
+    fn get_agent_summaries_computes_correctly() {
+        let dir = TempDir::new().unwrap();
+        let state = make_state(&dir);
+
+        {
+            let mut history = state.agent_history.lock().unwrap();
+            let now = chrono::Utc::now();
+            // frontend-dev: 3 tasks, 2 succeeded
+            history.push(AgentTaskRecord {
+                agent: "frontend-dev".to_string(),
+                feature_id: "f1".to_string(),
+                feature_name: "Feat 1".to_string(),
+                task_title: "Build UI component".to_string(),
+                task_category: "frontend".to_string(),
+                succeeded: true,
+                duration_secs: Some(100),
+                validators_passed: Some(true),
+                execution_mode: None,
+                recorded_at: now,
+            });
+            history.push(AgentTaskRecord {
+                agent: "frontend-dev".to_string(),
+                feature_id: "f2".to_string(),
+                feature_name: "Feat 2".to_string(),
+                task_title: "Add API endpoint".to_string(),
+                task_category: "backend".to_string(),
+                succeeded: false,
+                duration_secs: Some(200),
+                validators_passed: Some(false),
+                execution_mode: None,
+                recorded_at: now,
+            });
+            history.push(AgentTaskRecord {
+                agent: "frontend-dev".to_string(),
+                feature_id: "f3".to_string(),
+                feature_name: "Feat 3".to_string(),
+                task_title: "Fix CSS layout".to_string(),
+                task_category: "frontend".to_string(),
+                succeeded: true,
+                duration_secs: Some(300),
+                validators_passed: Some(true),
+                execution_mode: None,
+                recorded_at: now,
+            });
+        }
+
+        let summaries = state.get_agent_summaries();
+        assert_eq!(summaries.len(), 1);
+
+        let s = &summaries[0];
+        assert_eq!(s.agent, "frontend-dev");
+        assert_eq!(s.total_tasks, 3);
+        assert_eq!(s.successful_tasks, 2);
+        assert!((s.success_rate - 0.6667).abs() < 0.01);
+        assert_eq!(s.avg_duration_secs, Some(200.0));
+
+        // Top categories: frontend (2 tasks), backend (1 task)
+        assert_eq!(s.top_categories.len(), 2);
+        assert_eq!(s.top_categories[0].category, "frontend");
+        assert_eq!(s.top_categories[0].count, 2);
+        assert_eq!(s.top_categories[0].success_count, 2);
+        assert_eq!(s.top_categories[1].category, "backend");
+        assert_eq!(s.top_categories[1].count, 1);
+        assert_eq!(s.top_categories[1].success_count, 0);
+    }
+
+    #[test]
+    fn get_agent_summaries_empty_for_no_history() {
+        let dir = TempDir::new().unwrap();
+        let state = make_state(&dir);
+        let summaries = state.get_agent_summaries();
+        assert!(summaries.is_empty());
+    }
+
+    #[test]
+    fn format_agent_history_for_prompt_empty_when_no_data() {
+        let dir = TempDir::new().unwrap();
+        let state = make_state(&dir);
+        assert!(state.format_agent_history_for_prompt().is_empty());
+    }
+
+    #[test]
+    fn format_agent_history_for_prompt_includes_data() {
+        let dir = TempDir::new().unwrap();
+        let state = make_state(&dir);
+        {
+            let mut history = state.agent_history.lock().unwrap();
+            history.push(AgentTaskRecord {
+                agent: "backend-dev".to_string(),
+                feature_id: "f1".to_string(),
+                feature_name: "F".to_string(),
+                task_title: "Task".to_string(),
+                task_category: "backend".to_string(),
+                succeeded: true,
+                duration_secs: None,
+                validators_passed: None,
+                execution_mode: None,
+                recorded_at: chrono::Utc::now(),
+            });
+        }
+        let prompt = state.format_agent_history_for_prompt();
+        assert!(prompt.contains("Agent Track Record"));
+        assert!(prompt.contains("backend-dev"));
+        assert!(prompt.contains("1/1 tasks succeeded"));
+        assert!(prompt.contains("100%"));
+        assert!(prompt.contains("backend"));
+    }
+
+    #[test]
+    fn infer_task_category_detects_categories() {
+        assert_eq!(
+            super::infer_task_category("Build login page", "React component with form"),
+            "frontend"
+        );
+        assert_eq!(
+            super::infer_task_category("Add API endpoint", "REST handler for /users"),
+            "backend"
+        );
+        assert_eq!(
+            super::infer_task_category("Write unit tests", "Cover the auth module"),
+            "testing"
+        );
+        assert_eq!(
+            super::infer_task_category("Set up CI pipeline", "GitHub Actions workflow"),
+            "infrastructure"
+        );
+        assert_eq!(
+            super::infer_task_category("Do something", "Unrelated task"),
+            "general"
+        );
+    }
+
+    #[test]
+    fn record_feature_outcome_adds_records() {
+        let dir = TempDir::new().unwrap();
+        let state = make_state(&dir);
+
+        let mut feature = crate::models::Feature::new(
+            vec!["r1".to_string()],
+            "Test".to_string(),
+            "test desc".to_string(),
+            "feature/test-1234".to_string(),
+            vec![],
+        );
+        feature.status = crate::models::FeatureStatus::Complete;
+        feature.execution_mode = Some(crate::models::ExecutionMode::Subagents);
+        feature.task_specs = vec![
+            crate::models::TaskSpec {
+                title: "Build UI".to_string(),
+                description: "React component".to_string(),
+                acceptance_criteria: vec![],
+                dependencies: vec![],
+                agent: "frontend-dev".to_string(),
+            },
+            crate::models::TaskSpec {
+                title: "Add endpoint".to_string(),
+                description: "API handler".to_string(),
+                acceptance_criteria: vec![],
+                dependencies: vec![],
+                agent: "backend-dev".to_string(),
+            },
+        ];
+
+        state.record_feature_outcome(&feature);
+
+        let history = state.agent_history.lock().unwrap();
+        assert_eq!(history.len(), 2);
+        assert_eq!(history[0].agent, "frontend-dev");
+        assert_eq!(history[0].task_category, "frontend");
+        assert!(history[0].succeeded);
+        assert_eq!(history[1].agent, "backend-dev");
+        assert_eq!(history[1].task_category, "backend");
+
+        // Verify persisted to disk
+        assert!(dir.path().join("agent_history.json").exists());
     }
 }

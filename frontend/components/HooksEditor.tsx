@@ -1,31 +1,37 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useTauri } from "../hooks/useTauri";
 import type {
   RepoHooks,
   HookRule,
   HookHandler,
-  HookTemplate,
   HookEventName,
+  GeneratedHook,
 } from "../types";
 import { HOOK_EVENTS } from "../types";
 import { useToast } from "../hooks/useToast";
 
 interface HooksEditorProps {
   repoPath: string;
+  onHooksChanged?: () => void;
 }
 
 const EMPTY_HANDLER: HookHandler = { type: "command", command: "" };
 
-export function HooksEditor({ repoPath }: HooksEditorProps) {
+export function HooksEditor({ repoPath, onHooksChanged }: HooksEditorProps) {
   const tauri = useTauri();
   const { addToast } = useToast();
 
   const [hooks, setHooks] = useState<RepoHooks>({});
-  const [templates, setTemplates] = useState<HookTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [showTemplates, setShowTemplates] = useState(false);
-  const [showAddCustom, setShowAddCustom] = useState(false);
+  const [showAdd, setShowAdd] = useState(false);
+
+  // Auto-generate state
+  const [showGenerate, setShowGenerate] = useState(false);
+  const [generateDesc, setGenerateDesc] = useState("");
+  const [generating, setGenerating] = useState(false);
+  const [generatedHook, setGeneratedHook] = useState<GeneratedHook | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Custom hook form
   const [newEvent, setNewEvent] = useState<HookEventName>("PostToolUse");
@@ -34,12 +40,8 @@ export function HooksEditor({ repoPath }: HooksEditorProps) {
 
   const loadHooks = useCallback(() => {
     setLoading(true);
-    Promise.all([
-      tauri.getRepoHooks(repoPath),
-      tauri.listHookTemplates(),
-    ]).then(([h, t]) => {
+    tauri.getRepoHooks(repoPath).then((h) => {
       setHooks(h);
-      setTemplates(t);
       setLoading(false);
     }).catch(() => setLoading(false));
   }, [repoPath]);
@@ -52,6 +54,7 @@ export function HooksEditor({ repoPath }: HooksEditorProps) {
       await tauri.saveRepoHooks(repoPath, updated);
       setHooks(updated);
       addToast("Hooks saved", "success");
+      onHooksChanged?.();
     } catch (e) {
       addToast(`Failed to save hooks: ${e}`, "error");
     }
@@ -83,17 +86,82 @@ export function HooksEditor({ repoPath }: HooksEditorProps) {
     save(updated);
   };
 
-  const applyTemplate = (template: HookTemplate) => {
-    addRule(template.event as HookEventName, template.matcher, template.command);
-    setShowTemplates(false);
-  };
-
-  const handleAddCustom = () => {
+  const handleAdd = () => {
     if (!newCommand.trim()) return;
     addRule(newEvent, newMatcher.trim(), newCommand.trim());
     setNewCommand("");
     setNewMatcher("");
-    setShowAddCustom(false);
+    setShowAdd(false);
+  };
+
+  const stopPolling = useCallback(() => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  }, []);
+
+  // Cleanup polling on unmount
+  useEffect(() => stopPolling, [stopPolling]);
+
+  const handleGenerate = async () => {
+    if (!generateDesc.trim()) return;
+    setGenerating(true);
+    setGeneratedHook(null);
+
+    try {
+      await tauri.generateHook(generateDesc.trim());
+
+      // Poll for completion
+      pollRef.current = setInterval(async () => {
+        try {
+          const result = await tauri.checkHookGeneration();
+          if (result !== null) {
+            stopPolling();
+            setGenerating(false);
+            try {
+              const parsed = JSON.parse(result) as GeneratedHook;
+              setGeneratedHook(parsed);
+            } catch {
+              addToast("Generated output wasn't valid JSON", "error");
+            }
+          }
+        } catch (e) {
+          stopPolling();
+          setGenerating(false);
+          addToast(`Hook generation failed: ${e}`, "error");
+        }
+      }, 2000);
+
+      // Timeout after 2 minutes
+      setTimeout(() => {
+        if (pollRef.current) {
+          stopPolling();
+          setGenerating(false);
+          addToast("Hook generation timed out", "error");
+        }
+      }, 120000);
+    } catch (e) {
+      setGenerating(false);
+      addToast(`Failed to start generation: ${e}`, "error");
+    }
+  };
+
+  const applyGeneratedHook = () => {
+    if (!generatedHook) return;
+    addRule(
+      generatedHook.event as HookEventName,
+      generatedHook.matcher,
+      generatedHook.command,
+    );
+    setGeneratedHook(null);
+    setGenerateDesc("");
+    setShowGenerate(false);
+    addToast(`Hook "${generatedHook.name}" added`, "success");
+  };
+
+  const discardGeneratedHook = () => {
+    setGeneratedHook(null);
   };
 
   if (loading) {
@@ -128,88 +196,28 @@ export function HooksEditor({ repoPath }: HooksEditorProps) {
           <button
             className="btn btn-secondary btn-sm"
             onClick={() => {
-              setShowTemplates(!showTemplates);
-              setShowAddCustom(false);
+              setShowAdd(!showAdd);
+              setShowGenerate(false);
             }}
             disabled={saving}
           >
-            + Template
+            + Add
           </button>
           <button
             className="btn btn-secondary btn-sm"
             onClick={() => {
-              setShowAddCustom(!showAddCustom);
-              setShowTemplates(false);
+              setShowGenerate(!showGenerate);
+              setShowAdd(false);
             }}
-            disabled={saving}
+            disabled={saving || generating}
           >
-            + Custom
+            {generating ? "Generating..." : "Create with AI"}
           </button>
         </div>
       </div>
 
-      {/* Template picker */}
-      {showTemplates && (
-        <div
-          style={{
-            background: "var(--bg-raised)",
-            border: "1px solid var(--border)",
-            borderRadius: "var(--radius)",
-            padding: 12,
-            marginBottom: 8,
-          }}
-        >
-          <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 8 }}>
-            Quick-add a hook from a template. You can customize the command after adding.
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {templates.map((t) => {
-              const eventInfo = HOOK_EVENTS.find((e) => e.value === t.event);
-              return (
-                <div
-                  key={t.id}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    padding: "8px 10px",
-                    background: "var(--panel)",
-                    borderRadius: "var(--radius-sm)",
-                    cursor: "pointer",
-                  }}
-                  onClick={() => applyTemplate(t)}
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(e) => e.key === "Enter" && applyTemplate(t)}
-                >
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 500 }}>{t.name}</div>
-                    <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>
-                      {t.description}
-                    </div>
-                  </div>
-                  <span
-                    style={{
-                      fontSize: 11,
-                      padding: "2px 6px",
-                      background: "var(--bg)",
-                      borderRadius: "var(--radius-sm)",
-                      color: "var(--accent)",
-                      whiteSpace: "nowrap",
-                      marginLeft: 8,
-                    }}
-                  >
-                    {eventInfo?.label || t.event}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Custom hook form */}
-      {showAddCustom && (
+      {/* Add hook form */}
+      {showAdd && (
         <div
           style={{
             background: "var(--bg-raised)",
@@ -266,14 +274,14 @@ export function HooksEditor({ repoPath }: HooksEditorProps) {
           <div className="actions-bar" style={{ gap: 4 }}>
             <button
               className="btn btn-primary btn-sm"
-              onClick={handleAddCustom}
+              onClick={handleAdd}
               disabled={!newCommand.trim()}
             >
               Add Hook
             </button>
             <button
               className="btn btn-secondary btn-sm"
-              onClick={() => setShowAddCustom(false)}
+              onClick={() => setShowAdd(false)}
             >
               Cancel
             </button>
@@ -281,10 +289,140 @@ export function HooksEditor({ repoPath }: HooksEditorProps) {
         </div>
       )}
 
+      {/* Auto-generate hook */}
+      {showGenerate && !generating && !generatedHook && (
+        <div
+          style={{
+            background: "var(--bg-raised)",
+            border: "1px solid var(--border)",
+            borderRadius: "var(--radius)",
+            padding: 12,
+            marginBottom: 8,
+          }}
+        >
+          <div style={{ marginBottom: 8 }}>
+            <div style={{ fontSize: 13, fontWeight: 500 }}>Describe your hook</div>
+            <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 2 }}>
+              Tell Claude what the hook should do. It will generate the event, matcher, and command.
+            </div>
+          </div>
+          <textarea
+            className="form-textarea"
+            value={generateDesc}
+            onChange={(e) => setGenerateDesc(e.target.value)}
+            placeholder='e.g. "Block any commands that delete migration files", "Run cargo test after Rust file edits", "Log a warning when Claude reads files in the secrets/ directory"'
+            style={{ minHeight: 60, marginBottom: 8, fontFamily: "var(--font-mono)", fontSize: 12 }}
+            autoFocus
+          />
+          <div className="actions-bar" style={{ gap: 4 }}>
+            <button
+              className="btn btn-primary btn-sm"
+              onClick={handleGenerate}
+              disabled={!generateDesc.trim()}
+            >
+              Generate
+            </button>
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={() => { setShowGenerate(false); setGenerateDesc(""); }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {generating && (
+        <div
+          style={{
+            background: "var(--bg-raised)",
+            border: "1px solid var(--border)",
+            borderRadius: "var(--radius)",
+            padding: 16,
+            marginBottom: 8,
+            textAlign: "center",
+          }}
+        >
+          <div className="spinner" style={{ marginBottom: 8 }} />
+          <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+            Claude is crafting your hook...
+          </div>
+        </div>
+      )}
+
+      {/* Generated hook preview */}
+      {generatedHook && (
+        <div
+          style={{
+            background: "var(--bg-raised)",
+            border: "1px solid var(--accent)",
+            borderRadius: "var(--radius)",
+            padding: 12,
+            marginBottom: 8,
+          }}
+        >
+          <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 8 }}>
+            Generated: {generatedHook.name}
+          </div>
+          <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 8 }}>
+            {generatedHook.description}
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+            <span
+              style={{
+                fontSize: 11,
+                padding: "2px 6px",
+                background: "var(--panel)",
+                borderRadius: "var(--radius-sm)",
+                color: "var(--accent)",
+              }}
+            >
+              {HOOK_EVENTS.find((e) => e.value === generatedHook.event)?.label || generatedHook.event}
+            </span>
+            {generatedHook.matcher && (
+              <span
+                style={{
+                  fontSize: 11,
+                  fontFamily: "var(--font-mono)",
+                  padding: "2px 6px",
+                  background: "var(--panel)",
+                  borderRadius: "var(--radius-sm)",
+                  color: "var(--accent-brass)",
+                }}
+              >
+                {generatedHook.matcher}
+              </span>
+            )}
+          </div>
+          <code
+            style={{
+              display: "block",
+              fontSize: 12,
+              padding: 8,
+              background: "var(--panel)",
+              borderRadius: "var(--radius-sm)",
+              whiteSpace: "pre-wrap",
+              wordBreak: "break-all",
+              marginBottom: 8,
+            }}
+          >
+            {generatedHook.command}
+          </code>
+          <div className="actions-bar" style={{ gap: 4 }}>
+            <button className="btn btn-primary btn-sm" onClick={applyGeneratedHook}>
+              Add to Repo
+            </button>
+            <button className="btn btn-secondary btn-sm" onClick={discardGeneratedHook}>
+              Discard
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Existing hooks */}
-      {ruleCount === 0 && !showTemplates && !showAddCustom ? (
+      {ruleCount === 0 && !showAdd ? (
         <div style={{ fontSize: 12, color: "var(--muted)", padding: "4px 0" }}>
-          No hooks wired up yet. Add a template or write your own.
+          No hooks wired up yet.
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>

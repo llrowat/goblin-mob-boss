@@ -28,6 +28,8 @@ import type {
   DocumentAttachment,
   RepoHooks,
   HookTemplate,
+  AgentPerformanceSummary,
+  AgentTaskRecord,
 } from "../types";
 
 export function useTauri() {
@@ -297,12 +299,15 @@ export function useTauri() {
     pollPtyOutput: (sessionId: string) =>
       invoke<[string, boolean, number | null]>("poll_pty_output", { sessionId }),
 
-    // Built-in Agents & Recipes
+    // Built-in Agents, Skills & Recipes
     listBuiltInAgents: () =>
       invoke<AgentFile[]>("list_built_in_agents"),
 
     addBuiltInAgent: (repoPath: string, filename: string) =>
       invoke<AgentFile>("add_built_in_agent", { repoPath, filename }),
+
+    listBuiltInSkills: () =>
+      invoke<SkillFile[]>("list_built_in_skills"),
 
     listFeatureRecipes: () =>
       invoke<FeatureRecipe[]>("list_feature_recipes"),
@@ -386,5 +391,18 @@ export function useTauri() {
         repoPath: args.repoPath ?? null,
         maxLines: args.maxLines ?? null,
       }),
+
+    generateHook: (description: string) =>
+      invoke<void>("generate_hook", { description }),
+
+    checkHookGeneration: () =>
+      invoke<string | null>("check_hook_generation"),
+
+    // Agent History
+    getAgentSummaries: () =>
+      invoke<AgentPerformanceSummary[]>("get_agent_summaries"),
+
+    getAgentHistory: (agent?: string) =>
+      invoke<AgentTaskRecord[]>("get_agent_history", { agent: agent || null }),
   };
 }

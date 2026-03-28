@@ -43,11 +43,23 @@ describe("ReposPage", () => {
     },
   ];
 
-  function mockInvokeForRepos(repos = mockRepos) {
-    vi.mocked(invoke).mockImplementation((cmd: string) => {
+  const HOOKS_WITH_RULES = {
+    PostToolUse: [
+      { matcher: "Edit|Write", hooks: [{ type: "command", command: "npm run lint" }] },
+    ],
+  };
+
+  function mockInvokeForRepos(repos = mockRepos, hookOverrides: Record<string, unknown> = {}) {
+    vi.mocked(invoke).mockImplementation((cmd: string, args?: unknown) => {
       if (cmd === "list_repositories") return Promise.resolve(repos);
       if (cmd === "update_repository") return Promise.resolve(undefined);
       if (cmd === "remove_repository") return Promise.resolve(undefined);
+      if (cmd === "get_repo_hooks") {
+        const repoPath = (args as { repoPath: string })?.repoPath;
+        if (repoPath && hookOverrides[repoPath]) return Promise.resolve(hookOverrides[repoPath]);
+        return Promise.resolve({});
+      }
+      if (cmd === "list_hook_templates") return Promise.resolve([]);
       return Promise.resolve(undefined);
     });
   }
@@ -362,5 +374,51 @@ describe("ReposPage", () => {
 
     // The checkbox should be checked since repo-2 is in similar_repo_ids
     expect(checkboxes[0]).toBeChecked();
+  });
+
+  it("shows hooks toggle button for each repo", async () => {
+    mockInvokeForRepos();
+
+    render(<ReposPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("frontend-app")).toBeInTheDocument();
+    });
+
+    const hookButtons = screen.getAllByText("Hooks");
+    expect(hookButtons).toHaveLength(2);
+  });
+
+  it("shows hook count on button when hooks exist", async () => {
+    mockInvokeForRepos(mockRepos, {
+      "/home/user/projects/frontend-app": HOOKS_WITH_RULES,
+    });
+
+    render(<ReposPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("frontend-app")).toBeInTheDocument();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("(1)")).toBeInTheDocument();
+    });
+  });
+
+  it("expands hooks editor when Hooks button is clicked", async () => {
+    mockInvokeForRepos();
+
+    render(<ReposPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("frontend-app")).toBeInTheDocument();
+    });
+
+    const hookButtons = screen.getAllByText("Hooks");
+    fireEvent.click(hookButtons[0]);
+
+    await waitFor(() => {
+      expect(screen.getByText("Loading hooks...")).toBeInTheDocument();
+    });
   });
 });

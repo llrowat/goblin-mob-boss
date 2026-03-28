@@ -77,19 +77,31 @@ Without GMB, getting good results from Claude Code agents means manually wrangli
 ### Agents & Skills
 - **Agents** defined as `.claude/agents/*.md` with YAML frontmatter
 - Form-based editor with color picker, role selector, tools, model, and system prompt
-- Built-in agent templates (Frontend Dev, Backend Dev, Test Engineer, Code Reviewer, etc.)
-- Quality-role agents automatically included as verification steps in every plan
+- Built-in agent templates (Developer, Architect, Repo Explorer, QA Tester) — lean roster, add more as needed
 - Per-repo and global agents
+- **Agent track record** — performance history (success rate, task categories, avg duration) shown on each agent card and injected into planning prompts so Claude makes better agent assignments
 - **Skills** defined as `.claude/skills/<name>/SKILL.md` — reusable workflows
+- Built-in skill templates (review-plan, validate-and-fix, summarize-diff, write-pr-description, check-coverage)
 - Create skills manually or auto-generate them with Claude (describe what you want, Claude writes the SKILL.md)
 - Skills from installed plugins are discovered and shown alongside user-created skills
 - Tabbed Agents + Skills UI
+
+### Contextual Help & Onboarding
+- Expandable "What is this?" help sections on key concepts: execution modes, agents, skills, validators, planning, functional testing, system maps
+- Enhanced onboarding walkthrough with concept explanations at each step
+- Progressive disclosure — beginners get guidance, power users can collapse it
 
 ### System Map
 - Map your service topology: backends, frontends, workers, databases, queues, caches, external services
 - Connection types: REST, gRPC, GraphQL, WebSocket, event, shared DB, file system, IPC
 - Interactive SVG visualization with drag-and-drop layout
 - Auto-discovery mode: Claude scans your repos to find services and connections
+
+### Hooks
+- Per-repo hook management via `.claude/settings.json`
+- 15+ built-in hook templates organized by category (quality, safety, workflow, notifications)
+- Auto-create hooks with Claude — describe what you want, Claude generates the event, matcher, and command
+- Preview generated hooks before applying
 
 ### Validation & Git
 - Per-repo validators (tests, linters) run in isolated worktrees

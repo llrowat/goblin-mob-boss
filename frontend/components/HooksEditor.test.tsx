@@ -2,7 +2,7 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { HooksEditor } from "./HooksEditor";
 import { ToastProvider } from "../hooks/useToast";
-import type { RepoHooks, HookTemplate } from "../types";
+import type { RepoHooks } from "../types";
 
 function renderWithProviders(repoPath = "/test/repo") {
   return render(
@@ -13,25 +13,6 @@ function renderWithProviders(repoPath = "/test/repo") {
 }
 
 const EMPTY_HOOKS: RepoHooks = {};
-
-const SAMPLE_TEMPLATES: HookTemplate[] = [
-  {
-    id: "lint-on-save",
-    name: "Lint on save",
-    description: "Run linter after file edits",
-    event: "PostToolUse",
-    matcher: "Edit|Write",
-    command: "npm run lint --fix",
-  },
-  {
-    id: "test-on-stop",
-    name: "Test when done",
-    description: "Run tests after Claude finishes",
-    event: "Stop",
-    matcher: "",
-    command: "npm test",
-  },
-];
 
 const HOOKS_WITH_RULES: RepoHooks = {
   PostToolUse: [
@@ -58,7 +39,6 @@ describe("HooksEditor", () => {
   it("shows empty state when no hooks exist", async () => {
     vi.mocked(invoke).mockImplementation((cmd: string) => {
       if (cmd === "get_repo_hooks") return Promise.resolve(EMPTY_HOOKS);
-      if (cmd === "list_hook_templates") return Promise.resolve([]);
       return Promise.resolve(undefined);
     });
 
@@ -66,67 +46,35 @@ describe("HooksEditor", () => {
 
     await waitFor(() => {
       expect(
-        screen.getByText("No hooks wired up yet. Add a template or write your own."),
+        screen.getByText("No hooks wired up yet."),
       ).toBeInTheDocument();
     });
   });
 
-  it("shows templates panel when Template button is clicked", async () => {
+  it("shows add form when Add button is clicked", async () => {
     vi.mocked(invoke).mockImplementation((cmd: string) => {
       if (cmd === "get_repo_hooks") return Promise.resolve(EMPTY_HOOKS);
-      if (cmd === "list_hook_templates") return Promise.resolve(SAMPLE_TEMPLATES);
       return Promise.resolve(undefined);
     });
 
     renderWithProviders();
 
     await waitFor(() => {
-      expect(screen.getByText("+ Template")).toBeInTheDocument();
+      expect(screen.getByText("+ Add")).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByText("+ Template"));
-
-    expect(screen.getByText("Lint on save")).toBeInTheDocument();
-    expect(screen.getByText("Run linter after file edits")).toBeInTheDocument();
-    expect(screen.getByText("Test when done")).toBeInTheDocument();
-    expect(screen.getByText("Run tests after Claude finishes")).toBeInTheDocument();
-    expect(
-      screen.getByText("Quick-add a hook from a template. You can customize the command after adding."),
-    ).toBeInTheDocument();
-  });
-
-  it("shows custom hook form when Custom button is clicked", async () => {
-    vi.mocked(invoke).mockImplementation((cmd: string) => {
-      if (cmd === "get_repo_hooks") return Promise.resolve(EMPTY_HOOKS);
-      if (cmd === "list_hook_templates") return Promise.resolve([]);
-      return Promise.resolve(undefined);
-    });
-
-    renderWithProviders();
-
-    await waitFor(() => {
-      expect(screen.getByText("+ Custom")).toBeInTheDocument();
-    });
-
-    fireEvent.click(screen.getByText("+ Custom"));
+    fireEvent.click(screen.getByText("+ Add"));
 
     expect(screen.getByText("Event")).toBeInTheDocument();
     expect(screen.getByText("Matcher")).toBeInTheDocument();
     expect(screen.getByText("Command")).toBeInTheDocument();
     expect(screen.getByText("Add Hook")).toBeInTheDocument();
     expect(screen.getByText("Cancel")).toBeInTheDocument();
-    expect(
-      screen.getByPlaceholderText("e.g. Bash, Edit|Write, or leave blank for all"),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByPlaceholderText("e.g. npm run lint --fix"),
-    ).toBeInTheDocument();
   });
 
   it("displays existing hooks grouped by event", async () => {
     vi.mocked(invoke).mockImplementation((cmd: string) => {
       if (cmd === "get_repo_hooks") return Promise.resolve(HOOKS_WITH_RULES);
-      if (cmd === "list_hook_templates") return Promise.resolve([]);
       return Promise.resolve(undefined);
     });
 
@@ -147,7 +95,6 @@ describe("HooksEditor", () => {
     let savedHooks: RepoHooks | null = null;
     vi.mocked(invoke).mockImplementation((cmd: string, args?: unknown) => {
       if (cmd === "get_repo_hooks") return Promise.resolve(HOOKS_WITH_RULES);
-      if (cmd === "list_hook_templates") return Promise.resolve([]);
       if (cmd === "save_repo_hooks") {
         savedHooks = (args as { hooks: RepoHooks }).hooks;
         return Promise.resolve(undefined);
@@ -174,51 +121,28 @@ describe("HooksEditor", () => {
     expect(savedHooks!.Stop).toHaveLength(1);
   });
 
-  it("hides templates panel when Custom button is clicked", async () => {
-    vi.mocked(invoke).mockImplementation((cmd: string) => {
-      if (cmd === "get_repo_hooks") return Promise.resolve(EMPTY_HOOKS);
-      if (cmd === "list_hook_templates") return Promise.resolve(SAMPLE_TEMPLATES);
-      return Promise.resolve(undefined);
-    });
-
-    renderWithProviders();
-
-    await waitFor(() => {
-      expect(screen.getByText("+ Template")).toBeInTheDocument();
-    });
-
-    fireEvent.click(screen.getByText("+ Template"));
-    expect(screen.getByText("Lint on save")).toBeInTheDocument();
-
-    fireEvent.click(screen.getByText("+ Custom"));
-    expect(screen.queryByText("Lint on save")).not.toBeInTheDocument();
-    expect(screen.getByText("Add Hook")).toBeInTheDocument();
-  });
-
   it("disables Add Hook button when command is empty", async () => {
     vi.mocked(invoke).mockImplementation((cmd: string) => {
       if (cmd === "get_repo_hooks") return Promise.resolve(EMPTY_HOOKS);
-      if (cmd === "list_hook_templates") return Promise.resolve([]);
       return Promise.resolve(undefined);
     });
 
     renderWithProviders();
 
     await waitFor(() => {
-      expect(screen.getByText("+ Custom")).toBeInTheDocument();
+      expect(screen.getByText("+ Add")).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByText("+ Custom"));
+    fireEvent.click(screen.getByText("+ Add"));
 
     const addButton = screen.getByText("Add Hook");
     expect(addButton).toBeDisabled();
   });
 
-  it("submits a custom hook when Add Hook is clicked with a command", async () => {
+  it("submits a hook when Add Hook is clicked with a command", async () => {
     let savedHooks: RepoHooks | null = null;
     vi.mocked(invoke).mockImplementation((cmd: string, args?: unknown) => {
       if (cmd === "get_repo_hooks") return Promise.resolve(EMPTY_HOOKS);
-      if (cmd === "list_hook_templates") return Promise.resolve([]);
       if (cmd === "save_repo_hooks") {
         savedHooks = (args as { hooks: RepoHooks }).hooks;
         return Promise.resolve(undefined);
@@ -229,10 +153,10 @@ describe("HooksEditor", () => {
     renderWithProviders();
 
     await waitFor(() => {
-      expect(screen.getByText("+ Custom")).toBeInTheDocument();
+      expect(screen.getByText("+ Add")).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByText("+ Custom"));
+    fireEvent.click(screen.getByText("+ Add"));
 
     fireEvent.change(screen.getByPlaceholderText("e.g. npm run lint --fix"), {
       target: { value: "cargo test" },
@@ -248,36 +172,6 @@ describe("HooksEditor", () => {
     expect(savedHooks!.PostToolUse![0].hooks[0].command).toBe("cargo test");
   });
 
-  it("applies a template when a template row is clicked", async () => {
-    let savedHooks: RepoHooks | null = null;
-    vi.mocked(invoke).mockImplementation((cmd: string, args?: unknown) => {
-      if (cmd === "get_repo_hooks") return Promise.resolve(EMPTY_HOOKS);
-      if (cmd === "list_hook_templates") return Promise.resolve(SAMPLE_TEMPLATES);
-      if (cmd === "save_repo_hooks") {
-        savedHooks = (args as { hooks: RepoHooks }).hooks;
-        return Promise.resolve(undefined);
-      }
-      return Promise.resolve(undefined);
-    });
-
-    renderWithProviders();
-
-    await waitFor(() => {
-      expect(screen.getByText("+ Template")).toBeInTheDocument();
-    });
-
-    fireEvent.click(screen.getByText("+ Template"));
-    fireEvent.click(screen.getByText("Lint on save"));
-
-    await waitFor(() => {
-      expect(savedHooks).not.toBeNull();
-    });
-
-    expect(savedHooks!.PostToolUse).toHaveLength(1);
-    expect(savedHooks!.PostToolUse![0].matcher).toBe("Edit|Write");
-    expect(savedHooks!.PostToolUse![0].hooks[0].command).toBe("npm run lint --fix");
-  });
-
   it("shows singular rule text for exactly one rule", async () => {
     const singleRuleHooks: RepoHooks = {
       PostToolUse: [
@@ -287,7 +181,6 @@ describe("HooksEditor", () => {
 
     vi.mocked(invoke).mockImplementation((cmd: string) => {
       if (cmd === "get_repo_hooks") return Promise.resolve(singleRuleHooks);
-      if (cmd === "list_hook_templates") return Promise.resolve([]);
       return Promise.resolve(undefined);
     });
 
@@ -296,5 +189,93 @@ describe("HooksEditor", () => {
     await waitFor(() => {
       expect(screen.getByText("(1 rule)")).toBeInTheDocument();
     });
+  });
+
+  it("shows Create with AI button", async () => {
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "get_repo_hooks") return Promise.resolve(EMPTY_HOOKS);
+      return Promise.resolve(undefined);
+    });
+
+    renderWithProviders();
+
+    await waitFor(() => {
+      expect(screen.getByText("Create with AI")).toBeInTheDocument();
+    });
+  });
+
+  it("shows generate form when Create with AI is clicked", async () => {
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "get_repo_hooks") return Promise.resolve(EMPTY_HOOKS);
+      return Promise.resolve(undefined);
+    });
+
+    renderWithProviders();
+
+    await waitFor(() => {
+      expect(screen.getByText("Create with AI")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText("Create with AI"));
+
+    expect(screen.getByText("Describe your hook")).toBeInTheDocument();
+    expect(screen.getByText("Generate")).toBeInTheDocument();
+    expect(screen.getByText("Cancel")).toBeInTheDocument();
+  });
+
+  it("disables Generate button when description is empty", async () => {
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "get_repo_hooks") return Promise.resolve(EMPTY_HOOKS);
+      return Promise.resolve(undefined);
+    });
+
+    renderWithProviders();
+
+    await waitFor(() => {
+      expect(screen.getByText("Create with AI")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText("Create with AI"));
+
+    expect(screen.getByText("Generate")).toBeDisabled();
+  });
+
+  it("hides generate form when Cancel is clicked", async () => {
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "get_repo_hooks") return Promise.resolve(EMPTY_HOOKS);
+      return Promise.resolve(undefined);
+    });
+
+    renderWithProviders();
+
+    await waitFor(() => {
+      expect(screen.getByText("Create with AI")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText("Create with AI"));
+    expect(screen.getByText("Describe your hook")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("Cancel"));
+    expect(screen.queryByText("Describe your hook")).not.toBeInTheDocument();
+  });
+
+  it("hides add form when Create with AI is clicked", async () => {
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "get_repo_hooks") return Promise.resolve(EMPTY_HOOKS);
+      return Promise.resolve(undefined);
+    });
+
+    renderWithProviders();
+
+    await waitFor(() => {
+      expect(screen.getByText("+ Add")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText("+ Add"));
+    expect(screen.getByText("Add Hook")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("Create with AI"));
+    expect(screen.queryByText("Add Hook")).not.toBeInTheDocument();
+    expect(screen.getByText("Describe your hook")).toBeInTheDocument();
   });
 });

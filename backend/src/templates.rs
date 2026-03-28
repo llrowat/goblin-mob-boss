@@ -1,4 +1,4 @@
-use crate::models::AgentFile;
+use crate::models::{AgentFile, SkillFile, SkillSource};
 use serde::{Deserialize, Serialize};
 
 // ── Built-in Agents ──
@@ -10,162 +10,50 @@ use serde::{Deserialize, Serialize};
 pub fn built_in_agents() -> Vec<AgentFile> {
     vec![
         AgentFile {
-            filename: "frontend-developer.md".to_string(),
-            name: "Frontend Developer".to_string(),
-            description: "React/TypeScript UI specialist".to_string(),
+            filename: "developer.md".to_string(),
+            name: "Developer".to_string(),
+            description: "General-purpose coding agent — frontend, backend, full-stack".to_string(),
             tools: Some("Read, Edit, Write, Bash, Glob, Grep".to_string()),
             model: None,
-            system_prompt: r#"You are a frontend development specialist. Your expertise includes:
-
-- React components (functional, hooks, context)
-- TypeScript types and interfaces
-- CSS/styling (modules, Tailwind, styled-components)
-- State management (useState, useReducer, Zustand, Redux)
-- Accessibility (ARIA attributes, keyboard navigation, screen readers)
-- Performance optimization (memoization, lazy loading, code splitting)
+            system_prompt: r#"You are a software developer. You write, test, and debug code across the full stack.
 
 When working on tasks:
-- Write semantic HTML with proper ARIA attributes
-- Follow the project's existing component patterns and naming conventions
-- Use TypeScript strictly — avoid `any` types
-- Write unit tests for new components using the project's test framework
-- Keep components focused and composable"#.to_string(),
+- Read existing code first — follow the project's patterns, naming, and conventions
+- Write unit tests alongside your implementation
+- Keep changes focused — only modify what the task requires
+- Validate inputs at system boundaries, handle errors with clear messages
+- Use TypeScript strictly (no `any`), write semantic HTML, follow existing CSS patterns
+- Keep functions small with clear responsibility boundaries"#
+                .to_string(),
             is_global: true,
             color: "#5b8abd".to_string(),
             role: "developer".to_string(),
             enabled: true,
         },
         AgentFile {
-            filename: "backend-developer.md".to_string(),
-            name: "Backend Developer".to_string(),
-            description: "API and server-side specialist".to_string(),
-            tools: Some("Read, Edit, Write, Bash, Glob, Grep".to_string()),
-            model: None,
-            system_prompt: r#"You are a backend development specialist. Your expertise includes:
-
-- API design (REST, GraphQL)
-- Data modeling and database operations
-- Authentication and authorization
-- Error handling and validation
-- Performance and caching strategies
-- Security best practices (input sanitization, SQL injection prevention)
-
-When working on tasks:
-- Follow the project's existing API patterns and conventions
-- Write comprehensive error handling with meaningful error messages
-- Validate inputs at system boundaries
-- Write unit tests for business logic and integration tests for endpoints
-- Keep functions focused with clear responsibility boundaries
-- Document complex business logic with comments"#.to_string(),
-            is_global: true,
-            color: "#6b9e6b".to_string(),
-            role: "developer".to_string(),
-            enabled: true,
-        },
-        AgentFile {
-            filename: "test-engineer.md".to_string(),
-            name: "Test Engineer".to_string(),
-            description: "Testing and quality assurance specialist".to_string(),
-            tools: Some("Read, Edit, Write, Bash, Glob, Grep".to_string()),
-            model: None,
-            system_prompt: r#"You are a testing specialist. Your expertise includes:
-
-- Unit testing (isolating components, mocking dependencies)
-- Integration testing (testing component interactions)
-- Test-driven development (TDD)
-- Edge case identification and boundary testing
-- Test organization and naming conventions
-
-When working on tasks:
-- Write tests that verify behavior, not implementation details
-- Use descriptive test names that explain what is being tested
-- Cover happy path, error cases, and edge cases
-- Follow the project's existing test patterns and framework
-- Mock external dependencies appropriately
-- Keep tests focused — one assertion concept per test
-- Ensure tests are deterministic and don't depend on execution order"#.to_string(),
-            is_global: true,
-            color: "#c9a84c".to_string(),
-            role: "quality".to_string(),
-            enabled: true,
-        },
-        AgentFile {
-            filename: "code-reviewer.md".to_string(),
-            name: "Code Reviewer".to_string(),
-            description: "Code quality and review specialist".to_string(),
+            filename: "architect.md".to_string(),
+            name: "Architect".to_string(),
+            description: "System design, planning, and code review specialist".to_string(),
             tools: Some("Read, Glob, Grep, Bash".to_string()),
             model: None,
-            system_prompt: r#"You are a code review specialist. Your expertise includes:
+            system_prompt: r#"You are a software architect. You design systems, review code, and plan implementations.
 
-- Code quality assessment (readability, maintainability, correctness)
-- Security vulnerability detection (OWASP top 10)
-- Performance analysis (algorithmic complexity, resource usage)
-- Consistency checking (naming, patterns, style)
-- Architecture review (coupling, cohesion, SOLID principles)
+Your responsibilities:
+- Evaluate technical approaches and recommend the best path forward
+- Review code for correctness, security (OWASP top 10), and maintainability
+- Identify coupling, missing error handling, race conditions, and edge cases
+- Propose task breakdowns with clear dependencies and acceptance criteria
+- Assess whether work should be parallelized (teams) or sequential (subagents)
 
-When reviewing code:
+When reviewing or planning:
+- Be specific — reference file paths, line numbers, and concrete examples
 - Focus on correctness and security first, style second
-- Flag potential bugs, race conditions, and edge cases
-- Suggest concrete improvements with code examples
-- Check for proper error handling and input validation
-- Verify test coverage for new or changed code
-- Be specific — reference file paths and line numbers"#.to_string(),
+- Consider the project's existing architecture before proposing changes
+- Flag risks and trade-offs explicitly"#
+                .to_string(),
             is_global: true,
             color: "#9b6b9e".to_string(),
-            role: "quality".to_string(),
-            enabled: true,
-        },
-        AgentFile {
-            filename: "devops-engineer.md".to_string(),
-            name: "DevOps Engineer".to_string(),
-            description: "CI/CD and infrastructure specialist".to_string(),
-            tools: Some("Read, Edit, Write, Bash, Glob, Grep".to_string()),
-            model: None,
-            system_prompt: r#"You are a DevOps and infrastructure specialist. Your expertise includes:
-
-- CI/CD pipelines (GitHub Actions, GitLab CI)
-- Docker and containerization
-- Build configuration and optimization
-- Environment management and secrets
-- Deployment strategies (blue-green, canary, rolling)
-- Monitoring and logging setup
-
-When working on tasks:
-- Follow security best practices for secrets and credentials
-- Keep configurations DRY and well-documented
-- Use environment variables for environment-specific values
-- Write idempotent scripts and configurations
-- Test pipeline changes in isolation before merging
-- Document any manual steps required for deployment"#.to_string(),
-            is_global: true,
-            color: "#c45a6a".to_string(),
-            role: "infrastructure".to_string(),
-            enabled: true,
-        },
-        AgentFile {
-            filename: "documentation-writer.md".to_string(),
-            name: "Documentation Writer".to_string(),
-            description: "Technical documentation specialist".to_string(),
-            tools: Some("Read, Edit, Write, Glob, Grep".to_string()),
-            model: None,
-            system_prompt: r#"You are a technical documentation specialist. Your expertise includes:
-
-- README and project documentation
-- API documentation (endpoints, parameters, examples)
-- Code comments and inline documentation
-- Architecture decision records (ADRs)
-- User guides and tutorials
-
-When working on tasks:
-- Write clear, concise documentation aimed at the target audience
-- Include practical code examples and usage patterns
-- Keep documentation in sync with the code it describes
-- Use consistent formatting and structure
-- Document the "why" behind decisions, not just the "what"
-- Include troubleshooting sections for common issues"#.to_string(),
-            is_global: true,
-            color: "#7ba3cc".to_string(),
-            role: "documentation".to_string(),
+            role: "architect".to_string(),
             enabled: true,
         },
         AgentFile {
@@ -259,6 +147,253 @@ You are best-effort QA. Your goal is to catch obvious functional regressions and
     ]
 }
 
+// ── Built-in Hook Templates ──
+// Pre-built hooks for common Claude Code workflows, grouped by category.
+
+/// Return the built-in hook templates.
+pub fn built_in_hook_templates() -> Vec<crate::models::HookTemplate> {
+    use crate::models::HookTemplate;
+    vec![
+        // ── Quality ──
+        HookTemplate {
+            id: "lint-on-write".into(),
+            name: "Lint on file change".into(),
+            description: "Run your linter after Claude edits or creates a file".into(),
+            event: "PostToolUse".into(),
+            matcher: "Edit|Write".into(),
+            command: "npm run lint --fix".into(),
+            category: "quality".into(),
+        },
+        HookTemplate {
+            id: "format-on-write".into(),
+            name: "Format on file change".into(),
+            description: "Auto-format files after Claude edits or creates them".into(),
+            event: "PostToolUse".into(),
+            matcher: "Edit|Write".into(),
+            command: "npx prettier --write".into(),
+            category: "quality".into(),
+        },
+        HookTemplate {
+            id: "typecheck-on-write".into(),
+            name: "Type-check on file change".into(),
+            description: "Run the TypeScript compiler after file edits to catch type errors early"
+                .into(),
+            event: "PostToolUse".into(),
+            matcher: "Edit|Write".into(),
+            command: "npx tsc --noEmit".into(),
+            category: "quality".into(),
+        },
+        HookTemplate {
+            id: "test-after-bash".into(),
+            name: "Run tests after shell commands".into(),
+            description: "Automatically run your test suite after Claude executes shell commands"
+                .into(),
+            event: "PostToolUse".into(),
+            matcher: "Bash".into(),
+            command: "npm test".into(),
+            category: "quality".into(),
+        },
+        HookTemplate {
+            id: "clippy-on-write".into(),
+            name: "Run Clippy on file change".into(),
+            description: "Run cargo clippy after Rust file edits to catch lint warnings".into(),
+            event: "PostToolUse".into(),
+            matcher: "Edit|Write".into(),
+            command: "cargo clippy --quiet 2>&1 | head -20".into(),
+            category: "quality".into(),
+        },
+        // ── Safety ──
+        HookTemplate {
+            id: "block-force-push".into(),
+            name: "Block force push".into(),
+            description: "Prevent Claude from running git push --force".into(),
+            event: "PreToolUse".into(),
+            matcher: "Bash".into(),
+            command: "if echo \"$CLAUDE_TOOL_INPUT\" | grep -q 'push.*--force\\|push.*-f'; then echo 'Force push blocked' >&2; exit 2; fi".into(),
+            category: "safety".into(),
+        },
+        HookTemplate {
+            id: "block-main-commit".into(),
+            name: "Block commits to main".into(),
+            description: "Prevent Claude from committing directly to main or master".into(),
+            event: "PreToolUse".into(),
+            matcher: "Bash".into(),
+            command: "if echo \"$CLAUDE_TOOL_INPUT\" | grep -q 'git commit'; then branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null); if [ \"$branch\" = \"main\" ] || [ \"$branch\" = \"master\" ]; then echo \"Cannot commit to $branch\" >&2; exit 2; fi; fi".into(),
+            category: "safety".into(),
+        },
+        HookTemplate {
+            id: "block-env-read".into(),
+            name: "Block .env file reads".into(),
+            description: "Prevent Claude from reading .env files that may contain secrets".into(),
+            event: "PreToolUse".into(),
+            matcher: "Read".into(),
+            command: "if echo \"$CLAUDE_TOOL_INPUT\" | grep -qE '\\.env($|\\.)'; then echo 'Reading .env files is blocked' >&2; exit 2; fi".into(),
+            category: "safety".into(),
+        },
+        HookTemplate {
+            id: "block-rm-rf".into(),
+            name: "Block recursive deletes".into(),
+            description: "Prevent Claude from running rm -rf or similar destructive commands".into(),
+            event: "PreToolUse".into(),
+            matcher: "Bash".into(),
+            command: "if echo \"$CLAUDE_TOOL_INPUT\" | grep -qE 'rm\\s+(-[a-zA-Z]*r[a-zA-Z]*f|--recursive)'; then echo 'Recursive delete blocked' >&2; exit 2; fi".into(),
+            category: "safety".into(),
+        },
+        // ── Workflow ──
+        HookTemplate {
+            id: "env-setup".into(),
+            name: "Load environment on start".into(),
+            description: "Source a .env file or set up environment variables when a session starts"
+                .into(),
+            event: "SessionStart".into(),
+            matcher: "startup".into(),
+            command: "if [ -f .env ]; then export $(cat .env | grep -v '^#' | xargs); fi".into(),
+            category: "workflow".into(),
+        },
+        HookTemplate {
+            id: "git-status-on-stop".into(),
+            name: "Show git status when done".into(),
+            description: "Print a git status summary when Claude finishes, so you can see what changed".into(),
+            event: "Stop".into(),
+            matcher: "".into(),
+            command: "echo '--- Changes ---' && git diff --stat 2>/dev/null || true".into(),
+            category: "workflow".into(),
+        },
+        HookTemplate {
+            id: "auto-stage".into(),
+            name: "Auto-stage edited files".into(),
+            description: "Automatically git-add files after Claude edits them".into(),
+            event: "PostToolUse".into(),
+            matcher: "Edit|Write".into(),
+            command: "git add -N . 2>/dev/null || true".into(),
+            category: "workflow".into(),
+        },
+        // ── Notifications ──
+        HookTemplate {
+            id: "notify-on-stop".into(),
+            name: "Notify when done".into(),
+            description: "Send a desktop notification when Claude finishes its response".into(),
+            event: "Stop".into(),
+            matcher: "".into(),
+            command: "osascript -e 'display notification \"Claude is done\" with title \"Goblin Mob Boss\"'".into(),
+            category: "notifications".into(),
+        },
+        HookTemplate {
+            id: "notify-linux".into(),
+            name: "Notify when done (Linux)".into(),
+            description: "Send a desktop notification on Linux when Claude finishes".into(),
+            event: "Stop".into(),
+            matcher: "".into(),
+            command: "notify-send 'Goblin Mob Boss' 'Claude is done' 2>/dev/null || true".into(),
+            category: "notifications".into(),
+        },
+        HookTemplate {
+            id: "log-tool-usage".into(),
+            name: "Log tool usage".into(),
+            description: "Append a line to a log file every time Claude uses a tool".into(),
+            event: "PostToolUse".into(),
+            matcher: "".into(),
+            command: "echo \"$(date +%H:%M:%S) $CLAUDE_TOOL_NAME\" >> .claude-tool-log.txt".into(),
+            category: "notifications".into(),
+        },
+    ]
+}
+
+// ── Built-in Skills ──
+// Default skill definitions that users can add to their ~/.claude/skills/.
+
+/// Return the built-in skill definitions.
+pub fn built_in_skills() -> Vec<SkillFile> {
+    vec![
+        SkillFile {
+            dir_name: "review-plan".to_string(),
+            name: "review-plan".to_string(),
+            description: "Review an ideation plan and suggest improvements before execution"
+                .to_string(),
+            prompt_template: r#"Review the ideation plan for the current feature. Evaluate:
+
+1. **Task breakdown** — Are tasks well-scoped? Are there missing steps or unnecessary ones?
+2. **Dependencies** — Are task dependencies correct? Could more tasks run in parallel?
+3. **Agent assignments** — Are the right agents assigned to each task based on their strengths?
+4. **Acceptance criteria** — Are criteria specific and testable?
+5. **Execution mode** — Is the recommended mode (teams vs subagents) appropriate for this task graph?
+6. **Risk areas** — What could go wrong? Are there ambiguous requirements that need clarification?
+
+Output a concise review with specific suggestions. Flag anything that should be changed before launching execution."#
+                .to_string(),
+            source: SkillSource::User,
+            plugin_name: None,
+        },
+        SkillFile {
+            dir_name: "validate-and-fix".to_string(),
+            name: "validate-and-fix".to_string(),
+            description: "Run validators and auto-fix failures in a loop".to_string(),
+            prompt_template: r#"Run the project's validators (tests, linters, type checks) and fix any failures. Follow this loop:
+
+1. Run the test/lint/build commands for this project
+2. If everything passes, report success and stop
+3. If something fails, read the error output carefully
+4. Fix the root cause — don't suppress errors or skip tests
+5. Re-run validators to confirm the fix
+6. Repeat until all validators pass or you've attempted 3 fix cycles
+
+If you cannot fix a failure after 3 attempts, report what's still broken and why, so the user can decide how to proceed."#
+                .to_string(),
+            source: SkillSource::User,
+            plugin_name: None,
+        },
+        SkillFile {
+            dir_name: "summarize-diff".to_string(),
+            name: "summarize-diff".to_string(),
+            description: "Generate a human-readable summary of branch changes".to_string(),
+            prompt_template: r#"Summarize all changes on the current feature branch compared to the base branch. Produce a structured summary:
+
+1. **Overview** — One sentence describing what changed and why
+2. **Files changed** — Group by category (new files, modified, deleted) with a brief note on each
+3. **Key changes** — The most important behavioral changes, in plain language
+4. **Testing** — What tests were added or modified
+5. **Potential concerns** — Anything that looks risky, incomplete, or worth a second look
+
+Keep it concise. This summary should help a reviewer understand the branch in under 2 minutes."#
+                .to_string(),
+            source: SkillSource::User,
+            plugin_name: None,
+        },
+        SkillFile {
+            dir_name: "write-pr-description".to_string(),
+            name: "write-pr-description".to_string(),
+            description: "Draft a PR title and description from the branch diff".to_string(),
+            prompt_template: r#"Draft a pull request title and description for the current feature branch. Use `git diff` against the base branch and the feature context to write:
+
+1. **Title** — Short (under 70 chars), describes the change clearly
+2. **Summary** — 2-4 bullet points covering what changed and why
+3. **Test plan** — How to verify the changes work (manual steps or test commands)
+4. **Breaking changes** — Note any, or state "None"
+
+Format the output as markdown ready to paste into a PR form. Keep it factual — describe what the code does, not what you hope it does."#
+                .to_string(),
+            source: SkillSource::User,
+            plugin_name: None,
+        },
+        SkillFile {
+            dir_name: "check-coverage".to_string(),
+            name: "check-coverage".to_string(),
+            description: "Find untested code in changed files and suggest tests".to_string(),
+            prompt_template: r#"Analyze the files changed on the current feature branch and identify untested code paths. For each gap:
+
+1. Read the changed/new source files
+2. Read the corresponding test files (if they exist)
+3. Identify functions, branches, or edge cases that lack test coverage
+4. Suggest specific test cases to add — include the test name and what it should verify
+
+Focus on behavioral gaps (missing error cases, untested branches, new functions without tests), not line-by-line coverage metrics. Prioritize tests that would catch real bugs."#
+                .to_string(),
+            source: SkillSource::User,
+            plugin_name: None,
+        },
+    ]
+}
+
 // ── Feature Recipes ──
 // Pre-built task breakdowns for common feature patterns.
 
@@ -300,7 +435,7 @@ pub fn list_feature_recipes() -> Vec<FeatureRecipe> {
                         "Serialization to/from JSON works correctly".to_string(),
                     ],
                     dependencies: vec![],
-                    suggested_agent: "backend-developer".to_string(),
+                    suggested_agent: "developer".to_string(),
                 },
                 RecipeTask {
                     title: "Implement CRUD handlers".to_string(),
@@ -314,7 +449,7 @@ pub fn list_feature_recipes() -> Vec<FeatureRecipe> {
                         "Proper error responses for not-found and validation errors".to_string(),
                     ],
                     dependencies: vec!["1".to_string()],
-                    suggested_agent: "backend-developer".to_string(),
+                    suggested_agent: "developer".to_string(),
                 },
                 RecipeTask {
                     title: "Write tests".to_string(),
@@ -325,7 +460,7 @@ pub fn list_feature_recipes() -> Vec<FeatureRecipe> {
                         "Error case coverage (invalid input, not found)".to_string(),
                     ],
                     dependencies: vec!["2".to_string()],
-                    suggested_agent: "test-engineer".to_string(),
+                    suggested_agent: "developer".to_string(),
                 },
             ],
         },
@@ -345,7 +480,7 @@ pub fn list_feature_recipes() -> Vec<FeatureRecipe> {
                         "Navigation link added to sidebar/menu".to_string(),
                     ],
                     dependencies: vec![],
-                    suggested_agent: "frontend-developer".to_string(),
+                    suggested_agent: "developer".to_string(),
                 },
                 RecipeTask {
                     title: "Build UI components".to_string(),
@@ -356,7 +491,7 @@ pub fn list_feature_recipes() -> Vec<FeatureRecipe> {
                         "Loading and error states handled".to_string(),
                     ],
                     dependencies: vec!["1".to_string()],
-                    suggested_agent: "frontend-developer".to_string(),
+                    suggested_agent: "developer".to_string(),
                 },
                 RecipeTask {
                     title: "Integrate data fetching".to_string(),
@@ -367,7 +502,7 @@ pub fn list_feature_recipes() -> Vec<FeatureRecipe> {
                         "Error messages displayed on failure".to_string(),
                     ],
                     dependencies: vec!["2".to_string()],
-                    suggested_agent: "frontend-developer".to_string(),
+                    suggested_agent: "developer".to_string(),
                 },
                 RecipeTask {
                     title: "Write component tests".to_string(),
@@ -378,7 +513,7 @@ pub fn list_feature_recipes() -> Vec<FeatureRecipe> {
                         "Test user interactions and state changes".to_string(),
                     ],
                     dependencies: vec!["3".to_string()],
-                    suggested_agent: "test-engineer".to_string(),
+                    suggested_agent: "developer".to_string(),
                 },
             ],
         },
@@ -398,7 +533,7 @@ pub fn list_feature_recipes() -> Vec<FeatureRecipe> {
                         "Input validation and error handling".to_string(),
                     ],
                     dependencies: vec![],
-                    suggested_agent: "backend-developer".to_string(),
+                    suggested_agent: "developer".to_string(),
                 },
                 RecipeTask {
                     title: "Frontend: UI components and page".to_string(),
@@ -409,7 +544,7 @@ pub fn list_feature_recipes() -> Vec<FeatureRecipe> {
                         "Loading and error states handled".to_string(),
                     ],
                     dependencies: vec![],
-                    suggested_agent: "frontend-developer".to_string(),
+                    suggested_agent: "developer".to_string(),
                 },
                 RecipeTask {
                     title: "Write comprehensive tests".to_string(),
@@ -420,7 +555,7 @@ pub fn list_feature_recipes() -> Vec<FeatureRecipe> {
                         "All tests pass".to_string(),
                     ],
                     dependencies: vec!["1".to_string(), "2".to_string()],
-                    suggested_agent: "test-engineer".to_string(),
+                    suggested_agent: "developer".to_string(),
                 },
             ],
         },
@@ -440,7 +575,7 @@ pub fn list_feature_recipes() -> Vec<FeatureRecipe> {
                         "Refactoring approach proposed".to_string(),
                     ],
                     dependencies: vec![],
-                    suggested_agent: "code-reviewer".to_string(),
+                    suggested_agent: "architect".to_string(),
                 },
                 RecipeTask {
                     title: "Extract and restructure".to_string(),
@@ -451,7 +586,7 @@ pub fn list_feature_recipes() -> Vec<FeatureRecipe> {
                         "Improved naming and organization".to_string(),
                     ],
                     dependencies: vec!["1".to_string()],
-                    suggested_agent: "backend-developer".to_string(),
+                    suggested_agent: "developer".to_string(),
                 },
                 RecipeTask {
                     title: "Verify and update tests".to_string(),
@@ -462,7 +597,7 @@ pub fn list_feature_recipes() -> Vec<FeatureRecipe> {
                         "No regression in functionality".to_string(),
                     ],
                     dependencies: vec!["2".to_string()],
-                    suggested_agent: "test-engineer".to_string(),
+                    suggested_agent: "developer".to_string(),
                 },
             ],
         },
@@ -476,14 +611,10 @@ mod tests {
     #[test]
     fn built_in_agents_returns_all_agents() {
         let agents = built_in_agents();
-        assert!(agents.len() >= 8);
+        assert_eq!(agents.len(), 4);
         let filenames: Vec<&str> = agents.iter().map(|a| a.filename.as_str()).collect();
-        assert!(filenames.contains(&"frontend-developer.md"));
-        assert!(filenames.contains(&"backend-developer.md"));
-        assert!(filenames.contains(&"test-engineer.md"));
-        assert!(filenames.contains(&"code-reviewer.md"));
-        assert!(filenames.contains(&"devops-engineer.md"));
-        assert!(filenames.contains(&"documentation-writer.md"));
+        assert!(filenames.contains(&"developer.md"));
+        assert!(filenames.contains(&"architect.md"));
         assert!(filenames.contains(&"repo-explorer.md"));
         assert!(filenames.contains(&"qa-tester.md"));
     }
@@ -509,6 +640,39 @@ mod tests {
         filenames.sort();
         filenames.dedup();
         assert_eq!(filenames.len(), count, "Duplicate filenames found");
+    }
+
+    #[test]
+    fn built_in_skills_returns_all_skills() {
+        let skills = built_in_skills();
+        assert_eq!(skills.len(), 5);
+        let names: Vec<&str> = skills.iter().map(|s| s.dir_name.as_str()).collect();
+        assert!(names.contains(&"review-plan"));
+        assert!(names.contains(&"validate-and-fix"));
+        assert!(names.contains(&"summarize-diff"));
+        assert!(names.contains(&"write-pr-description"));
+        assert!(names.contains(&"check-coverage"));
+    }
+
+    #[test]
+    fn built_in_skills_have_valid_fields() {
+        let skills = built_in_skills();
+        for s in &skills {
+            assert!(!s.dir_name.is_empty());
+            assert!(!s.name.is_empty());
+            assert!(!s.description.is_empty());
+            assert!(!s.prompt_template.is_empty());
+        }
+    }
+
+    #[test]
+    fn built_in_skills_have_unique_names() {
+        let skills = built_in_skills();
+        let mut names: Vec<&str> = skills.iter().map(|s| s.dir_name.as_str()).collect();
+        let count = names.len();
+        names.sort();
+        names.dedup();
+        assert_eq!(names.len(), count, "Duplicate skill names found");
     }
 
     #[test]
@@ -561,5 +725,67 @@ mod tests {
         let frontend_task = &full_stack.task_templates[1];
         assert!(backend_task.dependencies.is_empty());
         assert!(frontend_task.dependencies.is_empty());
+    }
+
+    #[test]
+    fn built_in_hook_templates_returns_templates() {
+        let templates = built_in_hook_templates();
+        assert!(templates.len() >= 15);
+    }
+
+    #[test]
+    fn built_in_hook_templates_have_valid_fields() {
+        let templates = built_in_hook_templates();
+        for t in &templates {
+            assert!(!t.id.is_empty(), "Template has empty id");
+            assert!(!t.name.is_empty(), "Template has empty name");
+            assert!(!t.description.is_empty(), "Template has empty description");
+            assert!(!t.event.is_empty(), "Template has empty event");
+            assert!(!t.command.is_empty(), "Template has empty command");
+            assert!(!t.category.is_empty(), "Template has empty category");
+        }
+    }
+
+    #[test]
+    fn built_in_hook_templates_have_valid_events() {
+        let valid_events = [
+            "PreToolUse",
+            "PostToolUse",
+            "UserPromptSubmit",
+            "SessionStart",
+            "Stop",
+            "Notification",
+            "SubagentStop",
+        ];
+        let templates = built_in_hook_templates();
+        for t in &templates {
+            assert!(
+                valid_events.contains(&t.event.as_str()),
+                "Invalid event '{}' in template '{}'",
+                t.event,
+                t.id
+            );
+        }
+    }
+
+    #[test]
+    fn built_in_hook_templates_have_unique_ids() {
+        let templates = built_in_hook_templates();
+        let mut ids: Vec<&str> = templates.iter().map(|t| t.id.as_str()).collect();
+        let count = ids.len();
+        ids.sort();
+        ids.dedup();
+        assert_eq!(ids.len(), count, "Duplicate template IDs found");
+    }
+
+    #[test]
+    fn built_in_hook_templates_cover_all_categories() {
+        let templates = built_in_hook_templates();
+        let categories: std::collections::HashSet<&str> =
+            templates.iter().map(|t| t.category.as_str()).collect();
+        assert!(categories.contains("quality"));
+        assert!(categories.contains("safety"));
+        assert!(categories.contains("workflow"));
+        assert!(categories.contains("notifications"));
     }
 }

@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef } from "react";
 import { useTauri } from "../hooks/useTauri";
 import { ClauseOutput } from "../components/ClauseOutput";
-import type { AgentFile, SkillFile } from "../types";
+import type { AgentFile, AgentPerformanceSummary, SkillFile } from "../types";
+import { AgentPerformanceBar } from "../components/AgentPerformance";
+import { ContextualHelp, HELP_CONTENT } from "../components/ContextualHelp";
 
 
 const PRESET_COLORS = [
@@ -103,9 +105,11 @@ function AgentsTab() {
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [builtInAgents, setBuiltInAgents] = useState<AgentFile[]>([]);
   const [addingBuiltIn, setAddingBuiltIn] = useState<string | null>(null);
+  const [perfSummaries, setPerfSummaries] = useState<AgentPerformanceSummary[]>([]);
 
   useEffect(() => {
     tauri.listBuiltInAgents().then(setBuiltInAgents).catch(() => setBuiltInAgents([]));
+    tauri.getAgentSummaries().then(setPerfSummaries).catch(() => setPerfSummaries([]));
   }, []);
 
   const loadAgents = () => {
@@ -214,6 +218,8 @@ function AgentsTab() {
     <>
       {error && !modalMode && <div className="error-banner">{error}</div>}
 
+      <ContextualHelp title="How do agents work?">{HELP_CONTENT.agents}</ContextualHelp>
+
       <div style={{ marginBottom: 20 }}>
         <button className="btn btn-primary" onClick={openCreate}>
           + Add Agent
@@ -223,18 +229,23 @@ function AgentsTab() {
       {/* Global agents */}
       {agents.length > 0 && (
         <div className="agent-grid">
-          {agents.map((agent) => (
-            <AgentCard
-              key={agent.filename}
-              agent={agent}
-              onEdit={() => openEdit(agent)}
-              onRemove={() => setDeleteConfirm(agent.filename)}
-              onConfirmDelete={() => handleRemove(agent.filename)}
-              deleteConfirm={deleteConfirm === agent.filename}
-              onCancelDelete={() => setDeleteConfirm(null)}
-              onToggleEnabled={() => handleToggleEnabled(agent)}
-            />
-          ))}
+          {agents.map((agent) => {
+            const agentKey = agent.filename.replace(/\.md$/, "");
+            const perf = perfSummaries.find((s) => s.agent === agentKey);
+            return (
+              <AgentCard
+                key={agent.filename}
+                agent={agent}
+                perfSummary={perf}
+                onEdit={() => openEdit(agent)}
+                onRemove={() => setDeleteConfirm(agent.filename)}
+                onConfirmDelete={() => handleRemove(agent.filename)}
+                deleteConfirm={deleteConfirm === agent.filename}
+                onCancelDelete={() => setDeleteConfirm(null)}
+                onToggleEnabled={() => handleToggleEnabled(agent)}
+              />
+            );
+          })}
         </div>
       )}
 
@@ -289,6 +300,8 @@ function AgentsTab() {
 function SkillsTab() {
   const tauri = useTauri();
   const [skills, setSkills] = useState<SkillFile[]>([]);
+  const [builtInSkills, setBuiltInSkills] = useState<SkillFile[]>([]);
+  const [addingBuiltIn, setAddingBuiltIn] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [modalSkill, setModalSkill] = useState<SkillFile | null>(null);
   const [modalMode, setModalMode] = useState<"create" | "edit" | null>(null);
@@ -304,7 +317,10 @@ function SkillsTab() {
       .catch(() => setSkills([]));
   };
 
-  useEffect(loadSkills, []);
+  useEffect(() => {
+    loadSkills();
+    tauri.listBuiltInSkills().then(setBuiltInSkills).catch(() => setBuiltInSkills([]));
+  }, []);
 
   const openCreate = () => {
     setModalSkill(null);
@@ -358,6 +374,28 @@ function SkillsTab() {
     }
   };
 
+  const handleAddBuiltIn = async (dirName: string) => {
+    setAddingBuiltIn(dirName);
+    setError("");
+    try {
+      const template = builtInSkills.find((s) => s.dir_name === dirName);
+      if (template) {
+        await tauri.saveGlobalSkill({ ...template, source: "user" });
+      }
+      loadSkills();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setAddingBuiltIn(null);
+    }
+  };
+
+  // Built-in skills not yet added (match by dir_name)
+  const skillNames = new Set(skills.map((s) => s.dir_name));
+  const unappliedBuiltIns = builtInSkills.filter(
+    (s) => !skillNames.has(s.dir_name),
+  );
+
   const handleGenerate = async () => {
     if (!generateDesc.trim()) return;
     setError("");
@@ -399,6 +437,8 @@ function SkillsTab() {
   return (
     <>
       {error && !modalMode && <div className="error-banner">{error}</div>}
+
+      <ContextualHelp title="How do skills work?">{HELP_CONTENT.skills}</ContextualHelp>
 
       <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
         <button className="btn btn-primary" onClick={openCreate}>
@@ -476,7 +516,29 @@ function SkillsTab() {
         </div>
       )}
 
-      {skills.length === 0 && !showGenerateInput && !generating && (
+      {/* Built-in skills (not yet added) */}
+      {unappliedBuiltIns.length > 0 && (
+        <>
+          <div
+            className="section-label"
+            style={{ padding: skills.length > 0 ? "20px 0 8px" : "0 0 8px" }}
+          >
+            Built-in Skills
+          </div>
+          <div className="agent-grid">
+            {unappliedBuiltIns.map((skill) => (
+              <BuiltInSkillCard
+                key={skill.dir_name}
+                skill={skill}
+                adding={addingBuiltIn === skill.dir_name}
+                onAdd={() => handleAddBuiltIn(skill.dir_name)}
+              />
+            ))}
+          </div>
+        </>
+      )}
+
+      {skills.length === 0 && unappliedBuiltIns.length === 0 && !showGenerateInput && !generating && (
         <div className="empty-state">
           <h3>No Skills Yet</h3>
           <p>
@@ -505,6 +567,7 @@ function SkillsTab() {
 
 function AgentCard({
   agent,
+  perfSummary,
   onEdit,
   onRemove,
   onConfirmDelete,
@@ -513,6 +576,7 @@ function AgentCard({
   onToggleEnabled,
 }: {
   agent: AgentFile;
+  perfSummary?: AgentPerformanceSummary;
   onEdit: () => void;
   onRemove: (() => void) | undefined;
   onConfirmDelete: (() => void) | undefined;
@@ -593,33 +657,36 @@ function AgentCard({
           </div>
         )}
         <div className="agent-card-actions">
-          <button className="btn btn-secondary btn-sm" onClick={onEdit}>
-            Edit
-          </button>
-          {onRemove && !deleteConfirm && (
-            <button className="btn btn-danger btn-sm" onClick={onRemove}>
-              Remove
+          <div className="agent-card-actions-left">
+            <button className="btn btn-secondary btn-sm" onClick={onEdit}>
+              Edit
             </button>
-          )}
-          {deleteConfirm && (
-            <div className="agent-card-confirm">
-              <span style={{ fontSize: 12, color: "var(--danger)" }}>
-                Delete?
-              </span>
-              <button
-                className="btn btn-danger btn-sm"
-                onClick={onConfirmDelete}
-              >
-                Yes
+            {onRemove && !deleteConfirm && (
+              <button className="btn btn-danger btn-sm" onClick={onRemove}>
+                Remove
               </button>
-              <button
-                className="btn btn-secondary btn-sm"
-                onClick={onCancelDelete}
-              >
-                No
-              </button>
-            </div>
-          )}
+            )}
+            {deleteConfirm && (
+              <div className="agent-card-confirm">
+                <span style={{ fontSize: 12, color: "var(--danger)" }}>
+                  Delete?
+                </span>
+                <button
+                  className="btn btn-danger btn-sm"
+                  onClick={onConfirmDelete}
+                >
+                  Yes
+                </button>
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={onCancelDelete}
+                >
+                  No
+                </button>
+              </div>
+            )}
+          </div>
+          <AgentPerformanceBar summary={perfSummary} />
         </div>
       </div>
     </div>
@@ -776,6 +843,64 @@ function SkillCard({
               </button>
             </div>
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Built-in Skill Card ──
+
+function BuiltInSkillCard({
+  skill,
+  adding,
+  onAdd,
+}: {
+  skill: SkillFile;
+  adding: boolean;
+  onAdd: () => void;
+}) {
+  return (
+    <div className="agent-card agent-card-template skill-card">
+      <div
+        className="agent-card-color-bar"
+        style={{ background: "var(--accent-brass)" }}
+      />
+      <div className="agent-card-body">
+        <div className="agent-card-top">
+          <div
+            className="agent-card-avatar skill-card-avatar"
+            style={{ background: "var(--accent-brass)", opacity: 0.5 }}
+          >
+            /
+          </div>
+          <div className="agent-card-info">
+            <div className="agent-card-name">{skill.name}</div>
+            <div className="agent-card-role">
+              /{skill.dir_name}
+              <span className="agent-card-builtin-badge">built-in</span>
+            </div>
+          </div>
+        </div>
+        {skill.description && (
+          <div
+            style={{
+              fontSize: 12,
+              color: "var(--muted)",
+              marginBottom: 8,
+            }}
+          >
+            {skill.description}
+          </div>
+        )}
+        <div className="agent-card-actions">
+          <button
+            className="btn btn-primary btn-sm"
+            onClick={onAdd}
+            disabled={adding}
+          >
+            {adding ? "Adding..." : "+ Add"}
+          </button>
         </div>
       </div>
     </div>

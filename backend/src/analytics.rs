@@ -94,8 +94,7 @@ fn assess_task_coverage(
 
     // Use actual progress data (1-based task number) as the primary signal
     let task_num = (task_index + 1) as u32;
-    let progress_entry = task_progress
-        .and_then(|p| p.tasks.iter().find(|t| t.task == task_num));
+    let progress_entry = task_progress.and_then(|p| p.tasks.iter().find(|t| t.task == task_num));
 
     let completion_status = match progress_entry {
         Some(entry) => match entry.status {
@@ -144,13 +143,68 @@ fn assess_task_coverage(
 fn extract_keywords(title: &str, description: &str) -> Vec<String> {
     let combined = format!("{} {}", title, description);
     let stop_words = [
-        "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
-        "have", "has", "had", "do", "does", "did", "will", "would", "shall",
-        "should", "may", "might", "must", "can", "could", "to", "of", "in",
-        "for", "on", "with", "at", "by", "from", "as", "into", "through",
-        "and", "or", "but", "not", "no", "this", "that", "these", "those",
-        "it", "its", "all", "each", "every", "both", "few", "more", "most",
-        "new", "add", "create", "implement", "write", "update", "fix",
+        "the",
+        "a",
+        "an",
+        "is",
+        "are",
+        "was",
+        "were",
+        "be",
+        "been",
+        "being",
+        "have",
+        "has",
+        "had",
+        "do",
+        "does",
+        "did",
+        "will",
+        "would",
+        "shall",
+        "should",
+        "may",
+        "might",
+        "must",
+        "can",
+        "could",
+        "to",
+        "of",
+        "in",
+        "for",
+        "on",
+        "with",
+        "at",
+        "by",
+        "from",
+        "as",
+        "into",
+        "through",
+        "and",
+        "or",
+        "but",
+        "not",
+        "no",
+        "this",
+        "that",
+        "these",
+        "those",
+        "it",
+        "its",
+        "all",
+        "each",
+        "every",
+        "both",
+        "few",
+        "more",
+        "most",
+        "new",
+        "add",
+        "create",
+        "implement",
+        "write",
+        "update",
+        "fix",
     ];
 
     combined
@@ -371,13 +425,22 @@ mod tests {
 
         // Task 1: done in progress → Covered
         assert_eq!(analysis.task_file_coverage[0].completion_status, "done");
-        assert_eq!(analysis.task_file_coverage[0].coverage_status, CoverageStatus::Covered);
+        assert_eq!(
+            analysis.task_file_coverage[0].coverage_status,
+            CoverageStatus::Covered
+        );
         // Task 2: done in progress, no matching files → still Covered (trusts progress)
         assert_eq!(analysis.task_file_coverage[1].completion_status, "done");
-        assert_eq!(analysis.task_file_coverage[1].coverage_status, CoverageStatus::Covered);
+        assert_eq!(
+            analysis.task_file_coverage[1].coverage_status,
+            CoverageStatus::Covered
+        );
         // Task 3: pending → NoChangesDetected
         assert_eq!(analysis.task_file_coverage[2].completion_status, "pending");
-        assert_eq!(analysis.task_file_coverage[2].coverage_status, CoverageStatus::NoChangesDetected);
+        assert_eq!(
+            analysis.task_file_coverage[2].coverage_status,
+            CoverageStatus::NoChangesDetected
+        );
     }
 
     #[test]
@@ -391,7 +454,10 @@ mod tests {
 
         // Task 1: 2 matching files, no progress → Covered by heuristic
         assert_eq!(analysis.task_file_coverage[0].completion_status, "unknown");
-        assert_eq!(analysis.task_file_coverage[0].coverage_status, CoverageStatus::Covered);
+        assert_eq!(
+            analysis.task_file_coverage[0].coverage_status,
+            CoverageStatus::Covered
+        );
     }
 
     #[test]
@@ -403,7 +469,9 @@ mod tests {
             "random-config.yaml".to_string(),
         ];
         let analysis = analyze_execution(&feature, &files, None);
-        assert!(analysis.unplanned_files.contains(&"package.json".to_string()));
+        assert!(analysis
+            .unplanned_files
+            .contains(&"package.json".to_string()));
     }
 
     #[test]
@@ -433,7 +501,10 @@ mod tests {
     fn file_matches_keyword() {
         let keywords = vec!["auth".to_string(), "login".to_string()];
         assert!(file_matches_any_keyword("src/auth/handler.rs", &keywords));
-        assert!(file_matches_any_keyword("components/LoginForm.tsx", &keywords));
+        assert!(file_matches_any_keyword(
+            "components/LoginForm.tsx",
+            &keywords
+        ));
         assert!(!file_matches_any_keyword("src/utils/format.ts", &keywords));
     }
 

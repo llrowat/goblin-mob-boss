@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { TaskSpec, TaskProgress, IdeationResult, ExecutionMode, PlanSnapshot } from "../../types";
+import { ContextualHelp, HELP_CONTENT } from "../../components/ContextualHelp";
 
 interface TaskTableProps {
   tasks: TaskSpec[];
@@ -126,6 +127,7 @@ export function ExecutionModeSelector({
 
   return (
     <>
+      <ContextualHelp title="What are execution modes?">{HELP_CONTENT.executionModes}</ContextualHelp>
       <div className="exec-mode-selector" role="radiogroup" aria-label="Execution mode">
         <button
           className={`exec-mode-option${activeMode === "teams" ? " exec-mode-active" : ""}`}

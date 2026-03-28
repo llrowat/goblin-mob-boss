@@ -46,22 +46,34 @@ fn run_git_with_timeout(repo_path: &str, args: &[&str], timeout: Duration) -> Gi
 
     match child.wait_timeout(timeout) {
         Ok(Some(status)) => {
-            let stdout = child.stdout.take().map(|mut s| {
-                let mut buf = Vec::new();
-                std::io::Read::read_to_end(&mut s, &mut buf).ok();
-                buf
-            }).unwrap_or_default();
-            let stderr = child.stderr.take().map(|mut s| {
-                let mut buf = Vec::new();
-                std::io::Read::read_to_end(&mut s, &mut buf).ok();
-                buf
-            }).unwrap_or_default();
+            let stdout = child
+                .stdout
+                .take()
+                .map(|mut s| {
+                    let mut buf = Vec::new();
+                    std::io::Read::read_to_end(&mut s, &mut buf).ok();
+                    buf
+                })
+                .unwrap_or_default();
+            let stderr = child
+                .stderr
+                .take()
+                .map(|mut s| {
+                    let mut buf = Vec::new();
+                    std::io::Read::read_to_end(&mut s, &mut buf).ok();
+                    buf
+                })
+                .unwrap_or_default();
 
             if status.success() {
                 Ok(String::from_utf8_lossy(&stdout).trim().to_string())
             } else {
                 let stderr_str = String::from_utf8_lossy(&stderr).trim().to_string();
-                Err(GitError(format!("git {} failed: {}", args.join(" "), stderr_str)))
+                Err(GitError(format!(
+                    "git {} failed: {}",
+                    args.join(" "),
+                    stderr_str
+                )))
             }
         }
         Ok(None) => {
@@ -265,7 +277,10 @@ pub fn detect_commit_pattern(repo_path: &str) -> Option<String> {
     for file in &commitlint_files {
         if root.join(file).exists() {
             // commitlint with conventional config is the most common setup
-            return Some(r"^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\(.+\))?!?: .+".to_string());
+            return Some(
+                r"^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\(.+\))?!?: .+"
+                    .to_string(),
+            );
         }
     }
 
@@ -303,19 +318,29 @@ fn infer_commit_pattern_from_history(repo_path: &str) -> Option<String> {
 
     // Check for conventional commits pattern: type(scope)?: description
     let conventional_re = regex::Regex::new(
-        r"^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\(.+\))?!?: .+"
-    ).ok()?;
-    let conventional_matches = subjects.iter().filter(|s| conventional_re.is_match(s)).count();
+        r"^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\(.+\))?!?: .+",
+    )
+    .ok()?;
+    let conventional_matches = subjects
+        .iter()
+        .filter(|s| conventional_re.is_match(s))
+        .count();
     let ratio = conventional_matches as f64 / subjects.len() as f64;
 
     if ratio >= 0.6 {
         // Majority of commits follow conventional commits
-        return Some(r"^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\(.+\))?!?: .+".to_string());
+        return Some(
+            r"^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\(.+\))?!?: .+"
+                .to_string(),
+        );
     }
 
     // Check for simpler "type: description" pattern (e.g. "fix: thing", "add: thing")
     let simple_type_re = regex::Regex::new(r"^[a-z]+: .+").ok()?;
-    let simple_matches = subjects.iter().filter(|s| simple_type_re.is_match(s)).count();
+    let simple_matches = subjects
+        .iter()
+        .filter(|s| simple_type_re.is_match(s))
+        .count();
     let simple_ratio = simple_matches as f64 / subjects.len() as f64;
 
     if simple_ratio >= 0.6 {
@@ -396,7 +421,11 @@ pub fn is_git_repo(path: &str) -> bool {
 /// Get diff stats between two branches.
 /// Returns a list of `(file_path, insertions, deletions)` tuples.
 /// Returns `(path, insertions, deletions, status)` where status is "added", "modified", or "deleted".
-pub fn diff_stat(repo_path: &str, base: &str, head: &str) -> GitResult<Vec<(String, u32, u32, String)>> {
+pub fn diff_stat(
+    repo_path: &str,
+    base: &str,
+    head: &str,
+) -> GitResult<Vec<(String, u32, u32, String)>> {
     let diff_range = format!("{}..{}", base, head);
 
     // Get numstat for insertion/deletion counts
@@ -404,7 +433,8 @@ pub fn diff_stat(repo_path: &str, base: &str, head: &str) -> GitResult<Vec<(Stri
     let numstat = parse_numstat(&committed);
 
     // Get name-status for add/modify/delete classification
-    let name_status_out = run_git(repo_path, &["diff", "--name-status", &diff_range]).unwrap_or_default();
+    let name_status_out =
+        run_git(repo_path, &["diff", "--name-status", &diff_range]).unwrap_or_default();
     let statuses = parse_name_status(&name_status_out);
 
     // Merge: numstat provides counts, name-status provides classification
@@ -423,7 +453,8 @@ pub fn diff_stat(repo_path: &str, base: &str, head: &str) -> GitResult<Vec<(Stri
     // Include uncommitted changes (staged + unstaged) relative to HEAD
     let uncommitted = run_git(repo_path, &["diff", "--numstat", "HEAD"]).unwrap_or_default();
     let uncommitted_files = parse_numstat(&uncommitted);
-    let uncommitted_status = run_git(repo_path, &["diff", "--name-status", "HEAD"]).unwrap_or_default();
+    let uncommitted_status =
+        run_git(repo_path, &["diff", "--name-status", "HEAD"]).unwrap_or_default();
     let uncommitted_statuses = parse_name_status(&uncommitted_status);
 
     for (path, ins, del) in uncommitted_files {
@@ -530,12 +561,7 @@ pub fn create_worktree(
 
     run_git(
         repo_path,
-        &[
-            "worktree",
-            "add",
-            &worktree_path.to_string_lossy(),
-            branch,
-        ],
+        &["worktree", "add", &worktree_path.to_string_lossy(), branch],
     )?;
 
     Ok(worktree_path)
@@ -748,7 +774,10 @@ mod tests {
 
         // Repo should not be in a broken merge state
         let status = run_git(&repo_path, &["status", "--porcelain"]).unwrap();
-        assert!(!status.contains("UU"), "Repo should not have unmerged files");
+        assert!(
+            !status.contains("UU"),
+            "Repo should not have unmerged files"
+        );
     }
 
     #[test]
@@ -873,7 +902,8 @@ mod tests {
         std::fs::write(
             dir.path().join("commitlint.config.js"),
             "module.exports = { extends: ['@commitlint/config-conventional'] };",
-        ).unwrap();
+        )
+        .unwrap();
         let result = detect_commit_pattern(dir.path().to_str().unwrap());
         assert!(result.is_some());
         let pattern = result.unwrap();
@@ -892,7 +922,8 @@ mod tests {
         std::fs::write(
             dir.path().join("package.json"),
             r#"{"devDependencies": {"@commitlint/cli": "^17.0.0"}}"#,
-        ).unwrap();
+        )
+        .unwrap();
         let result = detect_commit_pattern(dir.path().to_str().unwrap());
         assert!(result.is_some());
     }
@@ -901,21 +932,41 @@ mod tests {
     fn detect_commit_pattern_from_conventional_history() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().to_str().unwrap();
-        Command::new("git").args(["init"]).current_dir(dir.path()).output().unwrap();
-        Command::new("git").args(["config", "user.email", "test@test.com"]).current_dir(dir.path()).output().unwrap();
-        Command::new("git").args(["config", "user.name", "Test"]).current_dir(dir.path()).output().unwrap();
+        Command::new("git")
+            .args(["init"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.email", "test@test.com"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.name", "Test"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
 
         // Create 10 conventional commits
         for i in 0..10 {
             let filename = format!("file{}.txt", i);
             std::fs::write(dir.path().join(&filename), format!("content {}", i)).unwrap();
-            Command::new("git").args(["add", &filename]).current_dir(dir.path()).output().unwrap();
+            Command::new("git")
+                .args(["add", &filename])
+                .current_dir(dir.path())
+                .output()
+                .unwrap();
             let msg = if i % 2 == 0 {
                 format!("feat: add feature {}", i)
             } else {
                 format!("fix: fix bug {}", i)
             };
-            Command::new("git").args(["commit", "-m", &msg]).current_dir(dir.path()).output().unwrap();
+            Command::new("git")
+                .args(["commit", "-m", &msg])
+                .current_dir(dir.path())
+                .output()
+                .unwrap();
         }
 
         let result = detect_commit_pattern(path);
@@ -929,9 +980,21 @@ mod tests {
     fn detect_commit_pattern_returns_none_for_random_messages() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().to_str().unwrap();
-        Command::new("git").args(["init"]).current_dir(dir.path()).output().unwrap();
-        Command::new("git").args(["config", "user.email", "test@test.com"]).current_dir(dir.path()).output().unwrap();
-        Command::new("git").args(["config", "user.name", "Test"]).current_dir(dir.path()).output().unwrap();
+        Command::new("git")
+            .args(["init"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.email", "test@test.com"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.name", "Test"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
 
         // Create commits with random messages (no pattern)
         let messages = [
@@ -949,8 +1012,16 @@ mod tests {
         for (i, msg) in messages.iter().enumerate() {
             let filename = format!("file{}.txt", i);
             std::fs::write(dir.path().join(&filename), format!("content {}", i)).unwrap();
-            Command::new("git").args(["add", &filename]).current_dir(dir.path()).output().unwrap();
-            Command::new("git").args(["commit", "-m", msg]).current_dir(dir.path()).output().unwrap();
+            Command::new("git")
+                .args(["add", &filename])
+                .current_dir(dir.path())
+                .output()
+                .unwrap();
+            Command::new("git")
+                .args(["commit", "-m", msg])
+                .current_dir(dir.path())
+                .output()
+                .unwrap();
         }
 
         let result = detect_commit_pattern(path);
@@ -977,7 +1048,11 @@ mod tests {
 
         let msg = build_commit_message(&repo_path, "add feature");
         assert!(msg.contains("chore: finalize add feature"));
-        assert!(msg.contains("new_file.rs"), "should list changed file: {}", msg);
+        assert!(
+            msg.contains("new_file.rs"),
+            "should list changed file: {}",
+            msg
+        );
     }
 
     #[test]

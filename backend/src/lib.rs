@@ -118,9 +118,10 @@ pub fn run() {
             // Preferences
             commands::get_preferences,
             commands::set_preferences,
-            // Built-in Agents & Recipes
+            // Built-in Agents, Skills & Recipes
             commands::list_built_in_agents,
             commands::add_built_in_agent,
+            commands::list_built_in_skills,
             commands::list_feature_recipes,
             // Execution Observability
             commands::poll_execution_status,
@@ -146,6 +147,11 @@ pub fn run() {
             commands::list_hook_templates,
             // Process Log Transparency
             commands::read_process_log,
+            commands::generate_hook,
+            commands::check_hook_generation,
+            // Agent History
+            commands::get_agent_summaries,
+            commands::get_agent_history,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

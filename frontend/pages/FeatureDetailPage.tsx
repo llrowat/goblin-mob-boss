@@ -9,6 +9,7 @@ import { TaskTable, ExecutionModeSelector, EditTaskModal, PlanHistory } from "./
 import { ValidationPanel } from "./feature-detail/ValidationPanel";
 import { TestingPanel } from "./feature-detail/TestingPanel";
 import { ActivityLog, toDisplayEntries } from "../components/ActivityLog";
+import { ContextualHelp, HELP_CONTENT } from "../components/ContextualHelp";
 import type {
   Feature,
   Repository,
@@ -1096,6 +1097,8 @@ export function FeatureDetailPage() {
             tmuxAvailable={tmuxAvailable}
             onModeChange={setModeOverride}
           />
+
+          <ContextualHelp title="How does planning work?">{HELP_CONTENT.planning}</ContextualHelp>
 
           <TaskTable
             tasks={ideationResult.tasks}

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useTauri } from "../hooks/useTauri";
 import { useCommandDisplay, CommandDisplayButton, CommandDisplayContent } from "../components/CommandDisplay";
 import { ClauseOutput } from "../components/ClauseOutput";
+import { ContextualHelp, HELP_CONTENT } from "../components/ContextualHelp";
 import type {
   SystemMap,
   MapService,
@@ -1222,6 +1223,7 @@ export function SystemMapPage() {
           <h2>System Map</h2>
           <p>Visualize how your services connect and interact.</p>
         </div>
+        <ContextualHelp title="How do system maps work?">{HELP_CONTENT.systemMap}</ContextualHelp>
         <div className="empty-state">
           <h3>No maps yet</h3>
           <p>
@@ -1726,6 +1728,8 @@ export function SystemMapPage() {
             New Map
           </button>
         </div>
+
+        <ContextualHelp title="How do system maps work?">{HELP_CONTENT.systemMap}</ContextualHelp>
 
         {error && <div className="error-banner">{error}</div>}
 
