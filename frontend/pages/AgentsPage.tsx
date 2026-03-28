@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useTauri } from "../hooks/useTauri";
-import { ClauseOutput } from "../components/ClauseOutput";
+
 import type { AgentFile, AgentPerformanceSummary, SkillFile } from "../types";
 import { AgentPerformanceBar } from "../components/AgentPerformance";
 import { ContextualHelp, HELP_CONTENT } from "../components/ContextualHelp";
@@ -494,7 +494,7 @@ function SkillsTab() {
             Claude is crafting your skill...
           </p>
           <div style={{ textAlign: "left", marginTop: 12 }}>
-            <ClauseOutput processType="skill" active={generating} />
+
           </div>
         </div>
       )}

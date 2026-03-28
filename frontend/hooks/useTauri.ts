@@ -378,20 +378,6 @@ export function useTauri() {
     listHookTemplates: () =>
       invoke<HookTemplate[]>("list_hook_templates"),
 
-    // Process Log Transparency
-    readProcessLog: (args: {
-      processType: string;
-      processId?: string;
-      repoPath?: string;
-      maxLines?: number;
-    }) =>
-      invoke<string>("read_process_log", {
-        processType: args.processType,
-        processId: args.processId ?? null,
-        repoPath: args.repoPath ?? null,
-        maxLines: args.maxLines ?? null,
-      }),
-
     generateHook: (description: string) =>
       invoke<void>("generate_hook", { description }),
 

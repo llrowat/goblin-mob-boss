@@ -175,13 +175,11 @@ Include ONLY these sections if they apply:
 
 Skip any section where there's nothing project-specific to say. Aim for under 80 lines total. Write the file to `CLAUDE.md` at the repository root."#;
 
-    let log_path = repo_path.join(".gmb");
-    let _ = std::fs::create_dir_all(&log_path);
-    let log_file = std::fs::File::create(log_path.join("claude-md-generation.log"))
-        .map_err(|e| format!("Failed to create log file: {}", e))?;
-    let stderr_file = log_file
-        .try_clone()
-        .map_err(|e| format!("Failed to clone log file handle: {}", e))?;
+    let log_dir = repo_path.join(".gmb");
+    let _ = std::fs::create_dir_all(&log_dir);
+    let log_file_path = log_dir.join("claude-md-generation.log");
+    // Truncate the log file at start
+    let _ = std::fs::write(&log_file_path, "");
 
     let mut cmd = std::process::Command::new("claude");
     apply_user_path(&mut cmd);
@@ -191,8 +189,8 @@ Skip any section where there's nothing project-specific to say. Aim for under 80
         .arg("--allowedTools")
         .arg("Read,Glob,Grep,Write")
         .stdin(std::process::Stdio::piped())
-        .stdout(log_file)
-        .stderr(stderr_file)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
         .current_dir(&path);
 
     let mut child = cmd
@@ -204,6 +202,12 @@ Skip any section where there's nothing project-specific to say. Aim for under 80
             let _ = stdin.write_all(prompt.as_bytes());
         });
     }
+
+    relay_output_to_log(&mut child, log_file_path);
+
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
 
     Ok(())
 }
@@ -336,11 +340,8 @@ Keep the prompt template focused and actionable. Create the directory if it does
 
     let log_dir = std::path::Path::new(&home).join(".claude").join(".gmb");
     let _ = std::fs::create_dir_all(&log_dir);
-    let log_file = std::fs::File::create(log_dir.join("skill-generation.log"))
-        .map_err(|e| format!("Failed to create log file: {}", e))?;
-    let stderr_file = log_file
-        .try_clone()
-        .map_err(|e| format!("Failed to clone log file handle: {}", e))?;
+    let log_file_path = log_dir.join("skill-generation.log");
+    let _ = std::fs::write(&log_file_path, "");
 
     let mut cmd = std::process::Command::new("claude");
     apply_user_path(&mut cmd);
@@ -350,8 +351,8 @@ Keep the prompt template focused and actionable. Create the directory if it does
         .arg("--allowedTools")
         .arg("Write,Bash")
         .stdin(std::process::Stdio::piped())
-        .stdout(log_file)
-        .stderr(stderr_file)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
         .current_dir(&home);
 
     let mut child = cmd
@@ -363,6 +364,12 @@ Keep the prompt template focused and actionable. Create the directory if it does
             let _ = stdin.write_all(prompt.as_bytes());
         });
     }
+
+    relay_output_to_log(&mut child, log_file_path);
+
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
 
     Ok(skill_name)
 }
@@ -2366,13 +2373,9 @@ fn spawn_ideation_process(
 ) -> Result<(), String> {
     use std::io::Write as IoWrite;
 
-    // Log file for debugging — captures Claude's stdout/stderr
+    // Log file for live output — uses piped stdio + relay for incremental flushing
     let log_file_path = feature_dir.join("claude-ideation.log");
-    let log_file = std::fs::File::create(&log_file_path)
-        .map_err(|e| format!("Failed to create log file: {}", e))?;
-    let stderr_file = log_file
-        .try_clone()
-        .map_err(|e| format!("Failed to clone log file handle: {}", e))?;
+    let _ = std::fs::write(&log_file_path, "");
 
     // Combine system context + user prompt into a single stdin payload
     // to avoid passing large strings as CLI arguments
@@ -2386,8 +2389,8 @@ fn spawn_ideation_process(
         .arg("--allowedTools")
         .arg("Read,Glob,Grep,Write")
         .stdin(std::process::Stdio::piped())
-        .stdout(log_file)
-        .stderr(stderr_file)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
         .current_dir(work_dir);
 
     let mut child = cmd
@@ -2402,6 +2405,8 @@ fn spawn_ideation_process(
             // stdin is dropped here, closing the pipe
         });
     }
+
+    relay_output_to_log(&mut child, log_file_path);
 
     // Monitor the child process in a background thread.
     // If Claude crashes or exits with a non-zero code, write an error file
@@ -3230,16 +3235,13 @@ pub fn start_discovery_pty(
 
     let session_id = format!("discovery-{}", map_id);
 
-    // Create a shared log file for all discovery processes
+    // Shared log file path for all discovery processes (they append concurrently)
     let log_path = discovery_dir.join("discovery.log");
-    let log_file = std::fs::File::create(&log_path)
-        .map_err(|e| format!("Failed to create discovery log: {}", e))?;
+    let _ = std::fs::write(&log_path, "");
 
     // Spawn all repos as background processes that can write their output JSON files
     for (repo_path, system_prompt, user_prompt) in &repo_prompts {
-        let repo_log = log_file.try_clone()
-            .map_err(|e| format!("Failed to clone log file handle: {}", e))?;
-        spawn_discovery_process(repo_path, system_prompt, user_prompt, repo_log)?;
+        spawn_discovery_process(repo_path, system_prompt, user_prompt, log_path.clone())?;
     }
 
     Ok(session_id)
@@ -3251,12 +3253,9 @@ fn spawn_discovery_process(
     work_dir: &str,
     system_prompt: &str,
     user_prompt: &str,
-    log_file: std::fs::File,
+    log_path: std::path::PathBuf,
 ) -> Result<(), String> {
     use std::io::Write as IoWrite;
-
-    let stderr_file = log_file.try_clone()
-        .map_err(|e| format!("Failed to clone log file handle: {}", e))?;
 
     let mut cmd = std::process::Command::new("claude");
     apply_user_path(&mut cmd);
@@ -3268,8 +3267,8 @@ fn spawn_discovery_process(
         .arg("--append-system-prompt")
         .arg(system_prompt)
         .stdin(std::process::Stdio::piped())
-        .stdout(log_file)
-        .stderr(stderr_file)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
         .current_dir(work_dir);
 
     let mut child = cmd
@@ -3284,6 +3283,8 @@ fn spawn_discovery_process(
             // stdin drops here, closing the pipe
         });
     }
+
+    relay_output_to_log(&mut child, log_path);
 
     // Monitor in background
     std::thread::spawn(move || {
@@ -3732,6 +3733,52 @@ fn resolve_user_path() -> Option<String> {
 fn apply_user_path(cmd: &mut std::process::Command) {
     if let Some(path) = resolve_user_path() {
         cmd.env("PATH", path);
+    }
+}
+
+/// Relay a child process's piped stdout and stderr to a log file with immediate flushing.
+/// This avoids the OS block-buffering issue where stdout redirected to a file stays empty
+/// until the process finishes or the buffer fills.
+fn relay_output_to_log(child: &mut std::process::Child, log_path: std::path::PathBuf) {
+    use std::io::{BufRead, BufReader, Write as IoWrite};
+
+    let stdout = child.stdout.take();
+    let stderr = child.stderr.take();
+
+    if let Some(out) = stdout {
+        let path = log_path.clone();
+        std::thread::spawn(move || {
+            let reader = BufReader::new(out);
+            for line in reader.lines() {
+                if let Ok(line) = line {
+                    if let Ok(mut f) = std::fs::OpenOptions::new()
+                        .create(true)
+                        .append(true)
+                        .open(&path)
+                    {
+                        let _ = writeln!(f, "{}", line);
+                    }
+                }
+            }
+        });
+    }
+
+    if let Some(err) = stderr {
+        let path = log_path;
+        std::thread::spawn(move || {
+            let reader = BufReader::new(err);
+            for line in reader.lines() {
+                if let Ok(line) = line {
+                    if let Ok(mut f) = std::fs::OpenOptions::new()
+                        .create(true)
+                        .append(true)
+                        .open(&path)
+                    {
+                        let _ = writeln!(f, "{}", line);
+                    }
+                }
+            }
+        });
     }
 }
 

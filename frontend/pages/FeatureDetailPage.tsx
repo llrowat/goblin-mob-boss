@@ -4,7 +4,7 @@ import { useTauri } from "../hooks/useTauri";
 import { useTerminalSession } from "../hooks/useTerminalSession";
 import { useBackgroundPlanning } from "../hooks/useBackgroundPlanning";
 import { useCommandDisplay, CommandDisplayButton, CommandDisplayContent } from "../components/CommandDisplay";
-import { ClauseOutput } from "../components/ClauseOutput";
+
 import { TaskTable, ExecutionModeSelector, EditTaskModal, PlanHistory } from "./feature-detail/PlanningComponents";
 import { ValidationPanel } from "./feature-detail/ValidationPanel";
 import { TestingPanel } from "./feature-detail/TestingPanel";
@@ -955,12 +955,7 @@ export function FeatureDetailPage() {
               Claude is exploring the codebase and creating a plan. This
               usually takes 1-3 minutes.
             </div>
-            <ClauseOutput
-              processType="ideation"
-              processId={featureId}
-              repoPath={repos.find((r) => r.id === feature?.repo_ids?.[0])?.path}
-              active={status === "running"}
-            />
+
           </div>
         )}
 
