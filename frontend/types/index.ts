@@ -511,6 +511,7 @@ export interface AgentPerformanceSummary {
   top_categories: CategoryCount[];
   avg_duration_secs: number | null;
   last_active: string | null;
+  feature_count: number;
 }
 
 // ── Heuristics ──

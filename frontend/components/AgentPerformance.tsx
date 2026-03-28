@@ -1,55 +1,22 @@
 import type { AgentPerformanceSummary } from "../types";
 
 /**
- * Compact performance stats bar shown on agent cards.
- * Displays task count, success rate, and top specialties.
+ * Compact feature count shown in the bottom-right of agent cards.
  */
 export function AgentPerformanceBar({
   summary,
 }: {
   summary: AgentPerformanceSummary | undefined;
 }) {
-  if (!summary || summary.total_tasks === 0) {
-    return (
-      <div className="agent-perf-bar agent-perf-empty">
-        <span className="agent-perf-label">No track record yet</span>
-      </div>
-    );
+  const count = summary?.feature_count ?? 0;
+  if (count === 0) {
+    return null;
   }
 
-  const pct = Math.round(summary.success_rate * 100);
-  const barColor =
-    pct >= 80 ? "var(--success)" : pct >= 50 ? "var(--warning)" : "var(--danger)";
-
   return (
-    <div className="agent-perf-bar">
-      <div className="agent-perf-stats">
-        <span className="agent-perf-label">
-          {summary.successful_tasks}/{summary.total_tasks} tasks
-        </span>
-        <span className="agent-perf-rate" style={{ color: barColor }}>
-          {pct}%
-        </span>
-      </div>
-      <div className="agent-perf-track">
-        <div
-          className="agent-perf-fill"
-          style={{ width: `${pct}%`, background: barColor }}
-        />
-      </div>
-      {summary.top_categories.length > 0 && (
-        <div className="agent-perf-categories">
-          {summary.top_categories.slice(0, 3).map((cat) => (
-            <span key={cat.category} className="agent-perf-category-tag">
-              {cat.category}
-              <span className="agent-perf-category-count">
-                {cat.success_count}/{cat.count}
-              </span>
-            </span>
-          ))}
-        </div>
-      )}
-    </div>
+    <span className="agent-perf-feature-count">
+      Used in {count} {count === 1 ? "feature" : "features"}
+    </span>
   );
 }
 

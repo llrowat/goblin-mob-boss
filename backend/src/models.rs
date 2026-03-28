@@ -1193,6 +1193,8 @@ pub struct AgentPerformanceSummary {
     pub avg_duration_secs: Option<f64>,
     /// Most recent task record timestamp.
     pub last_active: Option<DateTime<Utc>>,
+    /// Number of distinct features this agent has worked on.
+    pub feature_count: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

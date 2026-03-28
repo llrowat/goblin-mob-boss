@@ -376,6 +376,12 @@ impl AppState {
 
                 let last_active = records.iter().map(|r| r.recorded_at).max();
 
+                // Distinct feature count
+                let mut feature_ids: Vec<&str> = records.iter().map(|r| r.feature_id.as_str()).collect();
+                feature_ids.sort();
+                feature_ids.dedup();
+                let feature_count = feature_ids.len() as u32;
+
                 AgentPerformanceSummary {
                     agent,
                     total_tasks: total,
@@ -384,6 +390,7 @@ impl AppState {
                     top_categories,
                     avg_duration_secs,
                     last_active,
+                    feature_count,
                 }
             })
             .collect();

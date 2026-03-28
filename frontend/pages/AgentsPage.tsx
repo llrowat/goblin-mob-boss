@@ -627,7 +627,6 @@ function AgentCard({
             {agent.description}
           </div>
         )}
-        <AgentPerformanceBar summary={perfSummary} />
         <div className="agent-card-prompt">{agent.system_prompt}</div>
         {(agent.tools || agent.model) && (
           <div
@@ -654,33 +653,36 @@ function AgentCard({
           </div>
         )}
         <div className="agent-card-actions">
-          <button className="btn btn-secondary btn-sm" onClick={onEdit}>
-            Edit
-          </button>
-          {onRemove && !deleteConfirm && (
-            <button className="btn btn-danger btn-sm" onClick={onRemove}>
-              Remove
+          <div className="agent-card-actions-left">
+            <button className="btn btn-secondary btn-sm" onClick={onEdit}>
+              Edit
             </button>
-          )}
-          {deleteConfirm && (
-            <div className="agent-card-confirm">
-              <span style={{ fontSize: 12, color: "var(--danger)" }}>
-                Delete?
-              </span>
-              <button
-                className="btn btn-danger btn-sm"
-                onClick={onConfirmDelete}
-              >
-                Yes
+            {onRemove && !deleteConfirm && (
+              <button className="btn btn-danger btn-sm" onClick={onRemove}>
+                Remove
               </button>
-              <button
-                className="btn btn-secondary btn-sm"
-                onClick={onCancelDelete}
-              >
-                No
-              </button>
-            </div>
-          )}
+            )}
+            {deleteConfirm && (
+              <div className="agent-card-confirm">
+                <span style={{ fontSize: 12, color: "var(--danger)" }}>
+                  Delete?
+                </span>
+                <button
+                  className="btn btn-danger btn-sm"
+                  onClick={onConfirmDelete}
+                >
+                  Yes
+                </button>
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={onCancelDelete}
+                >
+                  No
+                </button>
+              </div>
+            )}
+          </div>
+          <AgentPerformanceBar summary={perfSummary} />
         </div>
       </div>
     </div>
