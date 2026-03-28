@@ -4,7 +4,6 @@ import type {
   RepoHooks,
   HookRule,
   HookHandler,
-  HookTemplate,
   HookEventName,
   GeneratedHook,
 } from "../types";
@@ -16,13 +15,6 @@ interface HooksEditorProps {
   onHooksChanged?: () => void;
 }
 
-const CATEGORY_LABELS: Record<string, string> = {
-  quality: "Quality",
-  safety: "Safety",
-  workflow: "Workflow",
-  notifications: "Notifications",
-};
-
 const EMPTY_HANDLER: HookHandler = { type: "command", command: "" };
 
 export function HooksEditor({ repoPath, onHooksChanged }: HooksEditorProps) {
@@ -30,11 +22,9 @@ export function HooksEditor({ repoPath, onHooksChanged }: HooksEditorProps) {
   const { addToast } = useToast();
 
   const [hooks, setHooks] = useState<RepoHooks>({});
-  const [templates, setTemplates] = useState<HookTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [showTemplates, setShowTemplates] = useState(false);
-  const [showAddCustom, setShowAddCustom] = useState(false);
+  const [showAdd, setShowAdd] = useState(false);
 
   // Auto-generate state
   const [showGenerate, setShowGenerate] = useState(false);
@@ -50,12 +40,8 @@ export function HooksEditor({ repoPath, onHooksChanged }: HooksEditorProps) {
 
   const loadHooks = useCallback(() => {
     setLoading(true);
-    Promise.all([
-      tauri.getRepoHooks(repoPath),
-      tauri.listHookTemplates(),
-    ]).then(([h, t]) => {
+    tauri.getRepoHooks(repoPath).then((h) => {
       setHooks(h);
-      setTemplates(t);
       setLoading(false);
     }).catch(() => setLoading(false));
   }, [repoPath]);
@@ -100,17 +86,12 @@ export function HooksEditor({ repoPath, onHooksChanged }: HooksEditorProps) {
     save(updated);
   };
 
-  const applyTemplate = (template: HookTemplate) => {
-    addRule(template.event as HookEventName, template.matcher, template.command);
-    setShowTemplates(false);
-  };
-
-  const handleAddCustom = () => {
+  const handleAdd = () => {
     if (!newCommand.trim()) return;
     addRule(newEvent, newMatcher.trim(), newCommand.trim());
     setNewCommand("");
     setNewMatcher("");
-    setShowAddCustom(false);
+    setShowAdd(false);
   };
 
   const stopPolling = useCallback(() => {
@@ -215,123 +196,28 @@ export function HooksEditor({ repoPath, onHooksChanged }: HooksEditorProps) {
           <button
             className="btn btn-secondary btn-sm"
             onClick={() => {
-              setShowTemplates(!showTemplates);
-              setShowAddCustom(false);
+              setShowAdd(!showAdd);
               setShowGenerate(false);
             }}
             disabled={saving}
           >
-            + Template
-          </button>
-          <button
-            className="btn btn-secondary btn-sm"
-            onClick={() => {
-              setShowAddCustom(!showAddCustom);
-              setShowTemplates(false);
-              setShowGenerate(false);
-            }}
-            disabled={saving}
-          >
-            + Custom
+            + Add
           </button>
           <button
             className="btn btn-secondary btn-sm"
             onClick={() => {
               setShowGenerate(!showGenerate);
-              setShowTemplates(false);
-              setShowAddCustom(false);
+              setShowAdd(false);
             }}
             disabled={saving || generating}
           >
-            {generating ? "Generating..." : "Auto-Create"}
+            {generating ? "Generating..." : "Create with AI"}
           </button>
         </div>
       </div>
 
-      {/* Template picker — grouped by category */}
-      {showTemplates && (
-        <div
-          style={{
-            background: "var(--bg-raised)",
-            border: "1px solid var(--border)",
-            borderRadius: "var(--radius)",
-            padding: 12,
-            marginBottom: 8,
-          }}
-        >
-          <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 8 }}>
-            Quick-add a hook from a template. You can customize the command after adding.
-          </div>
-          {Object.entries(
-            templates.reduce<Record<string, HookTemplate[]>>((acc, t) => {
-              const cat = t.category || "other";
-              (acc[cat] = acc[cat] || []).push(t);
-              return acc;
-            }, {}),
-          ).map(([category, catTemplates]) => (
-            <div key={category} style={{ marginBottom: 8 }}>
-              <div
-                style={{
-                  fontSize: 11,
-                  fontWeight: 600,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.05em",
-                  color: "var(--accent)",
-                  marginBottom: 4,
-                }}
-              >
-                {CATEGORY_LABELS[category] || category}
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                {catTemplates.map((t) => {
-                  const eventInfo = HOOK_EVENTS.find((e) => e.value === t.event);
-                  return (
-                    <div
-                      key={t.id}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        padding: "8px 10px",
-                        background: "var(--panel)",
-                        borderRadius: "var(--radius-sm)",
-                        cursor: "pointer",
-                      }}
-                      onClick={() => applyTemplate(t)}
-                      role="button"
-                      tabIndex={0}
-                      onKeyDown={(e) => e.key === "Enter" && applyTemplate(t)}
-                    >
-                      <div>
-                        <div style={{ fontSize: 13, fontWeight: 500 }}>{t.name}</div>
-                        <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>
-                          {t.description}
-                        </div>
-                      </div>
-                      <span
-                        style={{
-                          fontSize: 11,
-                          padding: "2px 6px",
-                          background: "var(--bg)",
-                          borderRadius: "var(--radius-sm)",
-                          color: "var(--accent)",
-                          whiteSpace: "nowrap",
-                          marginLeft: 8,
-                        }}
-                      >
-                        {eventInfo?.label || t.event}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Custom hook form */}
-      {showAddCustom && (
+      {/* Add hook form */}
+      {showAdd && (
         <div
           style={{
             background: "var(--bg-raised)",
@@ -388,14 +274,14 @@ export function HooksEditor({ repoPath, onHooksChanged }: HooksEditorProps) {
           <div className="actions-bar" style={{ gap: 4 }}>
             <button
               className="btn btn-primary btn-sm"
-              onClick={handleAddCustom}
+              onClick={handleAdd}
               disabled={!newCommand.trim()}
             >
               Add Hook
             </button>
             <button
               className="btn btn-secondary btn-sm"
-              onClick={() => setShowAddCustom(false)}
+              onClick={() => setShowAdd(false)}
             >
               Cancel
             </button>
@@ -534,9 +420,9 @@ export function HooksEditor({ repoPath, onHooksChanged }: HooksEditorProps) {
       )}
 
       {/* Existing hooks */}
-      {ruleCount === 0 && !showTemplates && !showAddCustom ? (
+      {ruleCount === 0 && !showAdd ? (
         <div style={{ fontSize: 12, color: "var(--muted)", padding: "4px 0" }}>
-          No hooks wired up yet. Add a template or write your own.
+          No hooks wired up yet.
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>

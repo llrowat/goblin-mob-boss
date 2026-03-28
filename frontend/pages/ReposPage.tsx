@@ -314,17 +314,6 @@ export function ReposPage() {
                       </span>
                     )}
                   </button>
-                  {hookCounts[repo.id] === 0 && expandedHooksId !== repo.id && (
-                    <span
-                      className="repo-no-hooks-nudge"
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => setExpandedHooksId(repo.id)}
-                      onKeyDown={(e) => e.key === "Enter" && setExpandedHooksId(repo.id)}
-                    >
-                      No hooks configured — add one?
-                    </span>
-                  )}
                 </div>
                 {expandedHooksId === repo.id && (
                   <HooksEditor

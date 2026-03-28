@@ -376,7 +376,7 @@ describe("ReposPage", () => {
     expect(checkboxes[0]).toBeChecked();
   });
 
-  it("shows 'no hooks' nudge for repos without hooks", async () => {
+  it("shows hooks toggle button for each repo", async () => {
     mockInvokeForRepos();
 
     render(<ReposPage />);
@@ -385,9 +385,8 @@ describe("ReposPage", () => {
       expect(screen.getByText("frontend-app")).toBeInTheDocument();
     });
 
-    // Both repos have no hooks, so both should show the nudge
-    const nudges = await screen.findAllByText("No hooks configured — add one?");
-    expect(nudges).toHaveLength(2);
+    const hookButtons = screen.getAllByText("Hooks");
+    expect(hookButtons).toHaveLength(2);
   });
 
   it("shows hook count on button when hooks exist", async () => {
@@ -401,29 +400,23 @@ describe("ReposPage", () => {
       expect(screen.getByText("frontend-app")).toBeInTheDocument();
     });
 
-    // frontend-app has 1 hook rule
     await waitFor(() => {
       expect(screen.getByText("(1)")).toBeInTheDocument();
     });
-
-    // backend-api has no hooks — should show nudge
-    expect(screen.getByText("No hooks configured — add one?")).toBeInTheDocument();
   });
 
-  it("hides nudge and expands hooks editor when nudge is clicked", async () => {
+  it("expands hooks editor when Hooks button is clicked", async () => {
     mockInvokeForRepos();
 
     render(<ReposPage />);
 
     await waitFor(() => {
-      const nudges = screen.getAllByText("No hooks configured — add one?");
-      expect(nudges.length).toBeGreaterThan(0);
+      expect(screen.getByText("frontend-app")).toBeInTheDocument();
     });
 
-    const nudges = screen.getAllByText("No hooks configured — add one?");
-    fireEvent.click(nudges[0]);
+    const hookButtons = screen.getAllByText("Hooks");
+    fireEvent.click(hookButtons[0]);
 
-    // After clicking, the hooks editor loading state should appear
     await waitFor(() => {
       expect(screen.getByText("Loading hooks...")).toBeInTheDocument();
     });
