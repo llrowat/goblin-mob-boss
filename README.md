@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="#getting-started">Getting Started</a> &middot;
+  <a href="#install">Install</a> &middot;
   <a href="#how-it-works">How It Works</a> &middot;
   <a href="#screenshots">Screenshots</a> &middot;
   <a href="#contributing">Contributing</a>
@@ -119,7 +119,13 @@ Without GMB, getting good results from Claude Code agents means manually wrangli
 
 ## Getting Started
 
-### Prerequisites
+### Install
+
+Download the latest installer for your platform from the [Releases page](https://github.com/llrowat/goblin-mob-boss/releases/latest).
+
+### Build from Source
+
+#### Prerequisites
 
 - [Node.js](https://nodejs.org/) (v18+)
 - [Rust](https://www.rust-lang.org/tools/install)
