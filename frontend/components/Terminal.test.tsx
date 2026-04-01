@@ -1,4 +1,4 @@
-import { render, cleanup, waitFor } from "@testing-library/react";
+import { render, cleanup } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Terminal } from "./Terminal";

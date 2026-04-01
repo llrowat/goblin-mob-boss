@@ -27,6 +27,7 @@ function makeFeature(overrides: Partial<Feature> = {}): Feature {
     testing_started_at: null,
     testing_timeout_secs: 600,
     testing_decisions: [],
+    attachments: [],
     activity_log: [],
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",

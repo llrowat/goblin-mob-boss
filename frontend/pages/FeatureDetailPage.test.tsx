@@ -37,8 +37,8 @@ vi.mock("react-router-dom", () => ({
 }));
 
 const mockRepos: Repository[] = [
-  { id: "r1", name: "frontend-app", path: "/tmp/frontend", base_branch: "main", description: "", validators: [], pr_command: null, similar_repo_ids: [], created_at: "2026-01-01T00:00:00Z" },
-  { id: "r2", name: "backend-api", path: "/tmp/backend", base_branch: "main", description: "", validators: [], pr_command: null, similar_repo_ids: [], created_at: "2026-01-01T00:00:00Z" },
+  { id: "r1", name: "frontend-app", path: "/tmp/frontend", base_branch: "main", description: "", validators: [], pr_command: null, similar_repo_ids: [], commit_pattern: null, created_at: "2026-01-01T00:00:00Z" },
+  { id: "r2", name: "backend-api", path: "/tmp/backend", base_branch: "main", description: "", validators: [], pr_command: null, similar_repo_ids: [], commit_pattern: null, created_at: "2026-01-01T00:00:00Z" },
 ];
 
 const mockFeature: Feature = {
@@ -65,6 +65,7 @@ const mockFeature: Feature = {
   testing_started_at: null,
   testing_timeout_secs: 300,
   testing_decisions: [],
+  attachments: [],
   activity_log: [],
   created_at: "2026-01-01T00:00:00Z",
   updated_at: "2026-01-01T00:00:00Z",
