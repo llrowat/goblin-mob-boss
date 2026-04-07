@@ -85,7 +85,7 @@ function AppLayout() {
   return (
     <div className="app-layout">
       <nav className="topbar" aria-label="Main navigation">
-        <NavLink to="/onboarding" className="topbar-brand topbar-brand-link" title="How it works">
+        <NavLink to="/" className="topbar-brand topbar-brand-link" title="Home">
           <img
             src={goblinLogo}
             alt="Goblin Mob Boss"

@@ -113,7 +113,7 @@ describe("OnboardingPage", () => {
     renderPage();
 
     expect(
-      screen.getByText(/return here any time by clicking the goblin logo/),
+      screen.getByText(/return here any time from the Help button/),
     ).toBeInTheDocument();
   });
 

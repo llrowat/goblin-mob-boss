@@ -18,8 +18,13 @@ interface ValidationPanelProps {
   pushing: boolean;
   pushed: boolean;
   pushingRepoId: string | null;
-  onPush: () => void;
-  onPushRepo: (repoId: string) => void;
+  onPush: (commitMessage?: string) => void;
+  onPushRepo: (repoId: string, commitMessage?: string) => void;
+  // Commit message
+  commitMessage: string;
+  onCommitMessageChange: (value: string) => void;
+  generatingMessage: boolean;
+  onGenerateCommitMessage: () => void;
   // Make changes
   showMakeChanges: boolean;
   changesFeedback: string;
@@ -52,6 +57,10 @@ export function ValidationPanel({
   pushingRepoId,
   onPush,
   onPushRepo,
+  commitMessage,
+  onCommitMessageChange,
+  generatingMessage,
+  onGenerateCommitMessage,
   showMakeChanges,
   changesFeedback,
   submittingChanges,
@@ -83,7 +92,7 @@ export function ValidationPanel({
           {isReady && !isMultiRepo && (
             <button
               className="btn btn-primary btn-sm"
-              onClick={onPush}
+              onClick={() => onPush(commitMessage || undefined)}
               disabled={pushing || pushed}
               aria-label="Commit and push changes"
             >
@@ -109,6 +118,32 @@ export function ValidationPanel({
           )}
         </div>
       </div>
+
+      {/* Commit message editor */}
+      {isReady && !isPushed && !isComplete && (
+        <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--border)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)" }}>
+              Commit Message
+            </div>
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={onGenerateCommitMessage}
+              disabled={generatingMessage}
+              style={{ fontSize: 10, padding: "2px 8px" }}
+            >
+              {generatingMessage ? "Generating..." : "Generate with Claude"}
+            </button>
+          </div>
+          <textarea
+            className="form-textarea"
+            value={commitMessage}
+            onChange={(e) => onCommitMessageChange(e.target.value)}
+            placeholder="Commit message (leave empty for auto-generated)"
+            style={{ minHeight: 80, fontFamily: "var(--font-mono)", fontSize: 11 }}
+          />
+        </div>
+      )}
 
       {/* Make Changes feedback form */}
       {showMakeChanges && (
@@ -186,7 +221,7 @@ export function ValidationPanel({
                 {status !== "pushed" && (
                   <button
                     className="btn btn-primary btn-sm"
-                    onClick={() => onPushRepo(repoId)}
+                    onClick={() => onPushRepo(repoId, commitMessage || undefined)}
                     disabled={isPushingThis}
                     style={{ fontSize: 11, padding: "2px 10px" }}
                   >

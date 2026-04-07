@@ -649,15 +649,31 @@ export function FeatureDetailPage() {
   const [pushing, setPushing] = useState(false);
   const [pushed, setPushed] = useState(false);
   const [pushingRepoId, setPushingRepoId] = useState<string | null>(null);
+  const [commitMessage, setCommitMessage] = useState("");
+  const [generatingMessage, setGeneratingMessage] = useState(false);
 
   const isMultiRepo = feature ? (feature.repo_ids?.length ?? 0) > 1 : false;
 
-  const handlePush = async () => {
+  const handleGenerateCommitMessage = async () => {
+    if (!featureId || !feature) return;
+    setGeneratingMessage(true);
+    try {
+      const repoId = feature.repo_ids?.[0] ?? "";
+      const msg = await tauri.generateCommitMessage(featureId, repoId);
+      setCommitMessage(msg);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setGeneratingMessage(false);
+    }
+  };
+
+  const handlePush = async (msg?: string) => {
     if (!featureId) return;
     setPushing(true);
     setError("");
     try {
-      await tauri.pushFeature(featureId);
+      await tauri.pushFeature(featureId, msg);
       setPushed(true);
       const updated = await tauri.getFeature(featureId);
       setFeature(updated);
@@ -668,12 +684,12 @@ export function FeatureDetailPage() {
     }
   };
 
-  const handlePushRepo = async (repoId: string) => {
+  const handlePushRepo = async (repoId: string, msg?: string) => {
     if (!featureId) return;
     setPushingRepoId(repoId);
     setError("");
     try {
-      await tauri.pushFeatureRepo(featureId, repoId);
+      await tauri.pushFeatureRepo(featureId, repoId, msg);
       const updated = await tauri.getFeature(featureId);
       setFeature(updated);
     } catch (e) {
@@ -1249,6 +1265,10 @@ export function FeatureDetailPage() {
           pushingRepoId={pushingRepoId}
           onPush={handlePush}
           onPushRepo={handlePushRepo}
+          commitMessage={commitMessage}
+          onCommitMessageChange={setCommitMessage}
+          generatingMessage={generatingMessage}
+          onGenerateCommitMessage={handleGenerateCommitMessage}
           showMakeChanges={showMakeChanges}
           changesFeedback={changesFeedback}
           submittingChanges={submittingChanges}

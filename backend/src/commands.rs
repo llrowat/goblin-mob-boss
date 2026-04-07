@@ -1342,7 +1342,8 @@ pub fn run_feature_validators(
                 }
             };
 
-        let result = validators::run_validators(&validator_path, &repo.validators, 1)?;
+        let shell = state.preferences.lock().unwrap().shell.clone();
+        let result = validators::run_validators(&validator_path, &repo.validators, 1, Some(&shell))?;
         if !result.all_passed {
             all_passed = false;
         }
@@ -1460,7 +1461,8 @@ pub fn start_functional_testing(
                 .get(&r.id)
                 .map(|s| s.as_str())
                 .unwrap_or(&r.path);
-            match validators::run_validators(vpath, &r.validators, attempt) {
+            let shell = state.preferences.lock().unwrap().shell.clone();
+            match validators::run_validators(vpath, &r.validators, attempt, Some(&shell)) {
                 Ok(vr) if !vr.all_passed => {
                     let failures: Vec<String> = vr
                         .results
@@ -1985,6 +1987,7 @@ pub fn push_feature_repo(
     state: State<AppState>,
     feature_id: String,
     repo_id: String,
+    commit_message: Option<String>,
 ) -> Result<String, String> {
     let features = state.features.lock().unwrap();
     let feature = features
@@ -2008,8 +2011,8 @@ pub fn push_feature_repo(
 
     let mut outputs = Vec::new();
 
-    // Commit any uncommitted changes with a descriptive message
-    let commit_msg = git::build_commit_message(work_dir, &feature.name);
+    // Commit any uncommitted changes — use provided message or generate a default
+    let commit_msg = commit_message.unwrap_or_else(|| git::build_commit_message(work_dir, &feature.name));
     match git::commit_all(work_dir, &commit_msg) {
         Ok(true) => outputs.push(format!("{}: committed changes", repo.name)),
         Ok(false) => {} // nothing to commit
@@ -2078,7 +2081,7 @@ pub fn push_feature_repo(
 /// Push all repos in a feature at once (legacy behavior).
 /// Updates per-repo push status for each repo.
 #[tauri::command]
-pub fn push_feature(state: State<AppState>, feature_id: String) -> Result<String, String> {
+pub fn push_feature(state: State<AppState>, feature_id: String, commit_message: Option<String>) -> Result<String, String> {
     let features = state.features.lock().unwrap();
     let feature = features
         .get(&feature_id)
@@ -2099,8 +2102,8 @@ pub fn push_feature(state: State<AppState>, feature_id: String) -> Result<String
             .get(&repo.id)
             .map(|s| s.as_str())
             .unwrap_or(&repo.path);
-        let commit_msg = git::build_commit_message(work_dir, &feature.name);
-        match git::commit_all(work_dir, &commit_msg) {
+        let msg = commit_message.clone().unwrap_or_else(|| git::build_commit_message(work_dir, &feature.name));
+        match git::commit_all(work_dir, &msg) {
             Ok(true) => outputs.push(format!("{}: committed changes", repo.name)),
             Ok(false) => {} // nothing to commit
             Err(e) => {
@@ -2185,6 +2188,210 @@ pub fn get_pr_command(state: State<AppState>, feature_id: String) -> Result<Stri
         .collect();
 
     Ok(commands.join("\n"))
+}
+
+/// Generate a commit message using Claude based on the diff in a feature's worktree.
+/// Returns a structured commit message (title + body).
+#[tauri::command]
+pub fn generate_commit_message(
+    state: State<AppState>,
+    feature_id: String,
+    repo_id: String,
+) -> Result<String, String> {
+    let features = state.features.lock().unwrap();
+    let feature = features
+        .get(&feature_id)
+        .ok_or("Feature not found")?
+        .clone();
+    drop(features);
+
+    let repo = get_repo(&state, &repo_id)?;
+    let work_dir = feature
+        .worktree_paths
+        .get(&repo_id)
+        .map(|s| s.as_str())
+        .unwrap_or(&repo.path);
+
+    // Get the diff for context
+    let diff = git::run_git_public(work_dir, &["diff", "HEAD"])
+        .unwrap_or_default();
+    let staged = git::run_git_public(work_dir, &["diff", "--cached"])
+        .unwrap_or_default();
+    let status = git::run_git_public(work_dir, &["status", "--porcelain"])
+        .unwrap_or_default();
+
+    let combined_diff = if !staged.is_empty() && !diff.is_empty() {
+        format!("{}\n{}", staged, diff)
+    } else if !staged.is_empty() {
+        staged
+    } else {
+        diff
+    };
+
+    // Truncate diff to avoid overwhelming Claude
+    let truncated_diff = if combined_diff.len() > 8000 {
+        format!("{}...\n[diff truncated]", &combined_diff[..8000])
+    } else {
+        combined_diff
+    };
+
+    if truncated_diff.trim().is_empty() && status.trim().is_empty() {
+        return Ok(git::build_commit_message(work_dir, &feature.name));
+    }
+
+    let prompt = format!(
+        r#"Generate a concise, high-quality git commit message for these changes.
+
+Feature: {}
+Description: {}
+
+Git status:
+{}
+
+Diff:
+{}
+
+Rules:
+- First line: a conventional commit subject (e.g. "feat: add user auth flow", "fix: resolve null pointer in parser")
+- Use the appropriate type: feat, fix, refactor, docs, test, chore, style, perf
+- Keep the subject line under 72 characters
+- Add a blank line then a brief body (2-4 lines) explaining WHAT changed and WHY
+- Do NOT include any markdown formatting, code fences, or extra commentary
+- Output ONLY the commit message text, nothing else"#,
+        feature.name,
+        feature.description,
+        status,
+        truncated_diff
+    );
+
+    run_claude_print(work_dir, &prompt)
+}
+
+/// Generate a PR title and description using Claude based on the feature's changes.
+#[tauri::command]
+pub fn generate_pr_description(
+    state: State<AppState>,
+    feature_id: String,
+) -> Result<String, String> {
+    let features = state.features.lock().unwrap();
+    let feature = features
+        .get(&feature_id)
+        .ok_or("Feature not found")?
+        .clone();
+    drop(features);
+
+    let repos = get_all_repos(&state, &feature)?;
+
+    // Collect diffs across all repos
+    let mut all_diffs = String::new();
+    for repo in &repos {
+        let work_dir = feature
+            .worktree_paths
+            .get(&repo.id)
+            .map(|s| s.as_str())
+            .unwrap_or(&repo.path);
+
+        let base = &repo.base_branch;
+        let log = git::run_git_public(
+            work_dir,
+            &["log", "--oneline", &format!("origin/{}..HEAD", base)],
+        )
+        .unwrap_or_default();
+
+        let stat = git::run_git_public(
+            work_dir,
+            &["diff", "--stat", &format!("origin/{}..HEAD", base)],
+        )
+        .unwrap_or_default();
+
+        if !log.is_empty() || !stat.is_empty() {
+            all_diffs.push_str(&format!("### {}\nCommits:\n{}\n\nFiles changed:\n{}\n\n", repo.name, log, stat));
+        }
+    }
+
+    if all_diffs.trim().is_empty() {
+        // Fallback: return the feature name and description
+        return Ok(format!("{}\n\n{}", feature.name, feature.description));
+    }
+
+    // Truncate if needed
+    let truncated = if all_diffs.len() > 10000 {
+        format!("{}...\n[truncated]", &all_diffs[..10000])
+    } else {
+        all_diffs
+    };
+
+    let prompt = format!(
+        r#"Generate a pull request title and description for these changes.
+
+Feature: {}
+Description: {}
+
+Changes across repositories:
+{}
+
+Rules:
+- First line: PR title (concise, under 70 characters, no prefix like "PR:")
+- Blank line
+- Then a markdown body with:
+  - A "## Summary" section with 2-4 bullet points explaining what changed and why
+  - A "## Changes" section briefly listing key changes
+- Do NOT include any code fences around the output
+- Output ONLY the PR title and body, nothing else"#,
+        feature.name,
+        feature.description,
+        truncated
+    );
+
+    let primary_repo = repos.first().ok_or("No repos found")?;
+    let work_dir = feature
+        .worktree_paths
+        .get(&primary_repo.id)
+        .map(|s| s.as_str())
+        .unwrap_or(&primary_repo.path);
+
+    run_claude_print(work_dir, &prompt)
+}
+
+/// Run Claude in --print mode with a prompt, returning stdout.
+fn run_claude_print(work_dir: &str, prompt: &str) -> Result<String, String> {
+    use std::io::Write as IoWrite;
+
+    let mut cmd = std::process::Command::new("claude");
+    apply_user_path(&mut cmd);
+    cmd.arg("--print")
+        .arg("--model")
+        .arg("haiku")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .current_dir(work_dir);
+
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("Failed to spawn claude: {}", e))?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin
+            .write_all(prompt.as_bytes())
+            .map_err(|e| format!("Failed to write prompt: {}", e))?;
+    }
+
+    let output = child
+        .wait_with_output()
+        .map_err(|e| format!("Failed to wait for claude: {}", e))?;
+
+    if output.status.success() {
+        let result = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if result.is_empty() {
+            Err("Claude returned empty output".to_string())
+        } else {
+            Ok(result)
+        }
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        Err(format!("Claude failed: {}", stderr))
+    }
 }
 
 // ── Ideation Background Commands ──

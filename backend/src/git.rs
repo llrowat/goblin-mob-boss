@@ -14,6 +14,11 @@ impl std::fmt::Display for GitError {
 
 type GitResult<T> = Result<T, GitError>;
 
+/// Public variant of run_git that returns Result<String, String> for use in commands.
+pub fn run_git_public(repo_path: &str, args: &[&str]) -> Result<String, String> {
+    run_git(repo_path, args).map_err(|e| e.0)
+}
+
 fn run_git(repo_path: &str, args: &[&str]) -> GitResult<String> {
     let output = Command::new("git")
         .arg("-C")
@@ -1068,5 +1073,24 @@ mod tests {
         let files = vec!["a.rs".to_string(), "b.rs".to_string()];
         let result = format_file_list("Add", &files);
         assert_eq!(result, "Add a.rs, b.rs");
+    }
+
+    #[test]
+    fn run_git_public_returns_ok_for_valid_repo() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().to_string_lossy().to_string();
+        run_git(&path, &["init"]).unwrap();
+
+        let result = run_git_public(&path, &["status", "--porcelain"]);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn run_git_public_returns_err_for_invalid_command() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().to_string_lossy().to_string();
+
+        let result = run_git_public(&path, &["not-a-real-command"]);
+        assert!(result.is_err());
     }
 }

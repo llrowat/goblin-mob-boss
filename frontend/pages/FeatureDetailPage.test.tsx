@@ -863,6 +863,7 @@ describe("FeatureDetailPage", () => {
       expect(mockedInvoke).toHaveBeenCalledWith("push_feature_repo", {
         featureId: "f1",
         repoId: "r1",
+        commitMessage: null,
       });
     });
   });

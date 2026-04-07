@@ -240,14 +240,20 @@ export function useTauri() {
       invoke<DiffSummary>("get_feature_diff", { featureId }),
 
     // Feature PR
-    pushFeature: (featureId: string) =>
-      invoke<string>("push_feature", { featureId }),
+    pushFeature: (featureId: string, commitMessage?: string) =>
+      invoke<string>("push_feature", { featureId, commitMessage: commitMessage ?? null }),
 
-    pushFeatureRepo: (featureId: string, repoId: string) =>
-      invoke<string>("push_feature_repo", { featureId, repoId }),
+    pushFeatureRepo: (featureId: string, repoId: string, commitMessage?: string) =>
+      invoke<string>("push_feature_repo", { featureId, repoId, commitMessage: commitMessage ?? null }),
 
     getPrCommand: (featureId: string) =>
       invoke<string>("get_pr_command", { featureId }),
+
+    generateCommitMessage: (featureId: string, repoId: string) =>
+      invoke<string>("generate_commit_message", { featureId, repoId }),
+
+    generatePrDescription: (featureId: string) =>
+      invoke<string>("generate_pr_description", { featureId }),
 
     // Preferences
     getPreferences: () => invoke<Preferences>("get_preferences"),
