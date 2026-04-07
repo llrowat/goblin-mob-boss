@@ -10,6 +10,10 @@
 </p>
 
 <p align="center">
+  <em>Everything GMB does can be done with base Claude Code — GMB just adds a UI and guided explanations to help you learn the concepts.</em>
+</p>
+
+<p align="center">
   <a href="#install">Install</a> &middot;
   <a href="#how-it-works">How It Works</a> &middot;
   <a href="#screenshots">Screenshots</a> &middot;
