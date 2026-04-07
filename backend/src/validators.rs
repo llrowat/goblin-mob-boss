@@ -13,8 +13,9 @@ pub fn run_validators(
     worktree_path: &str,
     validators: &[String],
     attempt: u32,
+    shell: Option<&str>,
 ) -> Result<VerifyResult, String> {
-    run_validators_with_timeout(worktree_path, validators, attempt, VALIDATOR_TIMEOUT)
+    run_validators_with_timeout(worktree_path, validators, attempt, VALIDATOR_TIMEOUT, shell)
 }
 
 pub fn run_validators_with_timeout(
@@ -22,6 +23,7 @@ pub fn run_validators_with_timeout(
     validators: &[String],
     attempt: u32,
     timeout: Duration,
+    shell: Option<&str>,
 ) -> Result<VerifyResult, String> {
     let results_dir = Path::new(worktree_path)
         .join(".gmb")
@@ -35,14 +37,23 @@ pub fn run_validators_with_timeout(
 
     for (i, cmd) in validators.iter().enumerate() {
         let child = if cfg!(target_os = "windows") {
-            Command::new("cmd")
-                .args(["/C", cmd])
+            let (program, args): (&str, Vec<&str>) = match shell {
+                Some("powershell") => ("powershell", vec!["-NoProfile", "-Command", cmd]),
+                Some("pwsh") => ("pwsh", vec!["-NoProfile", "-Command", cmd]),
+                _ => ("cmd", vec!["/C", cmd]),
+            };
+            Command::new(program)
+                .args(args)
                 .current_dir(worktree_path)
                 .stdout(std::process::Stdio::piped())
                 .stderr(std::process::Stdio::piped())
                 .spawn()
         } else {
-            Command::new("sh")
+            let program = match shell {
+                Some(s) if !s.is_empty() => s,
+                _ => "sh",
+            };
+            Command::new(program)
                 .args(["-l", "-c", cmd])
                 .current_dir(worktree_path)
                 .stdout(std::process::Stdio::piped())
@@ -171,7 +182,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let worktree = dir.path().to_string_lossy().to_string();
 
-        let result = run_validators(&worktree, &["true".to_string()], 1).unwrap();
+        let result = run_validators(&worktree, &["true".to_string()], 1, None).unwrap();
         assert!(result.all_passed);
         assert_eq!(result.attempt, 1);
         assert_eq!(result.results.len(), 1);
@@ -185,7 +196,7 @@ mod tests {
         let worktree = dir.path().to_string_lossy().to_string();
 
         let result =
-            run_validators(&worktree, &["true".to_string(), "false".to_string()], 1).unwrap();
+            run_validators(&worktree, &["true".to_string(), "false".to_string()], 1, None).unwrap();
 
         assert!(!result.all_passed);
         assert_eq!(result.results.len(), 2);
@@ -198,7 +209,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let worktree = dir.path().to_string_lossy().to_string();
 
-        let result = run_validators(&worktree, &["echo hello".to_string()], 1).unwrap();
+        let result = run_validators(&worktree, &["echo hello".to_string()], 1, None).unwrap();
         assert!(result.all_passed);
         assert!(result.results[0].stdout.contains("hello"));
     }
@@ -209,7 +220,7 @@ mod tests {
         let worktree = dir.path().to_string_lossy().to_string();
 
         let result =
-            run_validators(&worktree, &["echo error_msg >&2 && false".to_string()], 1).unwrap();
+            run_validators(&worktree, &["echo error_msg >&2 && false".to_string()], 1, None).unwrap();
 
         assert!(!result.all_passed);
         assert!(result.results[0].stderr.contains("error_msg"));
@@ -220,7 +231,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let worktree = dir.path().to_string_lossy().to_string();
 
-        run_validators(&worktree, &["echo ok".to_string()], 2).unwrap();
+        run_validators(&worktree, &["echo ok".to_string()], 2, None).unwrap();
 
         let results_dir = dir.path().join(".gmb/results/verify/2");
         assert!(results_dir.join("validator_0_stdout.txt").exists());
@@ -234,7 +245,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let worktree = dir.path().to_string_lossy().to_string();
 
-        let result = run_validators(&worktree, &[], 1).unwrap();
+        let result = run_validators(&worktree, &[], 1, None).unwrap();
         assert!(result.all_passed);
         assert!(result.results.is_empty());
     }
@@ -247,7 +258,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let worktree = dir.path().to_string_lossy().to_string();
 
-        let result = run_validators(&worktree, &["echo $HOME".to_string()], 1).unwrap();
+        let result = run_validators(&worktree, &["echo $HOME".to_string()], 1, None).unwrap();
 
         assert!(result.all_passed);
         // HOME should be a non-empty path (e.g. /root, /home/user)
@@ -261,6 +272,34 @@ mod tests {
     }
 
     #[test]
+    fn run_validators_uses_specified_shell() {
+        let dir = TempDir::new().unwrap();
+        let worktree = dir.path().to_string_lossy().to_string();
+
+        // bash supports $BASH_VERSION; if we specify bash as the shell it should be set
+        let result =
+            run_validators(&worktree, &["echo $BASH_VERSION".to_string()], 1, Some("bash"))
+                .unwrap();
+        assert!(result.all_passed);
+        let output = result.results[0].stdout.trim();
+        assert!(
+            !output.is_empty(),
+            "BASH_VERSION should be set when running under bash"
+        );
+    }
+
+    #[test]
+    fn run_validators_default_shell_when_none() {
+        // Passing None should fall back to "sh" and still work
+        let dir = TempDir::new().unwrap();
+        let worktree = dir.path().to_string_lossy().to_string();
+
+        let result = run_validators(&worktree, &["echo works".to_string()], 1, None).unwrap();
+        assert!(result.all_passed);
+        assert!(result.results[0].stdout.contains("works"));
+    }
+
+    #[test]
     fn run_validators_timeout_kills_process() {
         let dir = TempDir::new().unwrap();
         let worktree = dir.path().to_string_lossy().to_string();
@@ -271,6 +310,7 @@ mod tests {
             &["sleep 60".to_string()],
             1,
             Duration::from_secs(1),
+            None,
         )
         .unwrap();
 

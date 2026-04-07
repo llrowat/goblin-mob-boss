@@ -151,12 +151,21 @@ export function HomePage() {
                 Start a new feature to plan and execute with Claude.
               </p>
             </div>
-            <button
-              className="btn btn-primary"
-              onClick={() => setShowNewFeature(true)}
-            >
-              New Feature
-            </button>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                className="btn btn-secondary"
+                onClick={() => navigate("/onboarding")}
+                title="How GMB works"
+              >
+                Help
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={() => setShowNewFeature(true)}
+              >
+                New Feature
+              </button>
+            </div>
           </div>
 
           {/* Active features */}

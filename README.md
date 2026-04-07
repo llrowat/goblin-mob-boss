@@ -10,6 +10,10 @@
 </p>
 
 <p align="center">
+  <em>Everything GMB does can be done with base Claude Code — GMB just adds a UI and guided explanations to help you learn the concepts.</em>
+</p>
+
+<p align="center">
   <a href="#install">Install</a> &middot;
   <a href="#how-it-works">How It Works</a> &middot;
   <a href="#screenshots">Screenshots</a> &middot;
@@ -99,7 +103,6 @@ Without GMB, getting good results from Claude Code agents means manually wrangli
 
 ### Hooks
 - Per-repo hook management via `.claude/settings.json`
-- 15+ built-in hook templates organized by category (quality, safety, workflow, notifications)
 - Auto-create hooks with Claude — describe what you want, Claude generates the event, matcher, and command
 - Preview generated hooks before applying
 
@@ -162,3 +165,7 @@ Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 ## License
 
 MIT — see [LICENSE](LICENSE) for details.
+
+## Notes
+
+See my other work at [Grayforge Labs](https://grayforgelabs.com).

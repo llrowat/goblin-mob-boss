@@ -137,7 +137,7 @@ export function OnboardingPage() {
       </div>
 
       <div className="onboarding-footer">
-        <p>You can return here any time by clicking the goblin logo.</p>
+        <p>You can return here any time from the Help button on the Features page.</p>
       </div>
     </div>
   );

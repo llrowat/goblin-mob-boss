@@ -103,6 +103,8 @@ pub fn run() {
             commands::push_feature,
             commands::push_feature_repo,
             commands::get_pr_command,
+            commands::generate_commit_message,
+            commands::generate_pr_description,
             // Ideation (background)
             commands::run_ideation,
             commands::poll_ideation_error,

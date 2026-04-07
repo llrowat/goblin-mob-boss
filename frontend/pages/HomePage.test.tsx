@@ -567,4 +567,24 @@ describe("HomePage", () => {
     // readTextFile should NOT have been called for an image
     expect(mockReadTextFile).not.toHaveBeenCalled();
   });
+
+  it("shows Help button that navigates to onboarding", async () => {
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "list_repositories") return Promise.resolve([mockRepo]);
+      return Promise.resolve([]);
+    });
+
+    render(
+      <MemoryRouter>
+        <HomePage />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Help")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText("Help"));
+    expect(mockNavigate).toHaveBeenCalledWith("/onboarding");
+  });
 });
