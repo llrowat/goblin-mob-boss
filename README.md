@@ -164,4 +164,4 @@ MIT — see [LICENSE](LICENSE) for details.
 
 ## Notes
 
-A [Grayforge Labs](https://grayforgelabs.com) project.
+See my other work at [Grayforge Labs](https://grayforgelabs.com).
