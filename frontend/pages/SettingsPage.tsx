@@ -177,10 +177,11 @@ export function SettingsPage() {
               style={{ accentColor: "var(--accent)", width: 16, height: 16 }}
             />
             Enable functional testing loop
+            <span className="experimental-badge">Experimental</span>
           </label>
           <div className="form-help" style={{ marginLeft: 26 }}>
             After implementation, a QA tester exercises the running app to verify the feature works.
-            Best-effort — can be skipped per feature.
+            Best-effort — can be skipped per feature. This feature is experimental and may change.
           </div>
         </div>
       </div>

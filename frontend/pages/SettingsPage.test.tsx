@@ -171,6 +171,15 @@ describe("SettingsPage", () => {
     await waitFor(() => {});
   });
 
+  it("renders experimental badge next to functional testing toggle", async () => {
+    mockInvoke();
+    renderWithProviders();
+
+    expect(screen.getByText("Experimental")).toBeInTheDocument();
+
+    await waitFor(() => {});
+  });
+
   it("loads functional_testing_enabled preference", async () => {
     mockInvoke({
       get_preferences: {
