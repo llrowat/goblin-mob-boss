@@ -147,9 +147,7 @@ pub fn check_claude_md(path: String) -> Result<bool, String> {
 /// Claude analyzes the codebase and writes CLAUDE.md to the repo root.
 /// Returns immediately; the frontend polls `check_claude_md` to detect completion.
 #[tauri::command]
-pub fn generate_claude_md(path: String) -> Result<(), String> {
-    use std::io::Write as IoWrite;
-
+pub fn generate_claude_md(state: State<AppState>, path: String) -> Result<(), String> {
     let repo_path = Path::new(&path);
     if !repo_path.exists() {
         return Err("Path does not exist".to_string());
@@ -181,27 +179,14 @@ Skip any section where there's nothing project-specific to say. Aim for under 80
     // Truncate the log file at start
     let _ = std::fs::write(&log_file_path, "");
 
-    let mut cmd = std::process::Command::new("claude");
-    apply_user_path(&mut cmd);
-    cmd.arg("--print")
-        .arg("--permission-mode")
-        .arg("bypassPermissions")
-        .arg("--allowedTools")
-        .arg("Read,Glob,Grep,Write")
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .current_dir(&path);
-
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| format!("Failed to start Claude: {}", e))?;
-
-    if let Some(mut stdin) = child.stdin.take() {
-        std::thread::spawn(move || {
-            let _ = stdin.write_all(prompt.as_bytes());
-        });
-    }
+    let prefs = state.preferences.lock().unwrap().clone();
+    let extra_args: Vec<&str> = vec![
+        "--permission-mode",
+        "bypassPermissions",
+        "--allowedTools",
+        "Read,Glob,Grep,Write",
+    ];
+    let mut child = spawn_claude_background(&prefs, &extra_args, &path, prompt)?;
 
     relay_output_to_log(&mut child, log_file_path);
 
@@ -286,9 +271,7 @@ pub fn delete_global_skill(dir_name: String) -> Result<(), String> {
 /// Claude creates the skill directory and SKILL.md file.
 /// Returns the skill name; frontend polls `check_skill_generation` to detect completion.
 #[tauri::command]
-pub fn generate_skill(description: String) -> Result<String, String> {
-    use std::io::Write as IoWrite;
-
+pub fn generate_skill(state: State<AppState>, description: String) -> Result<String, String> {
     let home = std::env::var("HOME")
         .or_else(|_| std::env::var("USERPROFILE"))
         .map_err(|_| "Could not determine home directory".to_string())?;
@@ -343,27 +326,14 @@ Keep the prompt template focused and actionable. Create the directory if it does
     let log_file_path = log_dir.join("skill-generation.log");
     let _ = std::fs::write(&log_file_path, "");
 
-    let mut cmd = std::process::Command::new("claude");
-    apply_user_path(&mut cmd);
-    cmd.arg("--print")
-        .arg("--permission-mode")
-        .arg("bypassPermissions")
-        .arg("--allowedTools")
-        .arg("Write,Bash")
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .current_dir(&home);
-
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| format!("Failed to start Claude: {}", e))?;
-
-    if let Some(mut stdin) = child.stdin.take() {
-        std::thread::spawn(move || {
-            let _ = stdin.write_all(prompt.as_bytes());
-        });
-    }
+    let prefs = state.preferences.lock().unwrap().clone();
+    let extra_args: Vec<&str> = vec![
+        "--permission-mode",
+        "bypassPermissions",
+        "--allowedTools",
+        "Write,Bash",
+    ];
+    let mut child = spawn_claude_background(&prefs, &extra_args, &home, &prompt)?;
 
     relay_output_to_log(&mut child, log_file_path);
 
@@ -750,9 +720,13 @@ pub fn get_ideation_terminal_command(
     let escaped_sys = shell_quote(&system_prompt_path.to_string_lossy());
     let escaped_usr = shell_quote(&user_prompt_path.to_string_lossy());
 
+    let prefs = state.preferences.lock().unwrap().clone();
+    let exe = claude_executable(&prefs);
+    let escaped_exe = shell_quote(&exe);
+
     Ok(format!(
-        "cd {} && claude --permission-mode bypassPermissions --allowedTools 'Read,Glob,Grep,Write' --append-system-prompt \"$(cat {})\" \"$(cat {})\"",
-        escaped_work_dir, escaped_sys, escaped_usr
+        "cd {} && {} --permission-mode bypassPermissions --allowedTools 'Read,Glob,Grep,Write' --append-system-prompt \"$(cat {})\" \"$(cat {})\"",
+        escaped_work_dir, escaped_exe, escaped_sys, escaped_usr
     ))
 }
 
@@ -1023,11 +997,14 @@ pub fn get_launch_command(state: State<AppState>, feature_id: String) -> Result<
         .map(|s| s.as_str())
         .unwrap_or(&repo.path);
 
+    let prefs = state.preferences.lock().unwrap().clone();
+    let exe = claude_executable(&prefs);
     let (args, env, _prompt) = launch::build_launch_with_repo(
         &feature,
         &system_prompt_content,
         Some(&repo.path),
         repo.commit_pattern.as_deref(),
+        &exe,
     );
 
     // Build the full command string
@@ -1081,11 +1058,16 @@ pub fn start_launch_pty(
         .map(|s| s.as_str())
         .unwrap_or(&repo.path);
 
+    // Wrap command in user's preferred shell (e.g. tmux)
+    let prefs = state.preferences.lock().unwrap().clone();
+    let exe = claude_executable(&prefs);
+
     let (args, env, _prompt) = launch::build_launch_with_repo(
         &feature,
         &system_prompt_content,
         Some(&repo.path),
         repo.commit_pattern.as_deref(),
+        &exe,
     );
 
     // Pre-seed the progress file so Claude has a concrete file to update
@@ -1098,9 +1080,6 @@ pub fn start_launch_pty(
     let _ = std::fs::write(&progress_path, initial_progress);
 
     let session_id = format!("launch-{}", feature_id);
-
-    // Wrap command in user's preferred shell (e.g. tmux)
-    let prefs = state.preferences.lock().unwrap().clone();
     let shell = if prefs.shell.is_empty() {
         default_shell()
     } else {
@@ -1520,8 +1499,9 @@ pub fn start_functional_testing(
 
     let session_id = format!("qa-{}-{}", feature_id, attempt);
 
+    let exe = claude_executable(&prefs);
     let qa_args = vec![
-        "claude".to_string(),
+        exe,
         "--permission-mode".to_string(),
         "auto".to_string(),
         "--append-system-prompt".to_string(),
@@ -1774,11 +1754,14 @@ pub fn relaunch_with_fix_context(
         system_prompt.push_str(&fix_context);
     }
 
+    let prefs = state.preferences.lock().unwrap().clone();
+    let exe = claude_executable(&prefs);
     let (args, env, _prompt) = launch::build_launch_with_repo(
         &feature,
         &system_prompt,
         Some(&repo.path),
         repo.commit_pattern.as_deref(),
+        &exe,
     );
 
     let session_id = format!("fix-{}-{}", feature_id, feature.testing_attempt);
@@ -2264,7 +2247,8 @@ Rules:
         truncated_diff
     );
 
-    run_claude_print(work_dir, &prompt)
+    let prefs = state.preferences.lock().unwrap().clone();
+    run_claude_print(work_dir, &prompt, &prefs)
 }
 
 /// Generate a PR title and description using Claude based on the feature's changes.
@@ -2350,32 +2334,14 @@ Rules:
         .map(|s| s.as_str())
         .unwrap_or(&primary_repo.path);
 
-    run_claude_print(work_dir, &prompt)
+    let prefs = state.preferences.lock().unwrap().clone();
+    run_claude_print(work_dir, &prompt, &prefs)
 }
 
 /// Run Claude in --print mode with a prompt, returning stdout.
-fn run_claude_print(work_dir: &str, prompt: &str) -> Result<String, String> {
-    use std::io::Write as IoWrite;
-
-    let mut cmd = std::process::Command::new("claude");
-    apply_user_path(&mut cmd);
-    cmd.arg("--print")
-        .arg("--model")
-        .arg("haiku")
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .current_dir(work_dir);
-
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| format!("Failed to spawn claude: {}", e))?;
-
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin
-            .write_all(prompt.as_bytes())
-            .map_err(|e| format!("Failed to write prompt: {}", e))?;
-    }
+fn run_claude_print(work_dir: &str, prompt: &str, prefs: &Preferences) -> Result<String, String> {
+    let extra_args: Vec<&str> = vec!["--model", "haiku"];
+    let child = spawn_claude_background(prefs, &extra_args, work_dir, prompt)?;
 
     let output = child
         .wait_with_output()
@@ -2577,9 +2543,8 @@ fn spawn_ideation_process(
     work_dir: &str,
     system_prompt: &str,
     user_prompt: &str,
+    prefs: &Preferences,
 ) -> Result<(), String> {
-    use std::io::Write as IoWrite;
-
     // Log file for live output — uses piped stdio + relay for incremental flushing
     let log_file_path = feature_dir.join("claude-ideation.log");
     let _ = std::fs::write(&log_file_path, "");
@@ -2588,30 +2553,14 @@ fn spawn_ideation_process(
     // to avoid passing large strings as CLI arguments
     let full_prompt = format!("{}\n\n---\n\n{}", system_prompt, user_prompt);
 
-    let mut cmd = std::process::Command::new("claude");
-    apply_user_path(&mut cmd);
-    cmd.arg("--print")
-        .arg("--permission-mode")
-        .arg("bypassPermissions")
-        .arg("--allowedTools")
-        .arg("Read,Glob,Grep,Write")
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .current_dir(work_dir);
+    let extra_args: Vec<&str> = vec![
+        "--permission-mode",
+        "bypassPermissions",
+        "--allowedTools",
+        "Read,Glob,Grep,Write",
+    ];
 
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| format!("Failed to start Claude: {}", e))?;
-
-    // Write prompt to stdin, then close it so Claude begins processing
-    if let Some(mut stdin) = child.stdin.take() {
-        let prompt_bytes = full_prompt.into_bytes();
-        std::thread::spawn(move || {
-            let _ = stdin.write_all(&prompt_bytes);
-            // stdin is dropped here, closing the pipe
-        });
-    }
+    let mut child = spawn_claude_background(prefs, &extra_args, work_dir, &full_prompt)?;
 
     relay_output_to_log(&mut child, log_file_path);
 
@@ -2685,11 +2634,13 @@ pub fn run_ideation(state: State<AppState>, feature_id: String) -> Result<(), St
         let _ = std::fs::remove_file(&plan_path);
     }
 
+    let prefs = state.preferences.lock().unwrap().clone();
     spawn_ideation_process(
         &feature_dir,
         work_dir,
         &system_prompt_content,
         &user_prompt_content,
+        &prefs,
     )
 }
 
@@ -2784,11 +2735,13 @@ pub fn revise_ideation(
         state.save_features();
     }
 
+    let prefs = state.preferences.lock().unwrap().clone();
     spawn_ideation_process(
         &feature_dir,
         work_dir,
         &system_prompt_content,
         &revised_prompt,
+        &prefs,
     )
 }
 
@@ -2895,7 +2848,8 @@ pub fn submit_planning_answers(
         state.save_features();
     }
 
-    spawn_ideation_process(&feature_dir, work_dir, &system_prompt_content, &user_prompt)
+    let prefs = state.preferences.lock().unwrap().clone();
+    spawn_ideation_process(&feature_dir, work_dir, &system_prompt_content, &user_prompt, &prefs)
 }
 
 // ── PTY Commands ──
@@ -2948,6 +2902,7 @@ pub fn get_preferences(state: State<AppState>) -> Preferences {
 pub fn set_preferences(
     state: State<AppState>,
     shell: String,
+    claude_path: Option<String>,
     default_execution_mode: Option<String>,
     default_model: Option<String>,
     auto_validate: Option<bool>,
@@ -2955,6 +2910,9 @@ pub fn set_preferences(
 ) -> Preferences {
     let mut prefs = state.preferences.lock().unwrap();
     prefs.shell = shell;
+    if let Some(cp) = claude_path {
+        prefs.claude_path = cp;
+    }
     if let Some(mode) = default_execution_mode {
         prefs.default_execution_mode = mode;
     }
@@ -3447,8 +3405,9 @@ pub fn start_discovery_pty(
     let _ = std::fs::write(&log_path, "");
 
     // Spawn all repos as background processes that can write their output JSON files
+    let prefs = state.preferences.lock().unwrap().clone();
     for (repo_path, system_prompt, user_prompt) in &repo_prompts {
-        spawn_discovery_process(repo_path, system_prompt, user_prompt, log_path.clone())?;
+        spawn_discovery_process(repo_path, system_prompt, user_prompt, log_path.clone(), &prefs)?;
     }
 
     Ok(session_id)
@@ -3461,35 +3420,17 @@ fn spawn_discovery_process(
     system_prompt: &str,
     user_prompt: &str,
     log_path: std::path::PathBuf,
+    prefs: &Preferences,
 ) -> Result<(), String> {
-    use std::io::Write as IoWrite;
-
-    let mut cmd = std::process::Command::new("claude");
-    apply_user_path(&mut cmd);
-    cmd.arg("--print")
-        .arg("--permission-mode")
-        .arg("bypassPermissions")
-        .arg("--allowedTools")
-        .arg("Read,Glob,Grep,Write")
-        .arg("--append-system-prompt")
-        .arg(system_prompt)
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .current_dir(work_dir);
-
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| format!("Failed to start Claude: {}", e))?;
-
-    // Write user prompt to stdin
-    if let Some(mut stdin) = child.stdin.take() {
-        let prompt_bytes = user_prompt.as_bytes().to_vec();
-        std::thread::spawn(move || {
-            let _ = stdin.write_all(&prompt_bytes);
-            // stdin drops here, closing the pipe
-        });
-    }
+    let extra_args: Vec<&str> = vec![
+        "--permission-mode",
+        "bypassPermissions",
+        "--allowedTools",
+        "Read,Glob,Grep,Write",
+        "--append-system-prompt",
+        system_prompt,
+    ];
+    let mut child = spawn_claude_background(prefs, &extra_args, work_dir, user_prompt)?;
 
     relay_output_to_log(&mut child, log_path);
 
@@ -3891,6 +3832,87 @@ fn default_shell() -> String {
     }
 }
 
+/// Return the Claude executable path from preferences, falling back to "claude".
+fn claude_executable(prefs: &Preferences) -> String {
+    if prefs.claude_path.is_empty() {
+        "claude".to_string()
+    } else {
+        prefs.claude_path.clone()
+    }
+}
+
+/// Spawn a background Claude `--print` process through the user's preferred shell.
+///
+/// This mirrors the shell-wrapping that PTY-based execution uses, ensuring the
+/// user's login profile (PATH, env vars) is loaded so `claude` (or the configured
+/// executable) can be found. stdin is piped through the shell to Claude.
+fn spawn_claude_background(
+    prefs: &Preferences,
+    extra_args: &[&str],
+    work_dir: &str,
+    stdin_data: &str,
+) -> Result<std::process::Child, String> {
+    use std::io::Write as IoWrite;
+
+    let exe = claude_executable(prefs);
+    let shell = if prefs.shell.is_empty() {
+        default_shell()
+    } else {
+        prefs.shell.clone()
+    };
+
+    // Build the full claude command as a shell-quoted string
+    let mut parts = vec![shell_quote(&exe), "--print".to_string()];
+    for arg in extra_args {
+        parts.push(shell_quote(arg));
+    }
+    let full_cmd = parts.join(" ");
+
+    let mut cmd = match shell.as_str() {
+        "tmux" => {
+            // tmux doesn't support piped stdin well — fall back to direct exec
+            let mut c = std::process::Command::new(&exe);
+            c.arg("--print");
+            for arg in extra_args {
+                c.arg(arg);
+            }
+            c
+        }
+        s if s.contains("powershell") => {
+            let mut c = std::process::Command::new(&shell);
+            c.args(["-Command", &full_cmd]);
+            c
+        }
+        _ => {
+            let mut c = std::process::Command::new(&shell);
+            c.args(["-l", "-c", &full_cmd]);
+            c
+        }
+    };
+
+    apply_user_path(&mut cmd);
+    cmd.stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .current_dir(work_dir);
+
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("Failed to start Claude: {}", e))?;
+
+    if !stdin_data.is_empty() {
+        if let Some(mut stdin) = child.stdin.take() {
+            let data = stdin_data.as_bytes().to_vec();
+            std::thread::spawn(move || {
+                let _ = stdin.write_all(&data);
+                // stdin drops here, closing the pipe
+            });
+        }
+    }
+
+    Ok(child)
+}
+
 /// Resolve the user's full PATH by running a login shell.
 ///
 /// On macOS, GUI apps launched from Finder/Spotlight inherit a minimal PATH
@@ -4243,7 +4265,7 @@ pub fn list_hook_templates() -> Vec<HookTemplate> {
 /// Spawns Claude in the background, writes output to ~/.claude/.gmb/hook-generation-output.json.
 /// Frontend polls via `check_hook_generation`.
 #[tauri::command]
-pub fn generate_hook(description: String) -> Result<(), String> {
+pub fn generate_hook(state: State<AppState>, description: String) -> Result<(), String> {
     use std::io::Write as IoWrite;
 
     let prompt = format!(
@@ -4287,12 +4309,40 @@ Rules:
         .try_clone()
         .map_err(|e| format!("Failed to clone file handle: {e}"))?;
 
-    let mut cmd = std::process::Command::new("claude");
+    let prefs = state.preferences.lock().unwrap().clone();
+    let exe = claude_executable(&prefs);
+    let shell = if prefs.shell.is_empty() {
+        default_shell()
+    } else {
+        prefs.shell.clone()
+    };
+
+    // Build the shell-wrapped command for the claude executable
+    let claude_args = format!(
+        "{} --print --output-format text",
+        shell_quote(&exe)
+    );
+
+    let mut cmd = match shell.as_str() {
+        "tmux" => {
+            let mut c = std::process::Command::new(&exe);
+            c.args(["--print", "--output-format", "text"]);
+            c
+        }
+        s if s.contains("powershell") => {
+            let mut c = std::process::Command::new(&shell);
+            c.args(["-Command", &claude_args]);
+            c
+        }
+        _ => {
+            let mut c = std::process::Command::new(&shell);
+            c.args(["-l", "-c", &claude_args]);
+            c
+        }
+    };
+
     apply_user_path(&mut cmd);
-    cmd.arg("--print")
-        .arg("--output-format")
-        .arg("text")
-        .stdin(std::process::Stdio::piped())
+    cmd.stdin(std::process::Stdio::piped())
         .stdout(out_file)
         .stderr(err_file)
         .current_dir(&home);
@@ -4937,6 +4987,21 @@ mod tests {
         let (cmd, cmd_args) = wrap_in_shell("tmux", &[]);
         assert!(cmd.is_empty());
         assert!(cmd_args.is_empty());
+    }
+
+    // ── claude_executable tests ──
+
+    #[test]
+    fn claude_executable_returns_default_when_empty() {
+        let prefs = Preferences::default();
+        assert_eq!(claude_executable(&prefs), "claude");
+    }
+
+    #[test]
+    fn claude_executable_returns_configured_path() {
+        let mut prefs = Preferences::default();
+        prefs.claude_path = "/usr/local/bin/claude".to_string();
+        assert_eq!(claude_executable(&prefs), "/usr/local/bin/claude");
     }
 
     // ── generate_multi_repo_context tests ──

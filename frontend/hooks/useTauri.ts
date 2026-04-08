@@ -260,6 +260,7 @@ export function useTauri() {
 
     setPreferences: (prefs: {
       shell: string;
+      claudePath?: string;
       defaultExecutionMode?: string;
       defaultModel?: string;
       autoValidate?: boolean;
@@ -267,6 +268,7 @@ export function useTauri() {
     }) =>
       invoke<Preferences>("set_preferences", {
         shell: prefs.shell,
+        claudePath: prefs.claudePath ?? null,
         defaultExecutionMode: prefs.defaultExecutionMode ?? null,
         defaultModel: prefs.defaultModel ?? null,
         autoValidate: prefs.autoValidate ?? null,

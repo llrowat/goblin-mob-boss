@@ -132,6 +132,7 @@ describe("useTauri", () => {
     await result.current.setPreferences({ shell: "zsh" });
     expect(invoke).toHaveBeenCalledWith("set_preferences", {
       shell: "zsh",
+      claudePath: null,
       defaultExecutionMode: null,
       defaultModel: null,
       autoValidate: null,
@@ -226,6 +227,7 @@ describe("useTauri", () => {
     });
     expect(invoke).toHaveBeenCalledWith("set_preferences", {
       shell: "bash",
+      claudePath: null,
       defaultExecutionMode: null,
       defaultModel: null,
       autoValidate: null,

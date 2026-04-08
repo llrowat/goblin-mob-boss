@@ -279,6 +279,7 @@ export interface RepoInfo {
 
 export interface Preferences {
   shell: string;
+  claude_path: string;
   default_execution_mode: string;
   default_model: string;
   auto_validate: boolean;

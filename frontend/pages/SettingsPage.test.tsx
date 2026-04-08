@@ -6,6 +6,7 @@ import { ToastContainer } from "../components/ToastContainer";
 
 const defaultPrefs = {
   shell: "bash",
+  claude_path: "",
   default_execution_mode: "",
   default_model: "",
   auto_validate: false,
@@ -114,6 +115,33 @@ describe("SettingsPage", () => {
     expect(screen.getByText("Shell")).toBeInTheDocument();
 
     await waitFor(() => {});
+  });
+
+  it("renders Claude executable path input", async () => {
+    mockInvoke();
+    renderWithProviders();
+
+    expect(screen.getByText("Claude Executable Path")).toBeInTheDocument();
+    expect(
+      screen.getByPlaceholderText("claude"),
+    ).toBeInTheDocument();
+
+    await waitFor(() => {});
+  });
+
+  it("loads claude_path preference", async () => {
+    mockInvoke({
+      get_preferences: {
+        ...defaultPrefs,
+        claude_path: "/usr/local/bin/claude",
+      },
+    });
+
+    renderWithProviders();
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("/usr/local/bin/claude")).toBeInTheDocument();
+    });
   });
 
   it("renders execution defaults section", async () => {
