@@ -2322,7 +2322,7 @@ pub fn generate_pr_description(
     };
 
     let prompt = format!(
-        r#"Generate a pull request title and description for these changes.
+        r###"Generate a pull request title and description for these changes.
 
 Feature: {}
 Description: {}
@@ -2337,7 +2337,7 @@ Rules:
   - A "## Summary" section with 2-4 bullet points explaining what changed and why
   - A "## Changes" section briefly listing key changes
 - Do NOT include any code fences around the output
-- Output ONLY the PR title and body, nothing else"#,
+- Output ONLY the PR title and body, nothing else"###,
         feature.name,
         feature.description,
         truncated
