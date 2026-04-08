@@ -1,6 +1,6 @@
 [package]
 name = "goblin-mob-boss"
-version = "1.0.0"
+version = "1.0.1"
 description = "A local desktop app for structured AI-assisted development workflows"
 authors = ["Goblin Mob Boss"]
 license = "MIT"

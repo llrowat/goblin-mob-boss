@@ -1,6 +1,6 @@
 {
   "name": "goblin-mob-boss",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A desktop app for agent-based AI development workflows",
   "license": "MIT",
   "type": "module",
