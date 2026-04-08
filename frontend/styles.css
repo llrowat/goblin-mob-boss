@@ -2677,3 +2677,16 @@ body {
   font-weight: 400;
   vertical-align: middle;
 }
+
+.experimental-badge {
+  display: inline-block;
+  font-size: 10px;
+  background: rgba(217, 164, 48, 0.15);
+  border: 1px solid rgba(217, 164, 48, 0.4);
+  border-radius: var(--radius-sm);
+  padding: 1px 6px;
+  margin-left: 8px;
+  color: #d9a430;
+  font-weight: 500;
+  vertical-align: middle;
+}

@@ -70,6 +70,11 @@ function renderPanel(
 }
 
 describe("TestingPanel", () => {
+  it("renders experimental badge in panel header", () => {
+    renderPanel();
+    expect(screen.getByText("Experimental")).toBeInTheDocument();
+  });
+
   it("shows no-harness message when test_harness is null", () => {
     renderPanel();
     expect(screen.getByText(/No test harness configured/)).toBeInTheDocument();

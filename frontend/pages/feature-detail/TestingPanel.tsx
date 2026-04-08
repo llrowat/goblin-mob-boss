@@ -159,6 +159,7 @@ export function TestingPanel({
       <div className="panel-header">
         <div className="panel-title">
           Functional Testing
+          <span className="experimental-badge">Experimental</span>
           {attemptLabel && (
             <span
               style={{
