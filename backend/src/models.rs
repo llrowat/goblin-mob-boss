@@ -1520,6 +1520,7 @@ Review code for issues."#;
     fn preferences_serializes_new_fields() {
         let prefs = Preferences {
             shell: "bash".to_string(),
+            claude_path: "/usr/local/bin/claude".to_string(),
             default_execution_mode: "teams".to_string(),
             default_model: "claude-opus-4-6".to_string(),
             auto_validate: true,
