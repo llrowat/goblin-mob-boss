@@ -20,7 +20,7 @@ pub fn build_launch(
     feature: &Feature,
     system_prompt_content: &str,
 ) -> (Vec<String>, Vec<(String, String)>, String) {
-    build_launch_with_repo(feature, system_prompt_content, None, None)
+    build_launch_with_repo(feature, system_prompt_content, None, None, "claude")
 }
 
 pub fn build_launch_with_repo(
@@ -28,6 +28,7 @@ pub fn build_launch_with_repo(
     system_prompt_content: &str,
     repo_path: Option<&str>,
     commit_pattern: Option<&str>,
+    claude_exe: &str,
 ) -> (Vec<String>, Vec<(String, String)>, String) {
     let mode = feature
         .execution_mode
@@ -36,7 +37,7 @@ pub fn build_launch_with_repo(
 
     let prompt = build_prompt(feature, mode, repo_path, commit_pattern);
     let mut env = Vec::new();
-    let mut args = vec!["claude".to_string()];
+    let mut args = vec![claude_exe.to_string()];
 
     match mode {
         ExecutionMode::Teams => {
@@ -457,7 +458,7 @@ mod tests {
     fn prompt_includes_progress_tracking_with_repo() {
         let feature = make_feature(ExecutionMode::Subagents);
         let (_, _, prompt) =
-            build_launch_with_repo(&feature, "System prompt", Some("/tmp/repo"), None);
+            build_launch_with_repo(&feature, "System prompt", Some("/tmp/repo"), None, "claude");
         assert!(prompt.contains("CRITICAL"));
         assert!(prompt.contains("execution-complete"));
     }
@@ -470,6 +471,7 @@ mod tests {
             "System prompt",
             Some("/tmp/repo"),
             Some(r"^(feat|fix): .+"),
+            "claude",
         );
         assert!(prompt.contains("commit messages MUST match"));
         assert!(prompt.contains("^(feat|fix): .+"));
@@ -479,7 +481,7 @@ mod tests {
     fn prompt_omits_commit_pattern_when_none() {
         let feature = make_feature(ExecutionMode::Subagents);
         let (_, _, prompt) =
-            build_launch_with_repo(&feature, "System prompt", Some("/tmp/repo"), None);
+            build_launch_with_repo(&feature, "System prompt", Some("/tmp/repo"), None, "claude");
         assert!(!prompt.contains("commit messages MUST match"));
     }
 

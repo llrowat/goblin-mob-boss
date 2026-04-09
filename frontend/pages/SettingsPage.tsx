@@ -22,6 +22,7 @@ export function SettingsPage() {
   const tauri = useTauri();
   const { addToast } = useToast();
   const [shell, setShell] = useState("");
+  const [claudePath, setClaudePath] = useState("");
   const [shellOptions, setShellOptions] = useState<{ value: string; label: string }[]>([]);
   const [defaultExecutionMode, setDefaultExecutionMode] = useState("");
   const [defaultModel, setDefaultModel] = useState("");
@@ -31,6 +32,7 @@ export function SettingsPage() {
   useEffect(() => {
     tauri.getPreferences().then((prefs) => {
       setShell(prefs.shell);
+      setClaudePath(prefs.claude_path || "");
       setDefaultExecutionMode(prefs.default_execution_mode || "");
       setDefaultModel(prefs.default_model || "");
       setAutoValidate(prefs.auto_validate || false);
@@ -54,6 +56,7 @@ export function SettingsPage() {
   const handleSave = async () => {
     await tauri.setPreferences({
       shell,
+      claudePath,
       defaultExecutionMode,
       defaultModel,
       autoValidate,
@@ -90,6 +93,22 @@ export function SettingsPage() {
           </select>
           <div className="form-help">
             The terminal used when launching Claude Code from a task.
+          </div>
+        </div>
+
+        <div className="form-group">
+          <label className="form-label">Claude Executable Path</label>
+          <input
+            type="text"
+            className="form-input"
+            value={claudePath}
+            onChange={(e) => setClaudePath(e.target.value)}
+            placeholder="claude"
+            style={{ maxWidth: 400 }}
+          />
+          <div className="form-help">
+            Full path to the Claude CLI binary (e.g. /usr/local/bin/claude). Leave
+            empty to find it on PATH.
           </div>
         </div>
       </div>

@@ -1038,6 +1038,9 @@ impl SystemMap {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Preferences {
     pub shell: String,
+    /// Full path to the Claude executable. Empty = find "claude" on PATH.
+    #[serde(default)]
+    pub claude_path: String,
     /// Default execution mode for new features ("teams" or "subagents"). Empty = use recommendation.
     #[serde(default)]
     pub default_execution_mode: String,
@@ -1061,6 +1064,7 @@ impl Default for Preferences {
         };
         Self {
             shell,
+            claude_path: String::new(),
             default_execution_mode: String::new(),
             default_model: String::new(),
             auto_validate: false,
