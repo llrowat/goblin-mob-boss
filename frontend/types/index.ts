@@ -37,6 +37,8 @@ export interface SkillFile {
   prompt_template: string;
   source: SkillSource;
   plugin_name?: string | null;
+  /** Whether this skill comes from ~/.claude/skills/ (global) vs repo-local. */
+  is_global: boolean;
 }
 
 export type ExecutionMode = "teams" | "subagents";

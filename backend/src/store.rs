@@ -638,7 +638,8 @@ pub fn delete_global_agent(filename: &str) -> Result<(), String> {
 }
 
 // ── Skill File Operations ──
-// Skills are stored as `.claude/commands/*.md` files (repo or global).
+// Skills are stored as `<name>/SKILL.md` directories under either
+// `~/.claude/skills/` (global) or `<repo>/.claude/skills/` (repo-local).
 
 /// Return the `~/.claude/skills/` directory path.
 fn global_skills_dir() -> Result<std::path::PathBuf, String> {
@@ -655,7 +656,7 @@ pub fn list_global_skills() -> Result<Vec<SkillFile>, String> {
 
     // User skills: ~/.claude/skills/<name>/SKILL.md
     let user_dir = global_skills_dir()?;
-    skills.extend(read_skills_from_dir(&user_dir, SkillSource::User)?);
+    skills.extend(read_skills_from_dir(&user_dir, SkillSource::User, true)?);
 
     // Plugin skills: read from installed plugins only.
     // installed_plugins.json maps "<plugin>@<marketplace>" -> [{installPath, ...}]
@@ -681,8 +682,11 @@ pub fn list_global_skills() -> Result<Vec<SkillFile>, String> {
                                 {
                                     let skills_dir = Path::new(install_path).join("skills");
                                     if skills_dir.exists() {
-                                        let mut plugin_skills =
-                                            read_skills_from_dir(&skills_dir, SkillSource::Plugin)?;
+                                        let mut plugin_skills = read_skills_from_dir(
+                                            &skills_dir,
+                                            SkillSource::Plugin,
+                                            true,
+                                        )?;
                                         for s in &mut plugin_skills {
                                             s.plugin_name = Some(plugin_name.clone());
                                         }
@@ -701,8 +705,18 @@ pub fn list_global_skills() -> Result<Vec<SkillFile>, String> {
     Ok(skills)
 }
 
+/// List all skill files from a repo's `.claude/skills/` directory.
+pub fn list_repo_skills(repo_path: &str) -> Result<Vec<SkillFile>, String> {
+    let skills_dir = Path::new(repo_path).join(".claude").join("skills");
+    read_skills_from_dir(&skills_dir, SkillSource::User, false)
+}
+
 /// Read skills from a directory of `<name>/SKILL.md` subdirectories.
-fn read_skills_from_dir(skills_dir: &Path, source: SkillSource) -> Result<Vec<SkillFile>, String> {
+fn read_skills_from_dir(
+    skills_dir: &Path,
+    source: SkillSource,
+    is_global: bool,
+) -> Result<Vec<SkillFile>, String> {
     if !skills_dir.exists() {
         return Ok(vec![]);
     }
@@ -726,6 +740,7 @@ fn read_skills_from_dir(skills_dir: &Path, source: SkillSource) -> Result<Vec<Sk
         if let Ok(content) = std::fs::read_to_string(&skill_file) {
             let mut skill = SkillFile::parse(&dir_name, &content);
             skill.source = source.clone();
+            skill.is_global = is_global;
             skills.push(skill);
         }
     }
@@ -735,6 +750,16 @@ fn read_skills_from_dir(skills_dir: &Path, source: SkillSource) -> Result<Vec<Sk
 /// Save a skill to `~/.claude/skills/<dir_name>/SKILL.md`.
 pub fn save_global_skill(skill: &SkillFile) -> Result<(), String> {
     let skills_dir = global_skills_dir()?;
+    write_skill_to_dir(&skills_dir, skill)
+}
+
+/// Save a skill to `<repo>/.claude/skills/<dir_name>/SKILL.md`.
+pub fn save_repo_skill(repo_path: &str, skill: &SkillFile) -> Result<(), String> {
+    let skills_dir = Path::new(repo_path).join(".claude").join("skills");
+    write_skill_to_dir(&skills_dir, skill)
+}
+
+fn write_skill_to_dir(skills_dir: &Path, skill: &SkillFile) -> Result<(), String> {
     let skill_dir = skills_dir.join(&skill.dir_name);
     std::fs::create_dir_all(&skill_dir)
         .map_err(|e| format!("Failed to create skill dir: {}", e))?;
@@ -746,6 +771,16 @@ pub fn save_global_skill(skill: &SkillFile) -> Result<(), String> {
 /// Delete a skill directory from `~/.claude/skills/<dir_name>/`.
 pub fn delete_global_skill(dir_name: &str) -> Result<(), String> {
     let skills_dir = global_skills_dir()?;
+    remove_skill_dir(&skills_dir, dir_name)
+}
+
+/// Delete a skill directory from `<repo>/.claude/skills/<dir_name>/`.
+pub fn delete_repo_skill(repo_path: &str, dir_name: &str) -> Result<(), String> {
+    let skills_dir = Path::new(repo_path).join(".claude").join("skills");
+    remove_skill_dir(&skills_dir, dir_name)
+}
+
+fn remove_skill_dir(skills_dir: &Path, dir_name: &str) -> Result<(), String> {
     let skill_dir = skills_dir.join(dir_name);
     if skill_dir.exists() {
         std::fs::remove_dir_all(&skill_dir).map_err(|e| format!("Failed to delete skill: {}", e))
@@ -1121,7 +1156,8 @@ mod tests {
     #[test]
     fn list_skills_from_empty_dir_returns_empty() {
         let dir = TempDir::new().unwrap();
-        let result = read_skills_from_dir(&dir.path().join("nonexistent"), SkillSource::User);
+        let result =
+            read_skills_from_dir(&dir.path().join("nonexistent"), SkillSource::User, true);
         assert!(result.is_ok());
         assert!(result.unwrap().is_empty());
     }
@@ -1156,10 +1192,11 @@ mod tests {
         let empty_dir = skills_dir.join("empty-skill");
         std::fs::create_dir_all(&empty_dir).unwrap();
 
-        let skills = read_skills_from_dir(&skills_dir, SkillSource::User).unwrap();
+        let skills = read_skills_from_dir(&skills_dir, SkillSource::User, true).unwrap();
         assert_eq!(skills.len(), 2);
         assert_eq!(skills[0].name, "review-pr");
         assert_eq!(skills[0].source, SkillSource::User);
+        assert!(skills[0].is_global);
         assert_eq!(skills[1].name, "run-tests");
         assert_eq!(skills[1].source, SkillSource::User);
     }
@@ -1179,6 +1216,7 @@ mod tests {
             prompt_template: "Do something.".to_string(),
             source: SkillSource::User,
             plugin_name: None,
+            is_global: true,
         };
 
         save_global_skill(&skill).unwrap();
@@ -1224,7 +1262,7 @@ mod tests {
         .unwrap();
 
         let user_skills =
-            read_skills_from_dir(&dir.path().join("user-skills"), SkillSource::User).unwrap();
+            read_skills_from_dir(&dir.path().join("user-skills"), SkillSource::User, true).unwrap();
         assert_eq!(user_skills.len(), 1);
         assert_eq!(user_skills[0].name, "my-skill");
         assert_eq!(user_skills[0].source, SkillSource::User);
@@ -1238,7 +1276,8 @@ mod tests {
         ).unwrap();
 
         let mut plugin_skills =
-            read_skills_from_dir(&dir.path().join("plugin-skills"), SkillSource::Plugin).unwrap();
+            read_skills_from_dir(&dir.path().join("plugin-skills"), SkillSource::Plugin, true)
+                .unwrap();
         for s in &mut plugin_skills {
             s.plugin_name = Some("cool-plugin".to_string());
         }
@@ -1303,6 +1342,88 @@ mod tests {
         let plugin = skills.iter().find(|s| s.name == "plugin-skill").unwrap();
         assert_eq!(plugin.source, SkillSource::Plugin);
         assert_eq!(plugin.plugin_name.as_deref(), Some("cool-plugin"));
+    }
+
+    #[test]
+    fn save_and_list_repo_skill_writes_to_repo_dir() {
+        let dir = TempDir::new().unwrap();
+        let repo_path = dir.path().to_string_lossy().to_string();
+
+        let skill = SkillFile {
+            dir_name: "repo-skill".to_string(),
+            name: "repo-skill".to_string(),
+            description: "Scoped to this repo".to_string(),
+            prompt_template: "Do repo-local stuff.".to_string(),
+            source: SkillSource::User,
+            plugin_name: None,
+            is_global: false,
+        };
+
+        save_repo_skill(&repo_path, &skill).unwrap();
+
+        let skill_file = dir
+            .path()
+            .join(".claude")
+            .join("skills")
+            .join("repo-skill")
+            .join("SKILL.md");
+        assert!(skill_file.exists());
+
+        let skills = list_repo_skills(&repo_path).unwrap();
+        assert_eq!(skills.len(), 1);
+        assert_eq!(skills[0].name, "repo-skill");
+        assert!(!skills[0].is_global);
+    }
+
+    #[test]
+    fn list_repo_skills_returns_empty_when_no_skills_dir() {
+        let dir = TempDir::new().unwrap();
+        let skills = list_repo_skills(&dir.path().to_string_lossy()).unwrap();
+        assert!(skills.is_empty());
+    }
+
+    #[test]
+    fn delete_repo_skill_removes_only_repo_copy() {
+        let dir = TempDir::new().unwrap();
+        let home = dir.path().join("home");
+        std::fs::create_dir_all(&home).unwrap();
+        std::env::set_var("HOME", home.to_string_lossy().to_string());
+
+        let repo = dir.path().join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        let repo_path = repo.to_string_lossy().to_string();
+
+        let skill = SkillFile {
+            dir_name: "shared".to_string(),
+            name: "shared".to_string(),
+            description: String::new(),
+            prompt_template: "Body.".to_string(),
+            source: SkillSource::User,
+            plugin_name: None,
+            is_global: false,
+        };
+
+        // Save both a global copy and a repo copy with the same dir_name.
+        let mut global_copy = skill.clone();
+        global_copy.is_global = true;
+        save_global_skill(&global_copy).unwrap();
+        save_repo_skill(&repo_path, &skill).unwrap();
+
+        let global_dir = home.join(".claude").join("skills").join("shared");
+        let repo_dir = repo.join(".claude").join("skills").join("shared");
+        assert!(global_dir.exists());
+        assert!(repo_dir.exists());
+
+        delete_repo_skill(&repo_path, "shared").unwrap();
+        assert!(!repo_dir.exists());
+        assert!(global_dir.exists());
+    }
+
+    #[test]
+    fn delete_nonexistent_repo_skill_returns_error() {
+        let dir = TempDir::new().unwrap();
+        let result = delete_repo_skill(&dir.path().to_string_lossy(), "missing");
+        assert!(result.is_err());
     }
 
     #[test]

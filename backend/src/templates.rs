@@ -323,6 +323,7 @@ Output a concise review with specific suggestions. Flag anything that should be 
                 .to_string(),
             source: SkillSource::User,
             plugin_name: None,
+            is_global: true,
         },
         SkillFile {
             dir_name: "validate-and-fix".to_string(),
@@ -341,6 +342,7 @@ If you cannot fix a failure after 3 attempts, report what's still broken and why
                 .to_string(),
             source: SkillSource::User,
             plugin_name: None,
+            is_global: true,
         },
         SkillFile {
             dir_name: "summarize-diff".to_string(),
@@ -358,6 +360,7 @@ Keep it concise. This summary should help a reviewer understand the branch in un
                 .to_string(),
             source: SkillSource::User,
             plugin_name: None,
+            is_global: true,
         },
         SkillFile {
             dir_name: "write-pr-description".to_string(),
@@ -374,6 +377,7 @@ Format the output as markdown ready to paste into a PR form. Keep it factual —
                 .to_string(),
             source: SkillSource::User,
             plugin_name: None,
+            is_global: true,
         },
         SkillFile {
             dir_name: "check-coverage".to_string(),
@@ -390,6 +394,7 @@ Focus on behavioral gaps (missing error cases, untested branches, new functions 
                 .to_string(),
             source: SkillSource::User,
             plugin_name: None,
+            is_global: true,
         },
     ]
 }

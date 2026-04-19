@@ -117,6 +117,15 @@ export function useTauri() {
       invoke<void>("delete_global_agent", { filename }),
 
     // Skills (file-based)
+    listSkills: (repoPath: string) =>
+      invoke<SkillFile[]>("list_skills", { repoPath }),
+
+    saveSkill: (repoPath: string, skill: SkillFile) =>
+      invoke<void>("save_skill", { repoPath, skill }),
+
+    deleteSkill: (repoPath: string, dirName: string) =>
+      invoke<void>("delete_skill", { repoPath, dirName }),
+
     listGlobalSkills: () =>
       invoke<SkillFile[]>("list_global_skills"),
 
