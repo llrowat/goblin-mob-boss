@@ -1262,7 +1262,7 @@ dependencies = [
 
 [[package]]
 name = "goblin-mob-boss"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "chrono",
  "log",
