@@ -107,12 +107,20 @@ export function AgentsPage() {
         </button>
       </div>
 
-      <ScopeSelector repos={repos} scope={scope} onChange={setScope} />
-
       {activeTab === "agents" ? (
-        <AgentsTab scope={scope} selectedRepo={selectedRepo} />
+        <AgentsTab
+          scope={scope}
+          selectedRepo={selectedRepo}
+          repos={repos}
+          onScopeChange={setScope}
+        />
       ) : (
-        <SkillsTab scope={scope} selectedRepo={selectedRepo} />
+        <SkillsTab
+          scope={scope}
+          selectedRepo={selectedRepo}
+          repos={repos}
+          onScopeChange={setScope}
+        />
       )}
     </div>
   );
@@ -134,7 +142,6 @@ function ScopeSelector({
         display: "flex",
         alignItems: "center",
         gap: 8,
-        marginBottom: 16,
       }}
     >
       <label
@@ -167,9 +174,13 @@ function ScopeSelector({
 function AgentsTab({
   scope,
   selectedRepo,
+  repos,
+  onScopeChange,
 }: {
   scope: Scope;
   selectedRepo: Repository | null;
+  repos: Repository[];
+  onScopeChange: (s: Scope) => void;
 }) {
   const tauri = useTauri();
   const [agents, setAgents] = useState<AgentFile[]>([]);
@@ -311,10 +322,19 @@ function AgentsTab({
 
       <ContextualHelp title="How do agents work?">{HELP_CONTENT.agents}</ContextualHelp>
 
-      <div style={{ marginBottom: 20 }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 8,
+          marginBottom: 20,
+        }}
+      >
         <button className="btn btn-primary" onClick={openCreate}>
           + Add Agent
         </button>
+        <ScopeSelector repos={repos} scope={scope} onChange={onScopeChange} />
       </div>
 
       {/* Agents (global + optional repo-local) */}
@@ -395,9 +415,13 @@ function AgentsTab({
 function SkillsTab({
   scope,
   selectedRepo,
+  repos,
+  onScopeChange,
 }: {
   scope: Scope;
   selectedRepo: Repository | null;
+  repos: Repository[];
+  onScopeChange: (s: Scope) => void;
 }) {
   const tauri = useTauri();
   const [skills, setSkills] = useState<SkillFile[]>([]);
@@ -558,7 +582,14 @@ function SkillsTab({
 
       <ContextualHelp title="How do skills work?">{HELP_CONTENT.skills}</ContextualHelp>
 
-      <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          marginBottom: 20,
+        }}
+      >
         <button className="btn btn-primary" onClick={openCreate}>
           + New Skill
         </button>
@@ -569,6 +600,9 @@ function SkillsTab({
         >
           {generating ? "Generating..." : "Auto-Create Skill"}
         </button>
+        <div style={{ marginLeft: "auto" }}>
+          <ScopeSelector repos={repos} scope={scope} onChange={onScopeChange} />
+        </div>
       </div>
 
       {showGenerateInput && !generating && (
