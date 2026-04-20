@@ -1,9 +1,17 @@
 import { useState, useEffect, useRef } from "react";
 import { useTauri } from "../hooks/useTauri";
 
-import type { AgentFile, AgentPerformanceSummary, SkillFile } from "../types";
+import type {
+  AgentFile,
+  AgentPerformanceSummary,
+  Repository,
+  SkillFile,
+} from "../types";
 import { AgentPerformanceBar } from "../components/AgentPerformance";
 import { ContextualHelp, HELP_CONTENT } from "../components/ContextualHelp";
+
+/** Scope filter value — "global" for global-only, or a repo id for merged (repo + global). */
+type Scope = "global" | string;
 
 
 const PRESET_COLORS = [
@@ -58,7 +66,17 @@ const emptySkillForm: SkillFormData = {
 };
 
 export function AgentsPage() {
+  const tauri = useTauri();
   const [activeTab, setActiveTab] = useState<ActiveTab>("agents");
+  const [repos, setRepos] = useState<Repository[]>([]);
+  const [scope, setScope] = useState<Scope>("global");
+
+  useEffect(() => {
+    tauri.listRepositories().then(setRepos).catch(() => setRepos([]));
+  }, []);
+
+  const selectedRepo =
+    scope === "global" ? null : repos.find((r) => r.id === scope) ?? null;
 
   return (
     <div>
@@ -89,14 +107,81 @@ export function AgentsPage() {
         </button>
       </div>
 
-      {activeTab === "agents" ? <AgentsTab /> : <SkillsTab />}
+      {activeTab === "agents" ? (
+        <AgentsTab
+          scope={scope}
+          selectedRepo={selectedRepo}
+          repos={repos}
+          onScopeChange={setScope}
+        />
+      ) : (
+        <SkillsTab
+          scope={scope}
+          selectedRepo={selectedRepo}
+          repos={repos}
+          onScopeChange={setScope}
+        />
+      )}
+    </div>
+  );
+}
+
+function ScopeSelector({
+  repos,
+  scope,
+  onChange,
+}: {
+  repos: Repository[];
+  scope: Scope;
+  onChange: (s: Scope) => void;
+}) {
+  return (
+    <div
+      className="scope-selector"
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+      }}
+    >
+      <label
+        htmlFor="scope-select"
+        style={{ fontSize: 13, color: "var(--text-secondary)" }}
+      >
+        Show:
+      </label>
+      <select
+        id="scope-select"
+        aria-label="Scope"
+        className="form-input"
+        value={scope}
+        onChange={(e) => onChange(e.target.value as Scope)}
+        style={{ maxWidth: 320 }}
+      >
+        <option value="global">Global only</option>
+        {repos.map((r) => (
+          <option key={r.id} value={r.id}>
+            Global + {r.name}
+          </option>
+        ))}
+      </select>
     </div>
   );
 }
 
 // ── Agents Tab ──
 
-function AgentsTab() {
+function AgentsTab({
+  scope,
+  selectedRepo,
+  repos,
+  onScopeChange,
+}: {
+  scope: Scope;
+  selectedRepo: Repository | null;
+  repos: Repository[];
+  onScopeChange: (s: Scope) => void;
+}) {
   const tauri = useTauri();
   const [agents, setAgents] = useState<AgentFile[]>([]);
   const [error, setError] = useState("");
@@ -113,13 +198,13 @@ function AgentsTab() {
   }, []);
 
   const loadAgents = () => {
-    tauri
-      .listGlobalAgents()
-      .then(setAgents)
-      .catch(() => setAgents([]));
+    const p = selectedRepo
+      ? tauri.listAgents(selectedRepo.path)
+      : tauri.listGlobalAgents();
+    p.then(setAgents).catch(() => setAgents([]));
   };
 
-  useEffect(loadAgents, []);
+  useEffect(loadAgents, [scope, selectedRepo?.path]);
 
   const openCreate = () => {
     setModalAgent(null);
@@ -139,7 +224,7 @@ function AgentsTab() {
     setError("");
   };
 
-  const handleSave = async (data: AgentFormData) => {
+  const handleSave = async (data: AgentFormData, saveIsGlobal: boolean) => {
     if (!data.name.trim() || !data.system_prompt.trim()) return;
     setError("");
 
@@ -154,14 +239,18 @@ function AgentsTab() {
       tools: data.tools.trim() || null,
       model: data.model.trim() || null,
       system_prompt: data.system_prompt.trim(),
-      is_global: true,
+      is_global: saveIsGlobal,
       color: data.color,
       role: data.role as AgentFile["role"],
       enabled: modalAgent ? modalAgent.enabled : true,
     };
 
     try {
-      await tauri.saveGlobalAgent(agent);
+      if (saveIsGlobal || !selectedRepo) {
+        await tauri.saveGlobalAgent(agent);
+      } else {
+        await tauri.saveAgent(selectedRepo.path, agent);
+      }
       closeModal();
       loadAgents();
     } catch (e) {
@@ -169,10 +258,14 @@ function AgentsTab() {
     }
   };
 
-  const handleRemove = async (filename: string) => {
+  const handleRemove = async (agent: AgentFile) => {
     setError("");
     try {
-      await tauri.deleteGlobalAgent(filename);
+      if (agent.is_global || !selectedRepo) {
+        await tauri.deleteGlobalAgent(agent.filename);
+      } else {
+        await tauri.deleteAgent(selectedRepo.path, agent.filename);
+      }
       setDeleteConfirm(null);
       loadAgents();
     } catch (e) {
@@ -182,8 +275,13 @@ function AgentsTab() {
 
   const handleToggleEnabled = async (agent: AgentFile) => {
     setError("");
+    const updated = { ...agent, enabled: !agent.enabled };
     try {
-      await tauri.saveGlobalAgent({ ...agent, enabled: !agent.enabled });
+      if (agent.is_global || !selectedRepo) {
+        await tauri.saveGlobalAgent(updated);
+      } else {
+        await tauri.saveAgent(selectedRepo.path, updated);
+      }
       loadAgents();
     } catch (e) {
       setError(String(e));
@@ -195,7 +293,8 @@ function AgentsTab() {
     setAddingBuiltIn(filename);
     setError("");
     try {
-      // Find the built-in agent template and save it globally
+      // Built-in agents always install globally regardless of current scope —
+      // they're shared starter agents.
       const template = builtInAgents.find((a) => a.filename === filename);
       if (template) {
         await tauri.saveGlobalAgent({ ...template, is_global: true });
@@ -208,10 +307,13 @@ function AgentsTab() {
     }
   };
 
-  // Built-in agents not yet added (match by filename)
-  const agentFilenames = new Set(agents.map((a) => a.filename));
+  // Built-in agents always install globally, so hide ones the user already has
+  // globally. A repo-local copy with the same filename doesn't hide them.
+  const globalFilenames = new Set(
+    agents.filter((a) => a.is_global).map((a) => a.filename),
+  );
   const unappliedBuiltIns = builtInAgents.filter(
-    (a) => !agentFilenames.has(a.filename),
+    (a) => !globalFilenames.has(a.filename),
   );
 
   return (
@@ -220,27 +322,38 @@ function AgentsTab() {
 
       <ContextualHelp title="How do agents work?">{HELP_CONTENT.agents}</ContextualHelp>
 
-      <div style={{ marginBottom: 20 }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 8,
+          marginBottom: 20,
+        }}
+      >
         <button className="btn btn-primary" onClick={openCreate}>
           + Add Agent
         </button>
+        <ScopeSelector repos={repos} scope={scope} onChange={onScopeChange} />
       </div>
 
-      {/* Global agents */}
+      {/* Agents (global + optional repo-local) */}
       {agents.length > 0 && (
         <div className="agent-grid">
           {agents.map((agent) => {
             const agentKey = agent.filename.replace(/\.md$/, "");
             const perf = perfSummaries.find((s) => s.agent === agentKey);
+            const scopeKey = `${agent.is_global ? "global" : "repo"}:${agent.filename}`;
             return (
               <AgentCard
-                key={agent.filename}
+                key={scopeKey}
                 agent={agent}
                 perfSummary={perf}
+                repoLabel={agent.is_global ? null : selectedRepo?.name ?? null}
                 onEdit={() => openEdit(agent)}
-                onRemove={() => setDeleteConfirm(agent.filename)}
-                onConfirmDelete={() => handleRemove(agent.filename)}
-                deleteConfirm={deleteConfirm === agent.filename}
+                onRemove={() => setDeleteConfirm(scopeKey)}
+                onConfirmDelete={() => handleRemove(agent)}
+                deleteConfirm={deleteConfirm === scopeKey}
                 onCancelDelete={() => setDeleteConfirm(null)}
                 onToggleEnabled={() => handleToggleEnabled(agent)}
               />
@@ -275,8 +388,9 @@ function AgentsTab() {
         <div className="empty-state">
           <h3>No Agents</h3>
           <p>
-            No crew members yet. Add an agent above to populate your
-            ~/.claude/agents/ directory.
+            {selectedRepo
+              ? `No crew members yet in ${selectedRepo.name} or globally. Add an agent above.`
+              : "No crew members yet. Add an agent above to populate your ~/.claude/agents/ directory."}
           </p>
         </div>
       )}
@@ -287,6 +401,7 @@ function AgentsTab() {
           mode={modalMode}
           agent={modalAgent}
           error={error}
+          selectedRepo={selectedRepo}
           onSave={handleSave}
           onClose={closeModal}
         />
@@ -297,7 +412,17 @@ function AgentsTab() {
 
 // ── Skills Tab ──
 
-function SkillsTab() {
+function SkillsTab({
+  scope,
+  selectedRepo,
+  repos,
+  onScopeChange,
+}: {
+  scope: Scope;
+  selectedRepo: Repository | null;
+  repos: Repository[];
+  onScopeChange: (s: Scope) => void;
+}) {
   const tauri = useTauri();
   const [skills, setSkills] = useState<SkillFile[]>([]);
   const [builtInSkills, setBuiltInSkills] = useState<SkillFile[]>([]);
@@ -311,14 +436,15 @@ function SkillsTab() {
   const [showGenerateInput, setShowGenerateInput] = useState(false);
 
   const loadSkills = () => {
-    tauri
-      .listGlobalSkills()
-      .then(setSkills)
-      .catch(() => setSkills([]));
+    const p = selectedRepo
+      ? tauri.listSkills(selectedRepo.path)
+      : tauri.listGlobalSkills();
+    p.then(setSkills).catch(() => setSkills([]));
   };
 
+  useEffect(loadSkills, [scope, selectedRepo?.path]);
+
   useEffect(() => {
-    loadSkills();
     tauri.listBuiltInSkills().then(setBuiltInSkills).catch(() => setBuiltInSkills([]));
   }, []);
 
@@ -340,7 +466,7 @@ function SkillsTab() {
     setError("");
   };
 
-  const handleSave = async (data: SkillFormData) => {
+  const handleSave = async (data: SkillFormData, saveIsGlobal: boolean) => {
     if (!data.name.trim() || !data.prompt_template.trim()) return;
     setError("");
 
@@ -352,10 +478,15 @@ function SkillsTab() {
       description: data.description.trim(),
       prompt_template: data.prompt_template.trim(),
       source: "user",
+      is_global: saveIsGlobal,
     };
 
     try {
-      await tauri.saveGlobalSkill(skill);
+      if (saveIsGlobal || !selectedRepo) {
+        await tauri.saveGlobalSkill(skill);
+      } else {
+        await tauri.saveSkill(selectedRepo.path, skill);
+      }
       closeModal();
       loadSkills();
     } catch (e) {
@@ -363,10 +494,14 @@ function SkillsTab() {
     }
   };
 
-  const handleRemove = async (dirName: string) => {
+  const handleRemove = async (skill: SkillFile) => {
     setError("");
     try {
-      await tauri.deleteGlobalSkill(dirName);
+      if (skill.is_global || !selectedRepo) {
+        await tauri.deleteGlobalSkill(skill.dir_name);
+      } else {
+        await tauri.deleteSkill(selectedRepo.path, skill.dir_name);
+      }
       setDeleteConfirm(null);
       loadSkills();
     } catch (e) {
@@ -378,9 +513,14 @@ function SkillsTab() {
     setAddingBuiltIn(dirName);
     setError("");
     try {
+      // Built-in skills always install globally regardless of current scope.
       const template = builtInSkills.find((s) => s.dir_name === dirName);
       if (template) {
-        await tauri.saveGlobalSkill({ ...template, source: "user" });
+        await tauri.saveGlobalSkill({
+          ...template,
+          source: "user",
+          is_global: true,
+        });
       }
       loadSkills();
     } catch (e) {
@@ -390,10 +530,12 @@ function SkillsTab() {
     }
   };
 
-  // Built-in skills not yet added (match by dir_name)
-  const skillNames = new Set(skills.map((s) => s.dir_name));
+  // Built-in skills always install globally, so only global copies hide them.
+  const globalDirNames = new Set(
+    skills.filter((s) => s.is_global).map((s) => s.dir_name),
+  );
   const unappliedBuiltIns = builtInSkills.filter(
-    (s) => !skillNames.has(s.dir_name),
+    (s) => !globalDirNames.has(s.dir_name),
   );
 
   const handleGenerate = async () => {
@@ -440,7 +582,14 @@ function SkillsTab() {
 
       <ContextualHelp title="How do skills work?">{HELP_CONTENT.skills}</ContextualHelp>
 
-      <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          marginBottom: 20,
+        }}
+      >
         <button className="btn btn-primary" onClick={openCreate}>
           + New Skill
         </button>
@@ -451,6 +600,9 @@ function SkillsTab() {
         >
           {generating ? "Generating..." : "Auto-Create Skill"}
         </button>
+        <div style={{ marginLeft: "auto" }}>
+          <ScopeSelector repos={repos} scope={scope} onChange={onScopeChange} />
+        </div>
       </div>
 
       {showGenerateInput && !generating && (
@@ -502,17 +654,23 @@ function SkillsTab() {
       {/* Skill cards */}
       {skills.length > 0 && (
         <div className="agent-grid">
-          {skills.map((skill) => (
-            <SkillCard
-              key={skill.dir_name}
-              skill={skill}
-              onEdit={skill.source === "user" ? () => openEdit(skill) : undefined}
-              onRemove={skill.source === "user" ? () => setDeleteConfirm(skill.dir_name) : undefined}
-              onConfirmDelete={() => handleRemove(skill.dir_name)}
-              deleteConfirm={deleteConfirm === skill.dir_name}
-              onCancelDelete={() => setDeleteConfirm(null)}
-            />
-          ))}
+          {skills.map((skill) => {
+            const scopeKey = `${skill.is_global ? "global" : "repo"}:${skill.dir_name}`;
+            return (
+              <SkillCard
+                key={scopeKey}
+                skill={skill}
+                repoLabel={skill.is_global ? null : selectedRepo?.name ?? null}
+                onEdit={skill.source === "user" ? () => openEdit(skill) : undefined}
+                onRemove={
+                  skill.source === "user" ? () => setDeleteConfirm(scopeKey) : undefined
+                }
+                onConfirmDelete={() => handleRemove(skill)}
+                deleteConfirm={deleteConfirm === scopeKey}
+                onCancelDelete={() => setDeleteConfirm(null)}
+              />
+            );
+          })}
         </div>
       )}
 
@@ -542,9 +700,9 @@ function SkillsTab() {
         <div className="empty-state">
           <h3>No Skills Yet</h3>
           <p>
-            No tricks in the book yet. Create a skill manually or
-            let Claude auto-create one — skills live in
-            ~/.claude/skills/.
+            {selectedRepo
+              ? `No tricks in the book yet in ${selectedRepo.name} or globally. Create one above.`
+              : "No tricks in the book yet. Create a skill manually or let Claude auto-create one — skills live in ~/.claude/skills/."}
           </p>
         </div>
       )}
@@ -555,6 +713,7 @@ function SkillsTab() {
           mode={modalMode}
           skill={modalSkill}
           error={error}
+          selectedRepo={selectedRepo}
           onSave={handleSave}
           onClose={closeModal}
         />
@@ -568,6 +727,7 @@ function SkillsTab() {
 function AgentCard({
   agent,
   perfSummary,
+  repoLabel,
   onEdit,
   onRemove,
   onConfirmDelete,
@@ -577,6 +737,7 @@ function AgentCard({
 }: {
   agent: AgentFile;
   perfSummary?: AgentPerformanceSummary;
+  repoLabel: string | null;
   onEdit: () => void;
   onRemove: (() => void) | undefined;
   onConfirmDelete: (() => void) | undefined;
@@ -603,8 +764,12 @@ function AgentCard({
             <div className="agent-card-name">{agent.name}</div>
             <div className="agent-card-role">
               {agent.filename}
-              {agent.is_global && (
+              {agent.is_global ? (
                 <span className="agent-card-builtin-badge">global</span>
+              ) : (
+                <span className="agent-card-builtin-badge">
+                  {repoLabel ?? "repo"}
+                </span>
               )}
             </div>
           </div>
@@ -760,6 +925,7 @@ function BuiltInAgentCard({
 
 function SkillCard({
   skill,
+  repoLabel,
   onEdit,
   onRemove,
   onConfirmDelete,
@@ -767,6 +933,7 @@ function SkillCard({
   onCancelDelete,
 }: {
   skill: SkillFile;
+  repoLabel: string | null;
   onEdit?: () => void;
   onRemove?: () => void;
   onConfirmDelete: () => void;
@@ -792,11 +959,14 @@ function SkillCard({
             <div className="agent-card-name">{skill.name}</div>
             <div className="agent-card-role">
               /{skill.dir_name}
-              {isPlugin && skill.plugin_name && (
+              {isPlugin && skill.plugin_name ? (
                 <span className="agent-card-builtin-badge">{skill.plugin_name}</span>
-              )}
-              {!isPlugin && (
-                <span className="agent-card-builtin-badge">user</span>
+              ) : skill.is_global ? (
+                <span className="agent-card-builtin-badge">global</span>
+              ) : (
+                <span className="agent-card-builtin-badge">
+                  {repoLabel ?? "repo"}
+                </span>
               )}
             </div>
           </div>
@@ -913,13 +1083,15 @@ function AgentFormModal({
   mode,
   agent,
   error,
+  selectedRepo,
   onSave,
   onClose,
 }: {
   mode: "create" | "edit";
   agent: AgentFile | null;
   error: string;
-  onSave: (data: AgentFormData) => void;
+  selectedRepo: Repository | null;
+  onSave: (data: AgentFormData, saveIsGlobal: boolean) => void;
   onClose: () => void;
 }) {
   const [form, setForm] = useState<AgentFormData>(() => {
@@ -937,6 +1109,13 @@ function AgentFormModal({
     }
     return { ...emptyForm };
   });
+
+  // Edit mode preserves the existing scope; create defaults to global unless
+  // a repo is the active context, in which case we still default to global —
+  // the user can flip it.
+  const [saveIsGlobal, setSaveIsGlobal] = useState<boolean>(() =>
+    agent ? agent.is_global : true,
+  );
 
   const [showCustomColor, setShowCustomColor] = useState(false);
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -977,6 +1156,28 @@ function AgentFormModal({
 
         <div className="agent-form-body">
           {error && <div className="error-banner">{error}</div>}
+
+          {/* Save location (only when a repo is the active scope
+              AND we're creating — edit mode preserves existing scope) */}
+          {selectedRepo && mode === "create" && (
+            <div className="form-group">
+              <label className="form-label">Save in</label>
+              <select
+                aria-label="Save in"
+                className="form-input"
+                value={saveIsGlobal ? "global" : "repo"}
+                onChange={(e) => setSaveIsGlobal(e.target.value === "global")}
+              >
+                <option value="global">Global (~/.claude/agents/)</option>
+                <option value="repo">
+                  {selectedRepo.name} (repo-local .claude/agents/)
+                </option>
+              </select>
+              <div className="form-help">
+                Repo-local agents are only visible when working in that repo.
+              </div>
+            </div>
+          )}
 
           {/* Name */}
           <div className="form-group">
@@ -1138,7 +1339,7 @@ function AgentFormModal({
           </button>
           <button
             className="btn btn-primary"
-            onClick={() => onSave(form)}
+            onClick={() => onSave(form, saveIsGlobal)}
             disabled={!isValid}
           >
             {mode === "create" ? "Create Agent" : "Save Changes"}
@@ -1155,13 +1356,15 @@ function SkillFormModal({
   mode,
   skill,
   error,
+  selectedRepo,
   onSave,
   onClose,
 }: {
   mode: "create" | "edit";
   skill: SkillFile | null;
   error: string;
-  onSave: (data: SkillFormData) => void;
+  selectedRepo: Repository | null;
+  onSave: (data: SkillFormData, saveIsGlobal: boolean) => void;
   onClose: () => void;
 }) {
   const [form, setForm] = useState<SkillFormData>(() => {
@@ -1174,6 +1377,10 @@ function SkillFormModal({
     }
     return { ...emptySkillForm };
   });
+
+  const [saveIsGlobal, setSaveIsGlobal] = useState<boolean>(() =>
+    skill ? skill.is_global : true,
+  );
 
   const overlayRef = useRef<HTMLDivElement>(null);
 
@@ -1213,6 +1420,26 @@ function SkillFormModal({
 
         <div className="agent-form-body">
           {error && <div className="error-banner">{error}</div>}
+
+          {selectedRepo && mode === "create" && (
+            <div className="form-group">
+              <label className="form-label">Save in</label>
+              <select
+                aria-label="Save in"
+                className="form-input"
+                value={saveIsGlobal ? "global" : "repo"}
+                onChange={(e) => setSaveIsGlobal(e.target.value === "global")}
+              >
+                <option value="global">Global (~/.claude/skills/)</option>
+                <option value="repo">
+                  {selectedRepo.name} (repo-local .claude/skills/)
+                </option>
+              </select>
+              <div className="form-help">
+                Repo-local skills are only visible when working in that repo.
+              </div>
+            </div>
+          )}
 
           {/* Name */}
           <div className="form-group">
@@ -1265,7 +1492,7 @@ function SkillFormModal({
           </button>
           <button
             className="btn btn-primary"
-            onClick={() => onSave(form)}
+            onClick={() => onSave(form, saveIsGlobal)}
             disabled={!isValid}
           >
             {mode === "create" ? "Create Skill" : "Save Changes"}

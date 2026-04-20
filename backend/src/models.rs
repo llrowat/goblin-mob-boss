@@ -234,6 +234,13 @@ pub struct SkillFile {
     /// For plugin skills, which plugin they came from.
     #[serde(default)]
     pub plugin_name: Option<String>,
+    /// Whether this skill comes from ~/.claude/skills/ (global) vs repo-local.
+    #[serde(default = "default_is_global_skill")]
+    pub is_global: bool,
+}
+
+fn default_is_global_skill() -> bool {
+    true
 }
 
 impl SkillFile {
@@ -252,6 +259,7 @@ impl SkillFile {
                 prompt_template: content.to_string(),
                 source: SkillSource::User,
                 plugin_name: None,
+                is_global: true,
             };
         }
 
@@ -291,6 +299,7 @@ impl SkillFile {
                 prompt_template: body.to_string(),
                 source: SkillSource::User,
                 plugin_name: None,
+                is_global: true,
             }
         } else {
             // Malformed frontmatter — treat as plain content
@@ -301,6 +310,7 @@ impl SkillFile {
                 prompt_template: content.to_string(),
                 source: SkillSource::User,
                 plugin_name: None,
+                is_global: true,
             }
         }
     }
@@ -2537,6 +2547,7 @@ Review the current PR and check for security issues, performance problems, and c
             prompt_template: "Run the deploy pipeline for $ARGUMENTS.".to_string(),
             source: SkillSource::User,
             plugin_name: None,
+            is_global: true,
         };
         let md = skill.to_markdown();
         assert!(md.contains("name: deploy"));
@@ -2563,6 +2574,7 @@ Review the current PR and check for security issues, performance problems, and c
             prompt_template: "Fix the issue.".to_string(),
             source: SkillSource::User,
             plugin_name: None,
+            is_global: true,
         };
         let md = skill.to_markdown();
         assert!(!md.contains("description:"));
@@ -2590,6 +2602,7 @@ Review the current PR and check for security issues, performance problems, and c
             prompt_template: "Run tests".to_string(),
             source: SkillSource::Plugin,
             plugin_name: Some("my-plugin".to_string()),
+            is_global: true,
         };
         let json = serde_json::to_string(&skill).unwrap();
         let parsed: SkillFile = serde_json::from_str(&json).unwrap();

@@ -69,6 +69,7 @@ describe("AgentsPage", () => {
       prompt_template: "Review the ideation plan for the current feature.",
       source: "user",
       plugin_name: null,
+      is_global: true,
     },
     {
       dir_name: "validate-and-fix",
@@ -77,6 +78,7 @@ describe("AgentsPage", () => {
       prompt_template: "Run the project's validators and fix any failures.",
       source: "user",
       plugin_name: null,
+      is_global: true,
     },
   ];
 
@@ -88,6 +90,7 @@ describe("AgentsPage", () => {
       prompt_template: "Review the current PR for issues.",
       source: "user",
       plugin_name: null,
+      is_global: true,
     },
     {
       dir_name: "run-tests",
@@ -96,11 +99,13 @@ describe("AgentsPage", () => {
       prompt_template: "Run all tests and report failures.",
       source: "user",
       plugin_name: null,
+      is_global: true,
     },
   ];
 
   function mockInvokeForAgents() {
     vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "list_repositories") return Promise.resolve([]);
       if (cmd === "list_global_agents") return Promise.resolve(mockAgents);
       if (cmd === "list_built_in_agents") return Promise.resolve(mockBuiltInAgents);
       if (cmd === "list_global_skills") return Promise.resolve([]);
@@ -111,6 +116,7 @@ describe("AgentsPage", () => {
 
   function mockInvokeForSkills() {
     vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "list_repositories") return Promise.resolve([]);
       if (cmd === "list_global_agents") return Promise.resolve([]);
       if (cmd === "list_built_in_agents") return Promise.resolve([]);
       if (cmd === "list_global_skills") return Promise.resolve(mockSkills);
@@ -121,6 +127,7 @@ describe("AgentsPage", () => {
 
   function mockInvokeEmpty() {
     vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "list_repositories") return Promise.resolve([]);
       if (cmd === "list_global_agents") return Promise.resolve([]);
       if (cmd === "list_built_in_agents") return Promise.resolve([]);
       if (cmd === "list_global_skills") return Promise.resolve([]);
@@ -744,8 +751,282 @@ describe("AgentsPage", () => {
     });
   });
 
+  // ── Scope Dropdown ──
+
+  const mockRepos = [
+    {
+      id: "repo-1",
+      name: "acme-api",
+      path: "/tmp/acme-api",
+      base_branch: "main",
+      description: "",
+      validators: [],
+      pr_command: null,
+      similar_repo_ids: [],
+      commit_pattern: null,
+      created_at: "2025-01-01T00:00:00Z",
+    },
+  ];
+
+  it("renders scope dropdown with Global only default", async () => {
+    mockInvokeEmpty();
+    render(<AgentsPage />);
+
+    const scopeSelect = await screen.findByLabelText("Scope");
+    expect((scopeSelect as HTMLSelectElement).value).toBe("global");
+    expect(screen.getByRole("option", { name: "Global only" })).toBeInTheDocument();
+  });
+
+  it("adds repo options to scope dropdown when repos exist", async () => {
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "list_repositories") return Promise.resolve(mockRepos);
+      if (cmd === "list_global_agents") return Promise.resolve([]);
+      if (cmd === "list_built_in_agents") return Promise.resolve([]);
+      if (cmd === "list_global_skills") return Promise.resolve([]);
+      if (cmd === "list_built_in_skills") return Promise.resolve([]);
+      return Promise.resolve([]);
+    });
+
+    render(<AgentsPage />);
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("option", { name: "Global + acme-api" }),
+      ).toBeInTheDocument();
+    });
+  });
+
+  it("calls list_agents with repo path when a repo scope is selected", async () => {
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "list_repositories") return Promise.resolve(mockRepos);
+      if (cmd === "list_global_agents") return Promise.resolve([]);
+      if (cmd === "list_agents") return Promise.resolve([]);
+      if (cmd === "list_built_in_agents") return Promise.resolve([]);
+      if (cmd === "list_global_skills") return Promise.resolve([]);
+      if (cmd === "list_built_in_skills") return Promise.resolve([]);
+      return Promise.resolve([]);
+    });
+
+    render(<AgentsPage />);
+
+    const scopeSelect = await screen.findByLabelText("Scope");
+    await waitFor(() => {
+      expect(screen.getByRole("option", { name: "Global + acme-api" })).toBeInTheDocument();
+    });
+
+    fireEvent.change(scopeSelect, { target: { value: "repo-1" } });
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("list_agents", {
+        repoPath: "/tmp/acme-api",
+      });
+    });
+  });
+
+  it("calls list_skills with repo path when a repo scope is selected on Skills tab", async () => {
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "list_repositories") return Promise.resolve(mockRepos);
+      if (cmd === "list_global_agents") return Promise.resolve([]);
+      if (cmd === "list_global_skills") return Promise.resolve([]);
+      if (cmd === "list_skills") return Promise.resolve([]);
+      if (cmd === "list_built_in_agents") return Promise.resolve([]);
+      if (cmd === "list_built_in_skills") return Promise.resolve([]);
+      return Promise.resolve([]);
+    });
+
+    render(<AgentsPage />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Skills" }));
+
+    const scopeSelect = await screen.findByLabelText("Scope");
+    await waitFor(() => {
+      expect(screen.getByRole("option", { name: "Global + acme-api" })).toBeInTheDocument();
+    });
+
+    fireEvent.change(scopeSelect, { target: { value: "repo-1" } });
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("list_skills", {
+        repoPath: "/tmp/acme-api",
+      });
+    });
+  });
+
+  it("shows scope badge for repo-local agent", async () => {
+    const repoAgent = {
+      ...mockAgents[0],
+      filename: "repo-agent.md",
+      name: "Repo Agent",
+      is_global: false,
+    };
+
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "list_repositories") return Promise.resolve(mockRepos);
+      if (cmd === "list_global_agents") return Promise.resolve([]);
+      if (cmd === "list_agents") return Promise.resolve([repoAgent]);
+      if (cmd === "list_built_in_agents") return Promise.resolve([]);
+      if (cmd === "get_agent_summaries") return Promise.resolve([]);
+      if (cmd === "list_global_skills") return Promise.resolve([]);
+      if (cmd === "list_built_in_skills") return Promise.resolve([]);
+      return Promise.resolve([]);
+    });
+
+    render(<AgentsPage />);
+
+    const scopeSelect = await screen.findByLabelText("Scope");
+    await waitFor(() => {
+      expect(screen.getByRole("option", { name: "Global + acme-api" })).toBeInTheDocument();
+    });
+    fireEvent.change(scopeSelect, { target: { value: "repo-1" } });
+
+    await waitFor(() => {
+      expect(screen.getByText("Repo Agent")).toBeInTheDocument();
+    });
+    expect(screen.getByText("acme-api")).toBeInTheDocument();
+  });
+
+  it("saves new agent via save_agent when repo scope + repo save selected", async () => {
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "list_repositories") return Promise.resolve(mockRepos);
+      if (cmd === "list_global_agents") return Promise.resolve([]);
+      if (cmd === "list_agents") return Promise.resolve([]);
+      if (cmd === "list_built_in_agents") return Promise.resolve([]);
+      if (cmd === "get_agent_summaries") return Promise.resolve([]);
+      if (cmd === "list_global_skills") return Promise.resolve([]);
+      if (cmd === "list_built_in_skills") return Promise.resolve([]);
+      return Promise.resolve(undefined);
+    });
+
+    render(<AgentsPage />);
+
+    const scopeSelect = await screen.findByLabelText("Scope");
+    await waitFor(() => {
+      expect(screen.getByRole("option", { name: "Global + acme-api" })).toBeInTheDocument();
+    });
+    fireEvent.change(scopeSelect, { target: { value: "repo-1" } });
+
+    fireEvent.click(screen.getByText("+ Add Agent"));
+
+    const saveInSelect = await screen.findByLabelText("Save in");
+    fireEvent.change(saveInSelect, { target: { value: "repo" } });
+
+    fireEvent.change(screen.getByPlaceholderText("My Custom Agent"), {
+      target: { value: "Repo-Local" },
+    });
+    fireEvent.change(
+      screen.getByPlaceholderText("You are a specialist in..."),
+      { target: { value: "You are a repo specialist." } },
+    );
+
+    const createButtons = screen.getAllByText("Create Agent");
+    fireEvent.click(createButtons[createButtons.length - 1]);
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("save_agent", {
+        repoPath: "/tmp/acme-api",
+        agent: expect.objectContaining({
+          name: "Repo-Local",
+          is_global: false,
+        }),
+      });
+    });
+  });
+
+  it("saves new skill via save_skill when repo scope + repo save selected", async () => {
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "list_repositories") return Promise.resolve(mockRepos);
+      if (cmd === "list_global_agents") return Promise.resolve([]);
+      if (cmd === "list_global_skills") return Promise.resolve([]);
+      if (cmd === "list_skills") return Promise.resolve([]);
+      if (cmd === "list_built_in_agents") return Promise.resolve([]);
+      if (cmd === "list_built_in_skills") return Promise.resolve([]);
+      return Promise.resolve(undefined);
+    });
+
+    render(<AgentsPage />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Skills" }));
+
+    const scopeSelect = await screen.findByLabelText("Scope");
+    await waitFor(() => {
+      expect(screen.getByRole("option", { name: "Global + acme-api" })).toBeInTheDocument();
+    });
+    fireEvent.change(scopeSelect, { target: { value: "repo-1" } });
+
+    fireEvent.click(screen.getByText("+ New Skill"));
+
+    const saveInSelect = await screen.findByLabelText("Save in");
+    fireEvent.change(saveInSelect, { target: { value: "repo" } });
+
+    fireEvent.change(screen.getByPlaceholderText("review-pr"), {
+      target: { value: "repo-scope" },
+    });
+    fireEvent.change(
+      screen.getByPlaceholderText("Review the current PR and check for..."),
+      { target: { value: "Do repo stuff." } },
+    );
+
+    const createButtons = screen.getAllByText("Create Skill");
+    fireEvent.click(createButtons[createButtons.length - 1]);
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("save_skill", {
+        repoPath: "/tmp/acme-api",
+        skill: expect.objectContaining({
+          dir_name: "repo-scope",
+          is_global: false,
+        }),
+      });
+    });
+  });
+
+  it("deletes repo-local agent via delete_agent", async () => {
+    const repoAgent = {
+      ...mockAgents[0],
+      filename: "repo-agent.md",
+      name: "Repo Agent",
+      is_global: false,
+    };
+
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "list_repositories") return Promise.resolve(mockRepos);
+      if (cmd === "list_global_agents") return Promise.resolve([]);
+      if (cmd === "list_agents") return Promise.resolve([repoAgent]);
+      if (cmd === "list_built_in_agents") return Promise.resolve([]);
+      if (cmd === "get_agent_summaries") return Promise.resolve([]);
+      if (cmd === "list_global_skills") return Promise.resolve([]);
+      if (cmd === "list_built_in_skills") return Promise.resolve([]);
+      return Promise.resolve(undefined);
+    });
+
+    render(<AgentsPage />);
+
+    const scopeSelect = await screen.findByLabelText("Scope");
+    await waitFor(() => {
+      expect(screen.getByRole("option", { name: "Global + acme-api" })).toBeInTheDocument();
+    });
+    fireEvent.change(scopeSelect, { target: { value: "repo-1" } });
+
+    await waitFor(() => {
+      expect(screen.getByText("Repo Agent")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText("Remove"));
+    await waitFor(() => {
+      expect(screen.getByText("Yes")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText("Yes"));
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("delete_agent", {
+        repoPath: "/tmp/acme-api",
+        filename: "repo-agent.md",
+      });
+    });
+  });
+
   it("hides built-in skill once already added by user", async () => {
-    // User already has review-plan, but not validate-and-fix
+    // User already has review-plan globally, but not validate-and-fix
     const userSkillsWithBuiltIn = [
       {
         dir_name: "review-plan",
@@ -754,6 +1035,7 @@ describe("AgentsPage", () => {
         prompt_template: "Review the plan.",
         source: "user",
         plugin_name: null,
+        is_global: true,
       },
     ];
 

@@ -262,6 +262,25 @@ pub fn delete_global_agent(filename: String) -> Result<(), String> {
 // ── Skill Commands (file-based) ──
 
 #[tauri::command]
+pub fn list_skills(repo_path: String) -> Result<Vec<SkillFile>, String> {
+    let mut skills = store::list_repo_skills(&repo_path)?;
+    if let Ok(global) = store::list_global_skills() {
+        skills.extend(global);
+    }
+    Ok(skills)
+}
+
+#[tauri::command]
+pub fn save_skill(repo_path: String, skill: SkillFile) -> Result<(), String> {
+    store::save_repo_skill(&repo_path, &skill)
+}
+
+#[tauri::command]
+pub fn delete_skill(repo_path: String, dir_name: String) -> Result<(), String> {
+    store::delete_repo_skill(&repo_path, &dir_name)
+}
+
+#[tauri::command]
 pub fn list_global_skills() -> Result<Vec<SkillFile>, String> {
     store::list_global_skills()
 }
